@@ -1193,9 +1193,23 @@ function renderPage() {
   const scrollY = window.scrollY;
   treeEl.innerHTML = '';
   treeEl.classList.toggle('hide-done', !settings.showCompleted);
+  pageEl.classList.toggle('board-page', N(state.zoom).format === 'board');
   const roots = kidsOf(state.zoom).filter(c => shouldShow(c, false));
   const frag = document.createDocumentFragment();
-  for (const c of roots) frag.append(mountItem(c, false));
+  if (N(state.zoom).format === 'board' && kidsOf(state.zoom).length) {
+    // a zoomed board stays a board: children render as full-page columns
+    const board = document.createElement('div');
+    board.className = 'board board-zoomed';
+    for (const c of kidsOf(state.zoom)) {
+      const colEl = document.createElement('div');
+      colEl.className = 'board-col';
+      colEl.append(mountItem(c, false));
+      board.append(colEl);
+    }
+    frag.append(board);
+  } else {
+    for (const c of roots) frag.append(mountItem(c, false));
+  }
   treeEl.append(frag);
 
   if (searchActive()) {
@@ -2475,8 +2489,20 @@ function contentLeftOf(id) {
 // board columns flow horizontally, so the generic top-to-bottom row scan
 // picks the wrong column — resolve board drops against the hovered column.
 function boardDropTarget(x, y) {
-  const colEl = document.elementsFromPoint(x, y).find(el => el.classList?.contains('board-col'));
-  if (!colEl) return null;
+  const stack = document.elementsFromPoint(x, y);
+  let colEl = stack.find(el => el.classList?.contains('board-col'));
+  if (!colEl) {
+    // over the board but between/below columns: snap to the nearest column
+    const boardEl = stack.find(el => el.classList?.contains('board'));
+    if (!boardEl) return null;
+    let bestDist = Infinity;
+    for (const c of boardEl.querySelectorAll(':scope > .board-col')) {
+      const r = c.getBoundingClientRect();
+      const dist = x < r.left ? r.left - x : x > r.right ? x - r.right : 0;
+      if (dist < bestDist) { bestDist = dist; colEl = c; }
+    }
+    if (!colEl) return null;
+  }
   const colItem = colEl.querySelector(':scope > .item');
   const colId = colItem?.dataset.id;
   if (!colId || colId === drag.id || isAncestor(drag.id, colId)) return null;

@@ -1163,8 +1163,21 @@ time[datetime].today { color: oklch(0.5 0.14 150); background: oklch(0.55 0.14 1
   border: 1px solid var(--line-soft);
   border-radius: 12px;
   padding: 8px 9px;
+  min-height: 140px;
   max-height: 64vh;
   overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* zoomed into the board itself: full-page columns */
+.tree > .board { margin-left: 0; }
+.board-zoomed .board-col {
+  flex: 0 0 252px;
+  max-height: calc(100vh - 230px);
+}
+.page.board-page { max-width: none; }
+.page.board-page .zoom-head, .page.board-page .crumbs, .page.board-page .search-banner {
+  max-width: 720px;
 }
 .board-col > .col-head {
   display: flex;
