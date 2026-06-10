@@ -993,26 +993,37 @@ body.sidebar-open .sidebar { padding: 6px 10px 30px 14px; }
 .side-today:hover { background: var(--accent-softer); color: var(--ink); }
 body:not(.sidebar-open) .side-today span { display: none; }
 
+/* calendar gets the full page width; title/crumbs/content keep the reading column */
+.page.cal-page { max-width: none; }
+.page.cal-page .crumbs,
+.page.cal-page .zoom-head,
+.page.cal-page .tree,
+.page.cal-page .empty-hint,
+.page.cal-page .search-banner { max-width: 720px; }
+
 /* calendar navigation strip */
-.cal-strip { margin: 2px 0 18px; }
-.cal-strip .cs-nav { display: inline-flex; align-items: center; gap: 2px; vertical-align: bottom; }
+.cal-strip { display: flex; align-items: center; gap: 10px; margin: 2px 0 18px; }
+.cal-strip .cs-nav { display: flex; align-items: center; gap: 2px; flex: none; }
 .cal-strip .cs-nav button {
   border: 0; background: none; color: var(--ink-faint);
   cursor: pointer; width: 26px; height: 26px; border-radius: 7px; font-size: 15px;
 }
 .cal-strip .cs-nav button:hover { background: var(--accent-softer); color: var(--ink); }
 .cal-strip .cs-days {
-  display: inline-flex; gap: 5px;
-  overflow-x: auto; max-width: calc(100% - 96px);
-  padding: 16px 4px 6px; margin-left: 6px;
-  vertical-align: bottom;
+  display: flex; gap: 6px;
+  flex: 1 1 auto; min-width: 0;
+  overflow-x: auto;
+  padding: 16px 2px 8px;
   scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
 }
-.cal-strip .cs-days::-webkit-scrollbar { height: 6px; }
+.cal-strip .cs-days::-webkit-scrollbar { height: 7px; }
+.cal-strip .cs-days::-webkit-scrollbar-thumb { background: var(--line); border-radius: 6px; }
+.cal-strip .cs-days::-webkit-scrollbar-track { background: transparent; }
 .cs-day {
-  position: relative; flex: 0 0 auto; min-width: 40px;
+  position: relative; flex: 1 0 46px; max-width: 84px;
   border: 1px solid var(--line-soft); background: var(--bg-raised);
-  border-radius: 9px; padding: 4px 6px 5px; cursor: pointer;
+  border-radius: 9px; padding: 5px 6px 6px; cursor: pointer;
   display: flex; flex-direction: column; align-items: center; gap: 1px;
   transition: border-color 0.12s, background 0.12s;
 }
@@ -1029,9 +1040,11 @@ body:not(.sidebar-open) .side-today span { display: none; }
   position: absolute; top: -15px; left: 1px;
   font-size: 9.5px; letter-spacing: 0.07em; color: var(--ink-faint); white-space: nowrap;
 }
-.cal-strip .cs-months { display: inline-flex; flex-wrap: wrap; gap: 5px; margin-left: 6px; }
-.cs-mon-tab { border: 1px solid var(--line-soft); background: var(--bg-raised); color: var(--ink-soft); border-radius: 9px; padding: 5px 13px; cursor: pointer; font-size: 13px; }
+.cal-strip .cs-months { display: flex; flex: 1; flex-wrap: wrap; gap: 6px; }
+.cs-mon-tab { flex: 1 0 auto; border: 1px solid var(--line-soft); background: var(--bg-raised); color: var(--ink-soft); border-radius: 9px; padding: 7px 13px; cursor: pointer; font-size: 13px; text-align: center; }
 .cs-mon-tab:hover { border-color: var(--accent); color: var(--ink); }
+.cs-mon-tab.current { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.cs-mon-tab.today { border-color: var(--accent); color: var(--accent); }
 
 .cal-dated { margin-top: 14px; }
 .cal-dated-h {

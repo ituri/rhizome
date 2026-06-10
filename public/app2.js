@@ -1323,9 +1323,10 @@ window.renderCalStrip = function renderCalStrip() {
   if (n.cal === 'year') {
     const row = document.createElement('div');
     row.className = 'cs-months';
+    const now = new Date();
     for (let m = 0; m < 12; m++) {
       const b = document.createElement('button');
-      b.className = 'cs-mon-tab';
+      b.className = 'cs-mon-tab' + (n.cy === now.getFullYear() && m === now.getMonth() ? ' today' : '');
       b.textContent = MONTHS_SHORT[m];
       b.addEventListener('click', () => { commitActiveText(); snapshot(); const id = ensureMonth(n.cy, m); markDirty(); zoomTo(id); });
       row.append(b);
@@ -1340,7 +1341,7 @@ window.renderCalStrip = function renderCalStrip() {
   const baseDate = new Date(by, bm - 1, bd);
   const days = document.createElement('div');
   days.className = 'cs-days';
-  const range = n.cal === 'day' ? [-12, 12] : [0, new Date(n.cy, n.cm + 1, 0).getDate() - 1];
+  const range = n.cal === 'day' ? [-18, 18] : [0, new Date(n.cy, n.cm + 1, 0).getDate() - 1];
   let prevMon = -1;
   for (let off = range[0]; off <= range[1]; off++) {
     const dt = new Date(baseDate); dt.setDate(dt.getDate() + off);

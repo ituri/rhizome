@@ -1412,6 +1412,7 @@ function renderPage() {
   treeEl.innerHTML = '';
   treeEl.classList.toggle('hide-done', !settings.showCompleted);
   pageEl.classList.toggle('board-page', N(state.zoom).format === 'board');
+  pageEl.classList.toggle('cal-page', !!N(state.zoom).cal && N(state.zoom).cal !== 'root');
   const roots = kidsOf(state.zoom).filter(c => shouldShow(c, false));
   const frag = document.createDocumentFragment();
   if (N(state.zoom).format === 'board') {
@@ -1931,7 +1932,10 @@ function applyHash() {
   // the explicit setting wins over the OS reduced-motion preference, since the
   // animation is opt-out here; turn it off in the menu to honor reduced motion.
   // automated browsers get instant navigation so e2e timing stays deterministic.
-  const animate = settings.animations !== false && (!navigator.webdriver || window.__tendrilForceAnim);
+  // calendar navigation is lateral page-flipping, not a zoom — render it instantly
+  // so the scrolling date strip doesn't slide sideways under the cross-fade.
+  const calNav = !!(N(target)?.cal || N(prevZoom)?.cal);
+  const animate = settings.animations !== false && (!navigator.webdriver || window.__tendrilForceAnim) && !calNav;
   const useVT = animate && typeof document.startViewTransition === 'function';
 
   if (!useVT) {
