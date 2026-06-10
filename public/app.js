@@ -2404,7 +2404,7 @@ treeEl.addEventListener('pointerdown', e => {
   if (isTouch && !state.readOnly) {
     drag.holdTimer = setTimeout(() => { if (drag) drag.allowed = true; }, 350);
   }
-  bullet.setPointerCapture(e.pointerId);
+  try { bullet.setPointerCapture(e.pointerId); } catch { /* synthetic events */ }
 });
 
 document.addEventListener('pointermove', e => {
@@ -2472,8 +2472,58 @@ function contentLeftOf(id) {
   return el ? el.getBoundingClientRect().left : treeEl.getBoundingClientRect().left;
 }
 
+// board columns flow horizontally, so the generic top-to-bottom row scan
+// picks the wrong column — resolve board drops against the hovered column.
+function boardDropTarget(x, y) {
+  const colEl = document.elementsFromPoint(x, y).find(el => el.classList?.contains('board-col'));
+  if (!colEl) return null;
+  const colItem = colEl.querySelector(':scope > .item');
+  const colId = colItem?.dataset.id;
+  if (!colId || colId === drag.id || isAncestor(drag.id, colId)) return null;
+  const boardId = parentOf(colId);
+  const colRect = colEl.getBoundingClientRect();
+
+  // dragging a column itself → reorder columns within the board
+  if (parentOf(drag.id) === boardId) {
+    const sibs = kidsOf(boardId);
+    let index = sibs.indexOf(colId);
+    if (x > colRect.left + colRect.width / 2) index++;
+    return { parent: boardId, index, top: colRect.top - 4, left: colRect.left, width: colRect.width };
+  }
+
+  const dragged = elById.get(drag.id);
+  const cardRows = [...colEl.querySelectorAll(':scope > .item > .children-anim > .children > .item > .row')]
+    .filter(r => !dragged || !dragged.contains(r));
+  let index = kidsOf(colId).length;
+  let top = null;
+  for (const r of cardRows) {
+    const rc = r.getBoundingClientRect();
+    if (y < rc.top + rc.height / 2) {
+      index = kidsOf(colId).indexOf(r.closest('.item').dataset.id);
+      top = rc.top - 4;
+      break;
+    }
+  }
+  if (top === null) {
+    top = cardRows.length
+      ? cardRows[cardRows.length - 1].getBoundingClientRect().bottom + 4
+      : colItem.querySelector(':scope > .row').getBoundingClientRect().bottom + 4;
+  }
+  return { parent: colId, index, top, left: colRect.left + 8, width: colRect.width - 16 };
+}
+
 function updateDropTarget(x, y) {
-  const rows = rowsForDrop();
+  const boardTarget = boardDropTarget(x, y);
+  if (boardTarget) {
+    drag.target = boardTarget;
+    dropIndicatorEl.hidden = false;
+    dropIndicatorEl.style.top = (boardTarget.top - 1) + 'px';
+    dropIndicatorEl.style.left = boardTarget.left + 'px';
+    dropIndicatorEl.style.width = boardTarget.width + 'px';
+    return;
+  }
+  // outside a board, ignore rows that live inside one
+  const rows = rowsForDrop().filter(r => !r.closest('.board'));
   const treeRect = treeEl.getBoundingClientRect();
   let target = null;
 
