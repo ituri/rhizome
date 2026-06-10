@@ -73,6 +73,7 @@ button { font-family: inherit; }
   position: sticky;
   top: 0;
   z-index: 40;
+  view-transition-name: tendril-topbar;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -862,6 +863,27 @@ kbd {
 }
 .page.anim-fwd .zoom-head, .page.anim-fwd .tree { animation: zoom-fwd 0.26s var(--ease-out); }
 .page.anim-back .zoom-head, .page.anim-back .tree { animation: zoom-back 0.26s var(--ease-out); }
+
+/* ---- smooth zoom via the View Transitions API ---- */
+/* the morphing item (row text ⇄ title) glides between its two positions */
+::view-transition-group(zoom-morph) {
+  animation-duration: 0.36s;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+::view-transition-image-pair(zoom-morph) { isolation: auto; }
+::view-transition-old(zoom-morph),
+::view-transition-new(zoom-morph) { mix-blend-mode: normal; height: 100%; }
+
+/* everything else cross-fades with a gentle directional drift */
+::view-transition-group(root) {
+  animation-duration: 0.3s;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+html.vt-fwd::view-transition-new(root) { animation-name: vt-fade, vt-drift-up; }
+html.vt-back::view-transition-new(root) { animation-name: vt-fade, vt-drift-down; }
+@keyframes vt-fade { from { opacity: 0; } }
+@keyframes vt-drift-up { from { transform: translateY(12px); } }
+@keyframes vt-drift-down { from { transform: translateY(-9px); } }
 
 /* ---------------- misc ---------------- */
 

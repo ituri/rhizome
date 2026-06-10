@@ -19,6 +19,7 @@ const caretOffset = () => `(() => {
   const browser = await puppeteer.launch({ executablePath: CHROME, headless: true });
   const page = await browser.newPage();
   await page.setViewport({ width: 1380, height: 940 });
+  await page.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'no-preference' }]);
   page.on('pageerror', e => { console.log('PAGEERROR:', e.message); failures++; });
   await page.goto('http://localhost:3211/', { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('.tree .item .content');
@@ -124,6 +125,47 @@ const caretOffset = () => `(() => {
   await sleep(150);
   ok = await page.evaluate(() => document.activeElement === document.querySelector('#zoom-title'));
   assert(ok, 'ArrowUp from the first child returns to the title');
+
+  /* ---- 7. smooth zoom: View Transitions used, then cleaned up ---- */
+  const vtSupported = await page.evaluate(() => typeof document.startViewTransition === 'function');
+  if (vtSupported) {
+    await page.evaluate(() => {
+      window.__vtCalls = 0;
+      const orig = document.startViewTransition.bind(document);
+      document.startViewTransition = cb => { window.__vtCalls++; return orig(cb); };
+      location.hash = '#/';
+    });
+    await sleep(400);
+    await page.evaluate(id => { location.hash = '#/n/' + id; }, ids.a);
+    await sleep(600);
+    const vt = await page.evaluate(() => ({
+      calls: window.__vtCalls,
+      leftover: document.querySelectorAll('[style*="view-transition-name"]').length,
+      title: document.querySelector('#zoom-title').textContent,
+    }));
+    assert(vt.calls >= 1, `zoom uses the View Transitions API (${vt.calls} call)`);
+    assert(vt.leftover === 0, `no leftover view-transition-name after the morph (${vt.leftover})`);
+    assert(vt.title === 'alphabet soup', 'morph still lands on the right view');
+  } else {
+    console.log('  --  View Transitions API not available in this Chrome; skipped morph checks');
+  }
+
+  /* ---- 8. animations toggle off → no view transition, instant + caret memory ---- */
+  await page.evaluate(() => { location.hash = '#/'; });
+  await sleep(400);
+  await page.evaluate(() => { settings.animations = false; });
+  // clean state: focus `a` at HOME, zoom in, confirm no VT, zoom out, confirm caret back on a
+  await page.evaluate(id => { focusItem(id, 'text', 4); }, ids.a);
+  await page.evaluate(() => { window.__vtCalls = 0; });
+  await page.evaluate(id => { location.hash = '#/n/' + id; }, ids.a);
+  await sleep(300);
+  ok = await page.evaluate(() => (window.__vtCalls || 0) === 0 &&
+    document.querySelector('#zoom-title').textContent === 'alphabet soup');
+  assert(ok, 'animations toggle off skips the transition (instant zoom)');
+  await page.keyboard.down('Alt'); await page.keyboard.press('ArrowLeft'); await page.keyboard.up('Alt');
+  await sleep(250);
+  const off8 = await page.evaluate(() => ({ id: editableCtx(document.activeElement)?.id, zoom: state.zoom }));
+  assert(off8.id === ids.a, `caret memory still works with animations off (zoom=${off8.zoom})`);
 
   await browser.close();
   console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL NAV TESTS PASSED');

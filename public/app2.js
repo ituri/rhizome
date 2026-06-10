@@ -1533,6 +1533,8 @@ $('#btn-menu').addEventListener('click', e => {
         () => { settings.richTags = !settings.richTags; renderPage(); }),
       toggle(settings.markdownPaste !== false, 'Paste markdown as plain text', 'Convert markdown on paste', '↧',
         () => { settings.markdownPaste = settings.markdownPaste === false; }),
+      toggle(settings.animations !== false, 'Turn off smooth animations', 'Turn on smooth animations', '✨',
+        () => { settings.animations = settings.animations === false; }),
     );
 
     if (!SHARE_TOKEN) {

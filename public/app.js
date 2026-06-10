@@ -37,7 +37,7 @@ const settings = Object.assign(
     theme: 'auto', accent: 'terracotta', font: 'default', density: 'cozy',
     showCompleted: true, embeds: true, copyTag: true, sidebar: false,
     width: 'reading', arrows: 'hover', capitalize: false, richTags: false,
-    dateFormat: 'medium', weekStart: 'mon', markdownPaste: true,
+    dateFormat: 'medium', weekStart: 'mon', markdownPaste: true, animations: true,
   },
   JSON.parse(localStorage.getItem('tendril-settings') || '{}')
 );
@@ -1793,6 +1793,28 @@ function zoomTo(id) {
 // returning to it (zoom out, breadcrumb, back) lands exactly there again
 const viewFocus = new Map();
 
+// rebuild the page for a new zoom target and place the caret intelligently
+function renderZoomView(target, leaving) {
+  state.zoom = target;
+  if (searchActive()) setSearch('');
+  renderPage();
+  if (state.readOnly) { window.scrollTo(0, 0); return; }
+  const saved = viewFocus.get(target);
+  if (saved && doc.nodes[saved.id] && (saved.id === target || elById.has(saved.id))) {
+    restoreFocus(saved);
+    if (saved.id !== target) elById.get(saved.id)?.scrollIntoView({ block: 'center' });
+    else window.scrollTo(0, 0);
+  } else if (target !== HOME) {
+    const off = (leaving && leaving.id === target && leaving.field === 'text') ? leaving.offset : 'end';
+    setCaretOffset(zoomTitleEl, off);
+    window.scrollTo(0, 0);
+  } else {
+    window.scrollTo(0, 0);
+  }
+}
+
+const rowContentOf = id => elById.get(id)?.querySelector(':scope > .row > .content') || null;
+
 function applyHash() {
   const m = location.hash.match(/^#\/n\/([A-Za-z0-9]+)/);
   let target = m && doc.nodes[m[1]] ? m[1] : HOME;
@@ -1804,30 +1826,40 @@ function applyHash() {
   commitActiveText();
   if (leaving) viewFocus.set(state.zoom, leaving);
 
-  const dirFwd = isAncestor(state.zoom, target) || state.zoom === HOME;
-  state.zoom = target;
-  if (searchActive()) setSearch('');
-  pageEl.classList.remove('anim-fwd', 'anim-back');
-  void pageEl.offsetWidth;
-  pageEl.classList.add(dirFwd ? 'anim-fwd' : 'anim-back');
-  renderPage();
+  const prevZoom = state.zoom;
+  const dirFwd = isAncestor(prevZoom, target) || prevZoom === HOME;
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const animate = settings.animations !== false && !reduced;
+  const useVT = animate && typeof document.startViewTransition === 'function';
 
-  if (state.readOnly) { window.scrollTo(0, 0); return; }
-  const saved = viewFocus.get(target);
-  if (saved && doc.nodes[saved.id] && (saved.id === target || elById.has(saved.id))) {
-    // returning to a known view — restore the exact caret and bring it into view
-    restoreFocus(saved);
-    if (saved.id !== target) elById.get(saved.id)?.scrollIntoView({ block: 'center' });
-    else window.scrollTo(0, 0);
-  } else if (target !== HOME) {
-    // first visit: if we zoomed straight into the item we were editing,
-    // carry its caret offset into the new title; otherwise sit at the end
-    const off = (leaving && leaving.id === target && leaving.field === 'text') ? leaving.offset : 'end';
-    setCaretOffset(zoomTitleEl, off);
-    window.scrollTo(0, 0);
-  } else {
-    window.scrollTo(0, 0);
+  if (!useVT) {
+    pageEl.classList.remove('anim-fwd', 'anim-back');
+    if (animate) { void pageEl.offsetWidth; pageEl.classList.add(dirFwd ? 'anim-fwd' : 'anim-back'); }
+    renderZoomView(target, leaving);
+    return;
   }
+
+  // Smooth morph: the item that swaps between a row and the title glides into
+  // place, while the rest of the page cross-fades. The morphing item is the
+  // zoom target (when zooming in) or the item we were zoomed into (zooming out).
+  const morphId = dirFwd ? target : prevZoom;
+  const oldEl = dirFwd ? rowContentOf(target) : (prevZoom !== HOME ? zoomTitleEl : null);
+  if (oldEl) oldEl.style.viewTransitionName = 'zoom-morph';
+  document.documentElement.classList.add(dirFwd ? 'vt-fwd' : 'vt-back');
+
+  let newEl = null;
+  const vt = document.startViewTransition(() => {
+    if (oldEl) oldEl.style.viewTransitionName = '';   // clear before the new snapshot
+    renderZoomView(target, leaving);
+    newEl = dirFwd ? (target !== HOME ? zoomTitleEl : null) : rowContentOf(morphId);
+    if (newEl) newEl.style.viewTransitionName = 'zoom-morph';
+  });
+  const cleanup = () => {
+    if (newEl) newEl.style.viewTransitionName = '';
+    zoomTitleEl.style.viewTransitionName = '';
+    document.documentElement.classList.remove('vt-fwd', 'vt-back');
+  };
+  vt.finished.then(cleanup, cleanup);
 }
 
 window.addEventListener('hashchange', () => { if (doc) applyHash(); });
