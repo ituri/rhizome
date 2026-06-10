@@ -36,6 +36,8 @@ const settings = Object.assign(
   {
     theme: 'auto', accent: 'terracotta', font: 'default', density: 'cozy',
     showCompleted: true, embeds: true, copyTag: true, sidebar: false,
+    width: 'reading', arrows: 'hover', capitalize: false, richTags: false,
+    dateFormat: 'medium', weekStart: 'mon', markdownPaste: true,
   },
   JSON.parse(localStorage.getItem('tendril-settings') || '{}')
 );
@@ -102,6 +104,25 @@ const todayStr = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
+const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const MONTHS_LONG = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const DOW_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+// derives a date pill's label from its ISO value, honoring the format setting,
+// so changing the setting reformats every existing date live
+function formatDate(iso) {
+  const [y, mo, d] = iso.slice(0, 10).split('-').map(Number);
+  if (!y || !mo || !d) return iso;
+  const date = new Date(y, mo - 1, d);
+  switch (settings.dateFormat) {
+    case 'short': return `${mo}/${d}/${y}`;
+    case 'iso': return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    case 'dow': return `${DOW_SHORT[date.getDay()]}, ${MONTHS_SHORT[mo - 1]} ${d}`;
+    case 'long': return `${MONTHS_LONG[mo - 1]} ${d}, ${y}`;
+    default: return `${MONTHS_SHORT[mo - 1]} ${d}, ${y}`;
+  }
+}
+
 /* ---------------- 4. html hygiene ---------------- */
 
 const INLINE = { B: 'b', STRONG: 'b', I: 'i', EM: 'i', U: 'u', S: 's', STRIKE: 's', DEL: 's', CODE: 'code' };
@@ -151,7 +172,42 @@ const sanitizeHtml = (() => {
   return html => { tpl.innerHTML = html || ''; return serializeChildren(tpl.content); };
 })();
 
+// uppercase the first letter of the bullet (settings.capitalize)
+function applyCapitalize(html) {
+  const tpl = document.createElement('template');
+  tpl.innerHTML = html;
+  const walker = document.createTreeWalker(tpl.content, NodeFilter.SHOW_TEXT);
+  let node;
+  while ((node = walker.nextNode())) {
+    const m = node.nodeValue.match(/\S/);
+    if (m) {
+      const ch = node.nodeValue[m.index];
+      if (ch.toLowerCase() !== ch.toUpperCase() && ch === ch.toLowerCase()) {
+        node.nodeValue = node.nodeValue.slice(0, m.index) + ch.toUpperCase() + node.nodeValue.slice(m.index + 1);
+        return tpl.innerHTML;
+      }
+      return html;
+    }
+  }
+  return html;
+}
+
+// converts pasted markdown-ish text to Tendril inline html (settings.markdownPaste)
+function mdInline(plain) {
+  let s = escHtml(plain);
+  s = s.replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>');
+  s = s.replace(/__([^_\n]+)__/g, '<b>$1</b>');
+  s = s.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<i>$2</i>');
+  s = s.replace(/~~([^~\n]+)~~/g, '<s>$1</s>');
+  s = s.replace(/`([^`\n]+)`/g, '<code>$1</code>');
+  s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, (m, t, h) => `<a href="${escAttr(h)}" rel="noopener">${t}</a>`);
+  return s;
+}
+
+// rich tags (settings.richTags) additionally allow emoji inside tags
 const TAG_RE = /(^|[\s(])([#@][\p{L}\p{N}_][\p{L}\p{N}_\-\/]*)/gu;
+const TAG_RE_RICH = /(^|[\s(])([#@][\p{L}\p{N}_\p{Extended_Pictographic}][\p{L}\p{N}_\-\/\p{Extended_Pictographic}‍️]*)/gu;
+const tagRe = () => settings.richTags ? TAG_RE_RICH : TAG_RE;
 const URL_RE = /https?:\/\/[^\s<>"')]+[^\s<>"').,;:!?]/g;
 
 function highlightTermsOf() {
@@ -177,6 +233,7 @@ function decorate(html, opts = {}) {
         if (child.tagName === 'TIME' && child.getAttribute('datetime')) {
           const d = child.getAttribute('datetime').slice(0, 10);
           const t = todayStr();
+          child.textContent = formatDate(d);
           child.classList.toggle('today', d === t);
           child.classList.toggle('past', d < t);
           continue;
@@ -189,7 +246,7 @@ function decorate(html, opts = {}) {
       if (!inLink && !opts.plain) {
         html2 = html2.replace(URL_RE, m =>
           `<a href="${escAttr(m)}" rel="noopener">${m}</a>`);
-        html2 = html2.replace(TAG_RE, (m, pre, tag) =>
+        html2 = html2.replace(tagRe(), (m, pre, tag) =>
           `${pre}<span class="tag${tag[0] === '@' ? ' mention' : ''}" data-tag="${escAttr(tag)}">${tag}</span>`);
       }
       if (terms) {
@@ -243,7 +300,8 @@ const isAncestor = (a, b) => {
 
 function makeNode(text = '', extra = {}) {
   const id = uid();
-  doc.nodes[id] = { id, text, note: null, done: false, collapsed: false, children: [], m: Date.now(), ...extra };
+  const now = Date.now();
+  doc.nodes[id] = { id, text, note: null, done: false, collapsed: false, children: [], c: now, m: now, ...extra };
   return id;
 }
 
@@ -307,6 +365,13 @@ function countDescendants(id) {
   return n;
 }
 
+function subtreeOf(id) {
+  const out = [id];
+  const stack = [id];
+  while (stack.length) { const c = stack.pop(); for (const k of kidsOf(c)) { out.push(k); stack.push(k); } }
+  return out;
+}
+
 function meta() {
   if (!doc.meta) doc.meta = {};
   if (!doc.meta.stars) doc.meta.stars = [];
@@ -319,6 +384,16 @@ function trashList() {
 }
 
 const fmtOf = id => N(id).format || 'bullet';
+function numberFor(id) {
+  const p = parentOf(id);
+  if (!p) return 1;
+  const sibs = kidsOf(p);
+  let i = sibs.indexOf(id), n = 1;
+  for (let j = i - 1; j >= 0; j--) {
+    if (fmtOf(sibs[j]) === 'number') n++; else break;
+  }
+  return n;
+}
 const isMirror = id => !!N(id).mirror;
 const mirrorTarget = id => {
   const t = N(id).mirror;
@@ -716,7 +791,8 @@ function commitPending(redecorateOk = false) {
     const v = (el.innerText || '').replace(/ /g, ' ').replace(/\n$/, '');
     if (node.note !== v) { node.note = v; touch(ctx.id); markDirty(); }
   } else {
-    const html = serializeEl(el);
+    let html = serializeEl(el);
+    if (settings.capitalize && (ctx.field === 'text' || ctx.field === 'title')) html = applyCapitalize(html);
     if (node.text !== html) {
       node.text = html;
       touch(ctx.id);
@@ -1046,12 +1122,29 @@ function removeAttachment(id, url) {
 
 function buildEmbed(n) {
   if (!settings.embeds) return null;
-  const m = (n.text || '').match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]{11})/);
-  if (!m) return null;
+  const text = n.text || '';
   const div = document.createElement('div');
   div.className = 'embed';
-  div.innerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/${m[1]}" loading="lazy" allowfullscreen title="YouTube embed"></iframe>`;
-  return div;
+  let yt = text.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/shorts\/)([\w-]{11})/);
+  if (yt) {
+    div.classList.toggle('embed-short', text.includes('/shorts/'));
+    div.innerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/${yt[1]}" loading="lazy" allowfullscreen title="YouTube embed"></iframe>`;
+    return div;
+  }
+  let loom = text.match(/loom\.com\/share\/([\w-]+)/);
+  if (loom) {
+    div.innerHTML = `<iframe src="https://www.loom.com/embed/${loom[1]}" loading="lazy" allowfullscreen title="Loom embed"></iframe>`;
+    return div;
+  }
+  // tweets/X: a privacy-respecting link card (no Twitter tracking script)
+  let tw = text.match(/(?:twitter\.com|x\.com)\/(\w+)\/status\/(\d+)/);
+  if (tw) {
+    div.classList.add('embed-tweet');
+    div.innerHTML = `<a href="https://x.com/${tw[1]}/status/${tw[2]}" target="_blank" rel="noopener">
+      <span class="tw-bird">𝕏</span><span class="tw-meta"><b>@${escHtml(tw[1])}</b><span>View post on X →</span></span></a>`;
+    return div;
+  }
+  return null;
 }
 
 function mountItem(id, underMatch = false) {
@@ -1101,6 +1194,12 @@ function mountItem(id, underMatch = false) {
     box.tabIndex = -1;
     box.innerHTML = CHECK;
     row.append(box);
+  } else if (fmt === 'number') {
+    const bullet = document.createElement('a');
+    bullet.className = 'bullet num-bullet';
+    bullet.title = 'Zoom in';
+    bullet.innerHTML = `<span class="num">${numberFor(id)}.</span><span class="dot"></span>`;
+    row.append(bullet);
   } else {
     const bullet = document.createElement('a');
     bullet.className = 'bullet';
@@ -1143,16 +1242,8 @@ function mountItem(id, underMatch = false) {
 
   const um = underMatch || (searchActive() && state.matchSet.has(id));
 
-  if (fmt === 'board' && hasKids(id)) {
-    const board = document.createElement('div');
-    board.className = 'board';
-    for (const col of kidsOf(id).filter(c => shouldShow(c, true))) {
-      const colEl = document.createElement('div');
-      colEl.className = 'board-col';
-      colEl.append(mountItem(col, true));
-      board.append(colEl);
-    }
-    item.append(board);
+  if (fmt === 'board') {
+    item.append(buildBoardEl(id, false));
   } else if (expanded && hasKids(id)) {
     const wrap = buildChildrenWrap(id, um);
     if (wrap) item.append(wrap);
@@ -1168,6 +1259,33 @@ function buildNoteEl(noteText) {
   note.dataset.ph = 'Add a note…';
   note.textContent = noteText;
   return note;
+}
+
+function buildBoardEl(boardId, zoomed) {
+  const board = document.createElement('div');
+  board.className = 'board' + (zoomed ? ' board-zoomed' : '');
+  for (const col of kidsOf(boardId).filter(c => shouldShow(c, true))) {
+    const colEl = document.createElement('div');
+    colEl.className = 'board-col';
+    colEl.append(mountItem(col, true));
+    if (!state.readOnly && !searchActive()) {
+      const add = document.createElement('button');
+      add.className = 'board-add';
+      add.dataset.addCard = col;
+      add.textContent = '+ New card';
+      colEl.append(add);
+    }
+    board.append(colEl);
+  }
+  if (!state.readOnly && !searchActive()) {
+    const addCol = document.createElement('button');
+    addCol.className = 'board-add-col';
+    addCol.dataset.addCol = boardId;
+    addCol.title = 'Add column';
+    addCol.textContent = '+';
+    board.append(addCol);
+  }
+  return board;
 }
 
 function buildChildrenWrap(id, underMatch) {
@@ -1197,17 +1315,9 @@ function renderPage() {
   pageEl.classList.toggle('board-page', N(state.zoom).format === 'board');
   const roots = kidsOf(state.zoom).filter(c => shouldShow(c, false));
   const frag = document.createDocumentFragment();
-  if (N(state.zoom).format === 'board' && kidsOf(state.zoom).length) {
+  if (N(state.zoom).format === 'board') {
     // a zoomed board stays a board: children render as full-page columns
-    const board = document.createElement('div');
-    board.className = 'board board-zoomed';
-    for (const c of kidsOf(state.zoom)) {
-      const colEl = document.createElement('div');
-      colEl.className = 'board-col';
-      colEl.append(mountItem(c, false));
-      board.append(colEl);
-    }
-    frag.append(board);
+    frag.append(buildBoardEl(state.zoom, true));
   } else {
     for (const c of roots) frag.append(mountItem(c, false));
   }
@@ -1222,7 +1332,9 @@ function renderPage() {
   }
 
   const visibleRoots = roots.filter(id => settings.showCompleted || !N(id).done);
-  if (!visibleRoots.length && !searchActive()) {
+  if (N(state.zoom).format === 'board') {
+    emptyHintEl.hidden = true;
+  } else if (!visibleRoots.length && !searchActive()) {
     emptyHintEl.hidden = false;
     emptyHintEl.textContent = kidsOf(state.zoom).length
       ? 'Everything here is complete.'
@@ -1307,8 +1419,8 @@ function opSplit(ctx) {
   snapshot();
   n.text = beforeHtml;
   touch(id);
-  // a split item inherits the to-do format so lists stay homogeneous
-  const inherit = n.format === 'todo' ? { format: 'todo' } : {};
+  // a split item inherits to-do / numbered format so lists stay homogeneous
+  const inherit = (n.format === 'todo' || n.format === 'number') ? { format: n.format } : {};
   const nid = makeNode(afterHtml, inherit);
   if (ctx.field === 'title') {
     insertAt(id, 0, nid);
@@ -1643,6 +1755,18 @@ function opMirror(id) {
   showToast('Mirror created — it stays in sync with the original');
 }
 
+function opSort(id, dir) {
+  if (state.readOnly || !hasKids(id)) return;
+  commitActiveText();
+  snapshot();
+  const key = c => plainOf(N(c).text).trim().toLowerCase();
+  kidsOf(id).sort((a, b) => dir * key(a).localeCompare(key(b), undefined, { numeric: true }));
+  touch(id);
+  renderPage();
+  markDirty();
+  showToast(`Sorted ${dir > 0 ? 'A → Z' : 'Z → A'}`, { label: 'Undo', fn: undo });
+}
+
 function setCollapseAll(collapsed) {
   commitActiveText();
   snapshot();
@@ -1956,10 +2080,12 @@ function onKeydown(e) {
       const off = caretOffsetIn(el);
       const before = (el.textContent || '').slice(0, off);
       const map = { '#': 'h1', '##': 'h2', '###': 'h3', '>': 'quote', '[]': 'todo' };
-      if (map[before] && off === before.length) {
+      let fmt = map[before];
+      if (!fmt && /^\d+[.)]$/.test(before)) fmt = 'number';
+      if (fmt && off === before.length) {
         e.preventDefault();
         N(id).text = '';
-        opSetFormat(id, map[before]);
+        opSetFormat(id, fmt);
         return;
       }
     }
@@ -2102,12 +2228,12 @@ function onKeydown(e) {
   }
 
   /* ----- zoom ----- */
-  if ((e.altKey && e.key === 'ArrowRight') || (mod && e.key === ']') || (e.altKey && e.key === '.')) {
+  if ((e.altKey && (e.key === 'ArrowRight' || e.key === 'ArrowDown')) || (mod && e.key === ']') || (e.altKey && e.key === '.')) {
     e.preventDefault();
     if (!isTitle) zoomTo(isMirror(id) ? (mirrorTarget(id) || id) : id);
     return;
   }
-  if ((e.altKey && e.key === 'ArrowLeft') || (mod && e.key === '[') || (e.altKey && e.key === ',')) {
+  if ((e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowUp')) || (mod && e.key === '[') || (e.altKey && e.key === ',')) {
     e.preventDefault();
     if (state.zoom !== HOME) zoomTo(parentOf(state.zoom) || HOME);
     return;
@@ -2257,6 +2383,19 @@ treeEl.addEventListener('click', e => {
     else window.open(href, '_blank', 'noopener');
     return;
   }
+  const addCard = e.target.closest('.board-add');
+  if (addCard) {
+    const col = addCard.dataset.addCard;
+    N(col).collapsed = false;
+    opNewAt(col, kidsOf(col).length);
+    return;
+  }
+  const addCol = e.target.closest('.board-add-col');
+  if (addCol) {
+    const boardId = addCol.dataset.addCol;
+    opNewAt(boardId, kidsOf(boardId).length);
+    return;
+  }
   const todoBox = e.target.closest('.todo-box');
   if (todoBox) {
     const id = todoBox.closest('.item').dataset.id;
@@ -2353,11 +2492,25 @@ pageEl.addEventListener('paste', e => {
 function parseIndentedText(text) {
   const lines = text.split('\n').filter(l => l.trim().length);
   if (!lines.length) return [];
+  const md = settings.markdownPaste !== false;
   const items = lines.map(line => {
     const m = line.match(/^[\t ]*/)[0];
     const depth = [...m].reduce((d, ch) => d + (ch === '\t' ? 2 : 1), 0);
-    let body = line.trim().replace(/^([-*•]|\d+[.)])\s+/, '');
-    return { depth, text: escHtml(body), children: [] };
+    let body = line.trim();
+    const spec = { depth, children: [] };
+    if (md) {
+      // detect markdown block markers
+      let mm;
+      if ((mm = body.match(/^(#{1,3})\s+(.*)$/))) { spec.format = 'h' + mm[1].length; body = mm[2]; }
+      else if ((mm = body.match(/^([-*])\s+\[([ xX])\]\s+(.*)$/))) { spec.format = 'todo'; spec.done = mm[2].toLowerCase() === 'x'; body = mm[3]; }
+      else if ((mm = body.match(/^>\s+(.*)$/))) { spec.format = 'quote'; body = mm[1]; }
+      else if (/^([-*_]){3,}$/.test(body)) { spec.format = 'divider'; body = ''; }
+      else body = body.replace(/^([-*•]|\d+[.)])\s+/, '');
+    } else {
+      body = body.replace(/^([-*•]|\d+[.)])\s+/, '');
+    }
+    spec.text = md ? mdInline(body) : escHtml(body);
+    return spec;
   });
   const levels = [...new Set(items.map(i => i.depth))].sort((a, b) => a - b);
   for (const it of items) it.depth = levels.indexOf(it.depth);
@@ -2372,9 +2525,16 @@ function parseIndentedText(text) {
   return rootList;
 }
 
+function specOpts(spec) {
+  const o = {};
+  if (spec.format) o.format = spec.format;
+  if (spec.done) o.done = true;
+  return o;
+}
+
 function insertForest(ctx, forest) {
   const materialize = (spec, parent, index) => {
-    const id = makeNode(spec.text);
+    const id = makeNode(spec.text, specOpts(spec));
     insertAt(parent, index, id);
     spec.children.forEach((c, i) => materialize(c, id, i));
     return id;
@@ -2800,6 +2960,7 @@ const HELP = [
     ['Inline code', 'Ctrl+E'],
     ['Link selected text', 'Ctrl+K'],
     ['Heading / quote / to-do', '# ## ### > [] + space'],
+    ['Numbered list', '1. + space'],
     ['Divider', '--- + Enter'],
     ['All block types & more', '/ slash menu'],
     ['Insert a date', '!! or /date'],
@@ -2981,6 +3142,8 @@ function applyTheme() {
   else delete html.dataset.font;
   if (settings.density && settings.density !== 'cozy') html.dataset.density = settings.density;
   else delete html.dataset.density;
+  if (settings.width === 'full') html.dataset.width = 'full'; else delete html.dataset.width;
+  if (settings.arrows === 'always') html.dataset.arrows = 'always'; else delete html.dataset.arrows;
   document.body.classList.toggle('sidebar-open', !!settings.sidebar && !SHARE_TOKEN);
 }
 darkMQ.addEventListener('change', () => { if (settings.theme === 'auto') applyTheme(); });
@@ -3047,7 +3210,7 @@ function welcomeDoc() {
   const power = add(w, 'Power moves', { collapsed: true });
   add(power, 'Tag things with #tags and @people, then click a tag to filter');
   add(power, '<b>Ctrl+K</b> jumps to any item by name');
-  add(power, 'Type <b>/</b> for block types: headings, to-dos, boards, code, dividers…');
+  add(power, 'Type <b>/</b> for block types: headings, to-dos, numbered lists, boards, code, dividers…');
   add(power, 'Type <b>!!</b> to insert a date, then find it in the Calendar');
   add(power, '<b>Ctrl+A</b> twice selects whole items — then Tab, move, complete or delete in bulk');
   add(power, 'Select text to format it — colors and highlights included');

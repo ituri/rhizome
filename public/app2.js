@@ -233,6 +233,7 @@ function slashCommands(ctx) {
       fmtCmd('Heading 2', 'H₂', 'h2', '## '),
       fmtCmd('Heading 3', 'H₃', 'h3', '### '),
       fmtCmd('To-do', '☑', 'todo', '[] '),
+      fmtCmd('Numbered list', '1.', 'number', '1. '),
       fmtCmd('Quote', '❝', 'quote', '> '),
       fmtCmd('Code block', '{ }', 'codeblock', '```'),
       fmtCmd('Divider', '—', 'divider', '---'),
@@ -479,6 +480,103 @@ function insertDate(ctx, iso) {
   sel.removeAllRanges();
   sel.addRange(after);
   scheduleCommit(ctx.el);
+}
+
+/* ---------------- D2. node picker (Move To… / Mirror To…) ---------------- */
+
+function openNodePicker(title, onPick, exclude) {
+  commitActiveText();
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay';
+  overlay.innerHTML = `<div class="jump" role="dialog" aria-label="${escAttr(title)}">
+    <input class="np-input" placeholder="${escAttr(title)}" autocomplete="off" spellcheck="false">
+    <div class="jump-results np-results"></div>
+    <div class="jump-foot">↑↓ navigate · Enter to choose · Esc to cancel</div></div>`;
+  document.body.append(overlay);
+  const input = $('.np-input', overlay);
+  const results = $('.np-results', overlay);
+  let items = [], active = 0;
+  const excluded = new Set(exclude || []);
+  const render = q => {
+    const home = { id: HOME, plain: SHARE_TOKEN ? crumbLabel(HOME) : 'Home', path: '', score: 0 };
+    const found = searchNodes(q, 40).filter(it => !excluded.has(it.id));
+    items = (q.trim() ? found : [home, ...found]).slice(0, 18);
+    active = 0;
+    results.innerHTML = '';
+    items.forEach((it, i) => {
+      const b = document.createElement('button');
+      b.className = 'jump-row' + (i === 0 ? ' active' : '');
+      b.innerHTML = `<div class="jr-text">${escHtml(it.plain.slice(0, 80))}</div>` +
+        (it.path ? `<div class="jr-path">${escHtml(it.path)}</div>` : '');
+      b.addEventListener('click', () => { close(); onPick(it.id); });
+      results.append(b);
+    });
+  };
+  const close = () => overlay.remove();
+  input.addEventListener('input', () => render(input.value));
+  input.addEventListener('keydown', e => {
+    e.stopPropagation();
+    if (e.key === 'Escape') { e.preventDefault(); close(); }
+    else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      active = clamp(active + (e.key === 'ArrowDown' ? 1 : -1), 0, items.length - 1);
+      $$('.jump-row', results).forEach((el, i) => el.classList.toggle('active', i === active));
+      $$('.jump-row', results)[active]?.scrollIntoView({ block: 'nearest' });
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (items[active]) { close(); onPick(items[active].id); }
+    }
+  });
+  overlay.addEventListener('mousedown', e => { if (e.target === overlay) close(); });
+  render('');
+  input.focus();
+}
+
+function moveItemTo(id, targetParent) {
+  if (targetParent === id || isAncestor(id, targetParent)) { showToast("Can't move an item into itself"); return; }
+  snapshot();
+  N(targetParent).collapsed = false;
+  moveNode(id, targetParent, kidsOf(targetParent).length);
+  renderPage();
+  focusItem(id, 'text', 'end');
+  markDirty();
+  showToast('Moved');
+}
+
+function mirrorItemTo(id, targetParent) {
+  if (targetParent === id || isAncestor(id, targetParent)) { showToast("Can't mirror into itself"); return; }
+  snapshot();
+  const target = isMirror(id) ? (mirrorTarget(id) || id) : id;
+  const mid = makeNode('', { mirror: target });
+  N(targetParent).collapsed = false;
+  insertAt(targetParent, kidsOf(targetParent).length, mid);
+  renderPage();
+  markDirty();
+  showToast('Mirror created');
+}
+
+// sets/replaces a date pill on an item (Move to Today / Tomorrow / Next Week)
+function setItemDate(id, iso) {
+  commitActiveText();
+  snapshot();
+  const n = N(id);
+  // strip any existing date, then append the new one
+  const tpl = document.createElement('template');
+  tpl.innerHTML = n.text || '';
+  tpl.content.querySelectorAll('time[datetime]').forEach(t => t.remove());
+  let html = tpl.innerHTML.replace(/\s+$/, '');
+  html += ` <time datetime="${iso}">${escHtml(formatDate(iso))}</time>`;
+  n.text = sanitizeHtml(html);
+  touch(id);
+  renderPage();
+  markDirty();
+  showToast('Dated ' + formatDate(iso));
+}
+
+function dateOffset(days) {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return isoFromDate(d);
 }
 
 /* ---------------- E. inline formatting (fmtbar, colors, links) ---------------- */
@@ -936,7 +1034,9 @@ function renderCalendar() {
   const y = calMonth.getFullYear(), mo = calMonth.getMonth();
   $('#cal-title').textContent = calMonth.toLocaleString(undefined, { month: 'long', year: 'numeric' });
   grid.innerHTML = '';
-  for (const dow of ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']) {
+  const sunStart = settings.weekStart === 'sun';
+  const dows = sunStart ? ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  for (const dow of dows) {
     const d = document.createElement('div');
     d.className = 'cal-dow';
     d.textContent = dow;
@@ -944,7 +1044,7 @@ function renderCalendar() {
   }
   const idx = datesIndex();
   const first = new Date(y, mo, 1);
-  let startOffset = (first.getDay() + 6) % 7;
+  let startOffset = sunStart ? first.getDay() : (first.getDay() + 6) % 7;
   const today = todayStr();
   for (let i = 0; i < 42; i++) {
     const d = new Date(y, mo, 1 - startOffset + i);
@@ -1294,8 +1394,8 @@ window.showItemMenu = function showItemMenu(anchor, id) {
       title.textContent = 'Turn into';
       pop.append(title);
       const seg = document.createElement('div');
-      seg.className = 'seg';
-      const types = [['•', 'bullet'], ['☑', 'todo'], ['H₁', 'h1'], ['H₂', 'h2'], ['❝', 'quote'], ['{}', 'codeblock'], ['▦', 'board']];
+      seg.className = 'seg seg-wrap';
+      const types = [['•', 'bullet'], ['☑', 'todo'], ['1.', 'number'], ['H₁', 'h1'], ['H₂', 'h2'], ['❝', 'quote'], ['{}', 'codeblock'], ['▦', 'board']];
       for (const [label, fmt] of types) {
         const b = document.createElement('button');
         b.textContent = label;
@@ -1307,14 +1407,26 @@ window.showItemMenu = function showItemMenu(anchor, id) {
       pop.append(seg);
       pop.append(document.createElement('hr'));
       pop.append(
+        menuItem('Add date', '📅', () => openDatePop({ id, field: 'text', el: elById.get(id)?.querySelector('.content') }), { hint: '!!' }),
+        menuItem('Move to Today', '▦', () => setItemDate(id, dateOffset(0))),
+        menuItem('Move to Tomorrow', '▦', () => setItemDate(id, dateOffset(1))),
+        menuItem('Move to Next Week', '▦', () => setItemDate(id, dateOffset(7))),
+        document.createElement('hr'),
+        menuItem('Move to…', '→', () => openNodePicker('Move to…', t => moveItemTo(id, t), subtreeOf(id)), { hint: 'Alt+Ctrl+M' }),
+        menuItem('Mirror to…', '◇', () => openNodePicker('Mirror to…', t => mirrorItemTo(id, t), subtreeOf(id))),
+        menuItem('Mirror here', '◈', () => opMirror(id), { hint: 'Alt+Shift+M' }),
         menuItem('Duplicate', '⧉', () => opDuplicate(id), { hint: 'Ctrl+D' }),
-        menuItem('Mirror', '◇', () => opMirror(id), { hint: 'Alt+Shift+M' }),
+        document.createElement('hr'),
         menuItem('Comments', '💬', () => {
           const it = elById.get(id);
           window.showComments(it?.querySelector(':scope > .row') || anchor, id);
         }),
         menuItem('Attach file', '📎', () => attachTo(id)),
         menuItem('Save as template', '🧩', () => saveAsTemplate(id)),
+      );
+      if (hasKids(id)) pop.append(
+        menuItem('Sort A → Z', '↓', () => opSort(id, 1)),
+        menuItem('Sort Z → A', '↑', () => opSort(id, -1)),
       );
       if (state.aiEnabled) pop.append(menuItem('Ask AI', '✨', () => askAI(id)));
     }
@@ -1341,6 +1453,12 @@ window.showItemMenu = function showItemMenu(anchor, id) {
         menuItem('Delete', '✕', () => opDelete(id), { hint: 'Ctrl+Shift+⌫', danger: true }),
       );
     }
+    const tnode = N(id);
+    const ts = v => v ? new Date(v).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—';
+    const foot = document.createElement('div');
+    foot.className = 'pop-title pop-foot';
+    foot.innerHTML = `<span><b>Changed</b> ${ts(tnode.m)}</span><span><b>Created</b> ${ts(tnode.c)}</span>`;
+    pop.append(foot);
   });
 };
 
@@ -1383,6 +1501,12 @@ $('#btn-menu').addEventListener('click', e => {
     addTitle('Density');
     pop.append(segRow([['Cozy', 'cozy'], ['Compact', 'compact']],
       () => settings.density, v => { settings.density = v; saveSettings(); applyTheme(); }));
+    addTitle('Page width');
+    pop.append(segRow([['Reading', 'reading'], ['Full', 'full']],
+      () => settings.width, v => { settings.width = v; saveSettings(); applyTheme(); }));
+    addTitle('Date format');
+    pop.append(segRow([['Jun 12', 'medium'], ['Fri, Jun 12', 'dow'], ['6/12', 'short'], ['ISO', 'iso']],
+      () => settings.dateFormat, v => { settings.dateFormat = v; saveSettings(); renderPage(); }));
 
     pop.append(document.createElement('hr'));
     pop.append(menuItem(settings.showCompleted ? 'Hide completed' : 'Show completed', '☑', () => {
@@ -1399,6 +1523,17 @@ $('#btn-menu').addEventListener('click', e => {
       settings.copyTag = !settings.copyTag;
       saveSettings();
     }));
+    const toggle = (cond, on, off, icon, after) => menuItem(cond ? on : off, icon, () => { after(); saveSettings(); }, { keepOpen: false });
+    pop.append(
+      toggle(settings.arrows === 'always', 'Show arrows on hover only', 'Always show expand arrows', '▸',
+        () => { settings.arrows = settings.arrows === 'always' ? 'hover' : 'always'; applyTheme(); }),
+      toggle(settings.capitalize, 'Stop auto-capitalizing', 'Capitalize first word', 'A',
+        () => { settings.capitalize = !settings.capitalize; }),
+      toggle(settings.richTags, 'Plain tags only', 'Rich tags (emoji in tags)', '#',
+        () => { settings.richTags = !settings.richTags; renderPage(); }),
+      toggle(settings.markdownPaste !== false, 'Paste markdown as plain text', 'Convert markdown on paste', '↧',
+        () => { settings.markdownPaste = settings.markdownPaste === false; }),
+    );
 
     if (!SHARE_TOKEN) {
       pop.append(document.createElement('hr'));
@@ -1408,6 +1543,9 @@ $('#btn-menu').addEventListener('click', e => {
         menuItem('Trash', '🗑', () => showTrash()),
         menuItem('Present', '▶', () => startPresent()),
       );
+      addTitle('Week starts');
+      pop.append(segRow([['Monday', 'mon'], ['Sunday', 'sun']],
+        () => settings.weekStart, v => { settings.weekStart = v; saveSettings(); }));
     }
     pop.append(document.createElement('hr'));
     pop.append(
@@ -1418,6 +1556,7 @@ $('#btn-menu').addEventListener('click', e => {
       menuItem('Export as Markdown', '↧', () => exportDoc('md')),
       menuItem('Export as OPML', '↧', () => exportDoc('opml')),
       menuItem('Export as JSON', '↧', () => exportDoc('json')),
+      menuItem('Print', '🖨', () => { commitActiveText(); window.print(); }, { hint: 'Ctrl+P' }),
     );
     if (!SHARE_TOKEN && !state.readOnly) {
       pop.append(menuItem('Import…', '↥', () => $('#import-file').click()));

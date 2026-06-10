@@ -38,15 +38,15 @@ behind HTTPS — any reverse proxy (Caddy, nginx, Traefik) works; it's plain HTT
 
 **Outlining** — infinite nesting; zoom into any bullet (click it or `Alt+→`/`Alt+.`) with breadcrumbs, editable page titles, and working browser back/forward; expand/collapse (`Ctrl+↑↓`, expand/collapse-all); notes on any item (`Shift+Enter`); complete & hide completed (`Ctrl+Enter`, `Ctrl+O`); drag & drop with depth control and touch support; multi-item selection (`Ctrl+A` twice) with bulk indent/move/complete/delete; full split/merge editing at the caret; smart multi-line paste; trash with 30-day retention and restore; undo/redo for everything.
 
-**Blocks & formatting** — headings (H1–H3), quotes, code blocks, dividers, paragraphs, **to-do checkboxes**, and **kanban boards**; markdown shortcuts (`# `, `## `, `> `, `[] `, `---`, ```` ``` ````); a **slash command menu** (`/`); a floating selection toolbar with bold/italic/underline/strikethrough/inline code/links and **8 text colors + 8 highlights**; `Ctrl+K` links selected text to a URL or to another item.
+**Blocks & formatting** — headings (H1–H3), quotes, code blocks, dividers, paragraphs, **to-do checkboxes**, **numbered lists** (auto-renumber), and **kanban boards** (full-page when zoomed, with +add-card / +add-column); markdown shortcuts (`# `, `## `, `> `, `[] `, `1. `, `---`, ```` ``` ````); a **slash command menu** (`/`); a floating selection toolbar with bold/italic/underline/strikethrough/inline code/links and **8 text colors + 8 highlights**; `Ctrl+K` links selected text to a URL or to another item; **markdown-aware paste**; **Sort A–Z / Z–A**.
 
 **Tags, dates & search** — `#tags`/`@mentions` with **autocomplete**, click to filter (Shift+click adds to the filter); **dates** via `!!` or `/date` with natural-language quick picks, overdue/today styling, and a **calendar view**; search with `"exact phrases"`, `-exclusion`, `OR`, `is:complete|todo|mirror|shared`, `has:note|date|file|comment|link`, `text:bold|code|color`, `highlight:yellow`, `changed:today|7d`, `on:<date>`, and nested `ancestor > term` queries.
 
 **Navigation** — collapsible **sidebar** with the outline tree and **starred pages/searches** (`Ctrl+Shift+8`); `Ctrl+K` jump-anywhere; `Ctrl+'` home; **backlinks** ("Linked from") on every page; deep links to any item.
 
-**Reuse & review** — **mirrors** (`Alt+Shift+M`) that stay in sync with their original; **templates** (save any subtree, insert via `/`); **comments** on any item; **instant presentations** (any node becomes slides); duplicate with optional `#copy` tag.
+**Reuse & review** — **mirrors** (`Alt+Shift+M` or *Mirror to…* a chosen node) that stay in sync with their original; **Move to…** any node via a picker; **Move to Today / Tomorrow / Next Week** date stamps; **templates** (save any subtree, insert via `/`); **comments** on any item; **instant presentations** (any node becomes slides); duplicate with optional `#copy` tag; per-item Created/Changed timestamps.
 
-**Files & media** — attach files or **paste images** straight onto items (stored in your data dir); YouTube embeds (toggleable).
+**Files & media** — attach files or **paste images** straight onto items (stored in your data dir); embeds for YouTube, **YouTube Shorts**, **Loom**, and **X/Twitter** link-cards (toggleable, no third-party tracking scripts).
 
 **Capture** — quick capture overlay (`Ctrl+Shift+Space`) into an Inbox node, plus a token-protected **capture API** for email-to-outline style automations:
 ```sh
@@ -57,7 +57,7 @@ curl -X POST "https://your-host/api/capture?token=…" -d "call mom tomorrow"
 
 **Sync & data** — instant cross-tab sync, **live cross-device sync (SSE)**, offline changes kept and retried (localStorage + service worker shell cache); hourly rotating backups (last 40); export to plain text, **Markdown**, OPML, JSON; import OPML/text/JSON.
 
-**Polish** — light/dark/auto themes, 4 accent colors, 4 font choices, cozy/compact density; optional ✨ AI assistant (your own Anthropic key); password login with optional **TOTP MFA**; mobile toolbar; print styles.
+**Polish** — light/dark/auto themes, 4 accent colors, 4 font choices, cozy/compact density, reading/full-width pages, configurable date format & week-start, always-show-arrows, capitalize-first-word, rich (emoji) tags; **Print** (`Ctrl+P`); optional ✨ AI assistant (your own Anthropic key); password login with optional **TOTP MFA**; mobile toolbar.
 
 Press `Ctrl+/` in the app for the full keyboard reference.
 
