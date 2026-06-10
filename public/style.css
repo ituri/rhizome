@@ -974,6 +974,74 @@ body.sidebar-open .sidebar {
 body.sidebar-open .sidebar { padding: 6px 10px 30px 14px; }
 .shell .page { flex: 1 1 auto; min-width: 0; }
 
+.side-today {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  border: 0;
+  background: none;
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 13.5px;
+  padding: 7px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  margin-bottom: 2px;
+}
+.side-today svg { width: 17px; height: 17px; flex: none; }
+.side-today:hover { background: var(--accent-softer); color: var(--ink); }
+body:not(.sidebar-open) .side-today span { display: none; }
+
+/* calendar navigation strip */
+.cal-strip { margin: 2px 0 18px; }
+.cal-strip .cs-nav { display: inline-flex; align-items: center; gap: 2px; vertical-align: bottom; }
+.cal-strip .cs-nav button {
+  border: 0; background: none; color: var(--ink-faint);
+  cursor: pointer; width: 26px; height: 26px; border-radius: 7px; font-size: 15px;
+}
+.cal-strip .cs-nav button:hover { background: var(--accent-softer); color: var(--ink); }
+.cal-strip .cs-days {
+  display: inline-flex; gap: 5px;
+  overflow-x: auto; max-width: calc(100% - 96px);
+  padding: 16px 4px 6px; margin-left: 6px;
+  vertical-align: bottom;
+  scrollbar-width: thin;
+}
+.cal-strip .cs-days::-webkit-scrollbar { height: 6px; }
+.cs-day {
+  position: relative; flex: 0 0 auto; min-width: 40px;
+  border: 1px solid var(--line-soft); background: var(--bg-raised);
+  border-radius: 9px; padding: 4px 6px 5px; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+  transition: border-color 0.12s, background 0.12s;
+}
+.cs-day:hover { border-color: var(--accent); }
+.cs-day .cs-dow { font-size: 10px; color: var(--ink-faint); letter-spacing: 0.03em; }
+.cs-day .cs-num { font-size: 14px; font-weight: 500; }
+.cs-day.today { border-color: var(--accent); }
+.cs-day.today .cs-num { color: var(--accent); }
+.cs-day.current { background: var(--ink); border-color: var(--ink); }
+.cs-day.current .cs-num { color: var(--bg); }
+.cs-day.current .cs-dow { color: var(--bg); opacity: 0.75; }
+.cs-day[data-mon]::before {
+  content: attr(data-mon);
+  position: absolute; top: -15px; left: 1px;
+  font-size: 9.5px; letter-spacing: 0.07em; color: var(--ink-faint); white-space: nowrap;
+}
+.cal-strip .cs-months { display: inline-flex; flex-wrap: wrap; gap: 5px; margin-left: 6px; }
+.cs-mon-tab { border: 1px solid var(--line-soft); background: var(--bg-raised); color: var(--ink-soft); border-radius: 9px; padding: 5px 13px; cursor: pointer; font-size: 13px; }
+.cs-mon-tab:hover { border-color: var(--accent); color: var(--ink); }
+
+.cal-dated { margin-top: 14px; }
+.cal-dated-h {
+  font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--ink-faint); font-weight: 600; margin-bottom: 5px;
+}
+.cal-dated-item { display: block; color: var(--ink-soft); text-decoration: none; font-size: 13.5px; padding: 2px 0; }
+.cal-dated-item:hover { color: var(--accent); }
+.cal-dated-item.done { color: var(--done); text-decoration: line-through; }
+
 .side-title {
   font-size: 10.5px;
   letter-spacing: 0.09em;

@@ -26,7 +26,7 @@
       <input id="search" type="search" placeholder="Search" autocomplete="off" spellcheck="false" aria-label="Search outline" title="Operators: &quot;phrase&quot; -not OR is:complete has:note link:github changed:7d a > b">
       <button id="search-clear" class="search-clear" title="Clear search (Esc)" aria-label="Clear search">×</button>
     </div>
-    <button class="iconbtn" id="btn-calendar" title="Calendar" aria-label="Calendar">
+    <button class="iconbtn" id="btn-calendar" title="Go to today's calendar page" aria-label="Calendar">
       <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="4.5" width="14" height="12.5" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="3" y1="8" x2="17" y2="8" stroke="currentColor" stroke-width="1.5"/><line x1="6.5" y1="2.8" x2="6.5" y2="5.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="13.5" y1="2.8" x2="13.5" y2="5.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
     </button>
     <button class="iconbtn" id="btn-star" title="Star this page (Ctrl+Shift+8)" aria-label="Star this page">
@@ -46,6 +46,10 @@
 
 <div class="shell">
   <nav class="sidebar" id="sidebar" aria-label="Navigation">
+    <button class="side-today" id="side-today" title="Jump to today's calendar page">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="4.5" width="14" height="12.5" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="3" y1="8" x2="17" y2="8" stroke="currentColor" stroke-width="1.5"/><line x1="6.5" y1="2.8" x2="6.5" y2="5.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="13.5" y1="2.8" x2="13.5" y2="5.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      <span>Today</span>
+    </button>
     <div class="side-section" id="side-stars-section" hidden>
       <div class="side-title">Starred</div>
       <div id="side-stars"></div>
@@ -63,6 +67,7 @@
       <h1 class="zoom-title" id="zoom-title" spellcheck="false"></h1>
       <div class="zoom-note" id="zoom-note" hidden></div>
     </div>
+    <div class="cal-strip" id="cal-strip" hidden></div>
     <div class="search-banner" id="search-banner" hidden></div>
     <div class="tree" id="tree"></div>
     <div class="empty-hint" id="empty-hint" hidden></div>

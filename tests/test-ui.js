@@ -106,12 +106,11 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   ok = await page.evaluate(() => !!document.querySelector('#btn-calendar'));
   assert(ok, 'calendar button exists in the header');
   await page.click('#btn-calendar');
-  await sleep(250);
-  ok = await page.evaluate(() => !document.querySelector('#calendar-overlay').hidden &&
-    !!document.querySelector('#cal-grid .cal-day.today'));
-  assert(ok, 'header calendar button opens the calendar (today highlighted)');
-  await page.keyboard.press('Escape');
-  await sleep(150);
+  await sleep(450);
+  ok = await page.evaluate(() => doc.nodes[state.zoom]?.cal === 'day' && !document.querySelector('#cal-strip').hidden);
+  assert(ok, 'header calendar button jumps to today\'s calendar page (with the day strip)');
+  await page.evaluate(() => { location.hash = '#/'; });
+  await sleep(300);
 
   /* ---- 7. date hint is explicit and clickable ---- */
   await page.evaluate(() => { const id = opNewAt('root', 0); document.querySelector(`.item[data-id="${id}"] .content`).focus(); });

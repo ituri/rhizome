@@ -1446,6 +1446,7 @@ function renderPage() {
   }
 
   window.scrollTo(0, scrollY);
+  window.renderCalStrip?.();
   window.renderSidebar?.();
   window.renderBacklinks?.();
   window.updateStarBtn?.();

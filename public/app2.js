@@ -1241,7 +1241,161 @@ function showCalendar() {
   renderCalendar();
 }
 
-$('#btn-calendar').addEventListener('click', () => showCalendar());
+/* ---------------- J2. calendar hierarchy (Calendar › Year › Month › Day) ---------------- */
+
+const inCalendar = id => { let p = id; while (p) { if (N(p)?.cal) return true; p = parentOf(p); } return false; };
+
+function calRoot(create) {
+  let id = meta().calendar;
+  if (id && doc.nodes[id] && N(id).cal === 'root') return id;
+  id = Object.keys(doc.nodes).find(k => N(k).cal === 'root');
+  if (id) { meta().calendar = id; return id; }
+  if (!create) return null;
+  const cid = makeNode('📅 Calendar', { cal: 'root' });
+  insertAt(ROOT, kidsOf(ROOT).length, cid);
+  meta().calendar = cid;
+  return cid;
+}
+
+function calSortKey(id) {
+  const n = N(id);
+  return n.cal === 'year' ? n.cy : n.cal === 'month' ? n.cm : n.cal === 'day' ? n.cd : 0;
+}
+function sortCalChildren(parent) {
+  kidsOf(parent).sort((a, b) => { const ka = calSortKey(a), kb = calSortKey(b); return ka < kb ? -1 : ka > kb ? 1 : 0; });
+}
+function ensureCalChild(parent, pred, make) {
+  let id = kidsOf(parent).find(pred);
+  if (id) return id;
+  id = make();
+  insertAt(parent, kidsOf(parent).length, id);
+  sortCalChildren(parent);
+  return id;
+}
+function calDayLabel(iso) {
+  const [y, m, d] = iso.split('-').map(Number);
+  return `${DOW_SHORT[new Date(y, m - 1, d).getDay()]}, ${MONTHS_SHORT[m - 1]} ${d}`;
+}
+function ensureYear(y) {
+  return ensureCalChild(calRoot(true), id => N(id).cal === 'year' && N(id).cy === y,
+    () => makeNode(String(y), { cal: 'year', cy: y }));
+}
+function ensureMonth(y, m) {
+  return ensureCalChild(ensureYear(y), id => N(id).cal === 'month' && N(id).cm === m,
+    () => makeNode(MONTHS_LONG[m], { cal: 'month', cy: y, cm: m }));
+}
+function ensureDay(iso) {
+  const [y, m] = iso.split('-').map(Number);
+  return ensureCalChild(ensureMonth(y, m - 1), id => N(id).cal === 'day' && N(id).cd === iso,
+    () => makeNode(calDayLabel(iso), { cal: 'day', cd: iso }));
+}
+function findDay(iso) {
+  const root = calRoot(false); if (!root) return null;
+  const [y, m] = iso.split('-').map(Number);
+  const yr = kidsOf(root).find(id => N(id).cal === 'year' && N(id).cy === y); if (!yr) return null;
+  const mo = kidsOf(yr).find(id => N(id).cal === 'month' && N(id).cm === m - 1); if (!mo) return null;
+  return kidsOf(mo).find(id => N(id).cal === 'day' && N(id).cd === iso) || null;
+}
+
+function gotoDate(iso) {
+  if (state.readOnly) return;
+  const existing = findDay(iso);
+  if (existing) { zoomTo(existing); return; }
+  commitActiveText();
+  snapshot();
+  const day = ensureDay(iso);
+  markDirty();
+  zoomTo(day);
+}
+const gotoToday = () => gotoDate(todayStr());
+
+window.gotoDate = gotoDate;
+
+const calStripEl = $('#cal-strip');
+
+window.renderCalStrip = function renderCalStrip() {
+  const el = calStripEl;
+  const n = doc.nodes[state.zoom];
+  if (!n || !n.cal || n.cal === 'root') { el.hidden = true; el.innerHTML = ''; return; }
+  el.hidden = false;
+  el.innerHTML = '';
+
+  if (n.cal === 'year') {
+    const row = document.createElement('div');
+    row.className = 'cs-months';
+    for (let m = 0; m < 12; m++) {
+      const b = document.createElement('button');
+      b.className = 'cs-mon-tab';
+      b.textContent = MONTHS_SHORT[m];
+      b.addEventListener('click', () => { commitActiveText(); snapshot(); const id = ensureMonth(n.cy, m); markDirty(); zoomTo(id); });
+      row.append(b);
+    }
+    el.append(navArrows(n), row);
+    return;
+  }
+
+  // day & month → a horizontal day strip; center on the current/this-month day
+  const base = n.cal === 'day' ? n.cd : `${n.cy}-${String(n.cm + 1).padStart(2, '0')}-01`;
+  const [by, bm, bd] = base.split('-').map(Number);
+  const baseDate = new Date(by, bm - 1, bd);
+  const days = document.createElement('div');
+  days.className = 'cs-days';
+  const range = n.cal === 'day' ? [-12, 12] : [0, new Date(n.cy, n.cm + 1, 0).getDate() - 1];
+  let prevMon = -1;
+  for (let off = range[0]; off <= range[1]; off++) {
+    const dt = new Date(baseDate); dt.setDate(dt.getDate() + off);
+    const iso = isoOf(dt);
+    const b = document.createElement('button');
+    b.className = 'cs-day' + (n.cal === 'day' && iso === n.cd ? ' current' : '') + (iso === todayStr() ? ' today' : '');
+    b.innerHTML = `<span class="cs-dow">${DOW_SHORT[dt.getDay()]}</span><span class="cs-num">${dt.getDate()}</span>`;
+    if (dt.getMonth() !== prevMon) { b.dataset.mon = MONTHS_SHORT[dt.getMonth()].toUpperCase(); prevMon = dt.getMonth(); }
+    b.addEventListener('click', () => gotoDate(iso));
+    days.append(b);
+  }
+  el.append(navArrows(n), days);
+  requestAnimationFrame(() => {
+    const cur = days.querySelector('.cs-day.current') || days.querySelector('.cs-day.today');
+    if (cur) cur.scrollIntoView({ inline: 'center', block: 'nearest' });
+  });
+
+  // items dated to this day from elsewhere in the outline
+  if (n.cal === 'day') {
+    const dated = (datesIndex().get(n.cd) || []).filter(it => !inCalendar(it.id));
+    if (dated.length) {
+      const sec = document.createElement('div');
+      sec.className = 'cal-dated';
+      sec.innerHTML = '<div class="cal-dated-h">Items dated to this day</div>';
+      for (const it of dated) {
+        const a = document.createElement('a');
+        a.className = 'cal-dated-item' + (it.done ? ' done' : '');
+        a.href = '#/n/' + it.id;
+        a.textContent = (it.done ? '✓ ' : '') + it.text;
+        sec.append(a);
+      }
+      el.append(sec);
+    }
+  }
+};
+
+function navArrows(n) {
+  const wrap = document.createElement('div');
+  wrap.className = 'cs-nav';
+  const mk = (label, fn, title) => { const b = document.createElement('button'); b.textContent = label; b.title = title; b.addEventListener('click', fn); return b; };
+  const step = dir => {
+    if (n.cal === 'day') { const d = new Date(n.cd + 'T00:00:00'); d.setDate(d.getDate() + dir); gotoDate(isoOf(d)); }
+    else if (n.cal === 'month') { commitActiveText(); snapshot(); const id = ensureMonth(n.cy, n.cm + dir < 0 ? 11 : n.cm + dir > 11 ? 0 : n.cm + dir); markDirty(); zoomTo(id); }
+    else { commitActiveText(); snapshot(); const id = ensureYear(n.cy + dir); markDirty(); zoomTo(id); }
+  };
+  wrap.append(
+    mk('‹', () => step(-1), 'Previous'),
+    mk('▦', () => showCalendar(), 'Open the month picker'),
+    mk('›', () => step(1), 'Next'),
+  );
+  return wrap;
+}
+
+$('#side-today')?.addEventListener('click', () => gotoToday());
+$('#btn-calendar').addEventListener('click', () => gotoToday());  // header → today's calendar page
 $('#cal-prev').addEventListener('click', () => { calMonth.setMonth(calMonth.getMonth() - 1); renderCalendar(); });
 $('#cal-next').addEventListener('click', () => { calMonth.setMonth(calMonth.getMonth() + 1); renderCalendar(); });
 $('#cal-close').addEventListener('click', () => { $('#calendar-overlay').hidden = true; });
