@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tendril</title>
+<meta name="description" content="An infinite outliner you host yourself.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='7' fill='%23c2563a'/%3E%3Ccircle cx='16' cy='16' r='12.5' fill='none' stroke='%23c2563a' stroke-opacity='.35' stroke-width='3'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400;1,6..72,500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<header class="topbar" id="topbar">
+  <div class="topbar-left">
+    <button class="iconbtn" id="btn-sidebar" title="Sidebar" aria-label="Toggle sidebar">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="4" width="15" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="7.5" y1="4.5" x2="7.5" y2="15.5" stroke="currentColor" stroke-width="1.5"/></svg>
+    </button>
+    <a class="brand" href="#/" title="Home">tendril<span class="brand-dot">.</span></a>
+  </div>
+  <div class="topbar-right">
+    <div class="searchbox" id="searchbox">
+      <svg class="search-ic" viewBox="0 0 20 20" aria-hidden="true"><circle cx="9" cy="9" r="5.5" fill="none" stroke="currentColor" stroke-width="1.6"/><line x1="13.2" y1="13.2" x2="17" y2="17" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      <input id="search" type="search" placeholder="Search" autocomplete="off" spellcheck="false" aria-label="Search outline" title="Operators: &quot;phrase&quot; -not OR is:complete has:note changed:7d a > b">
+      <button id="search-clear" class="search-clear" title="Clear search (Esc)" aria-label="Clear search">×</button>
+    </div>
+    <button class="iconbtn" id="btn-star" title="Star this page (Ctrl+Shift+8)" aria-label="Star this page">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><path class="star-path" d="M10 2.8l2.2 4.5 5 .7-3.6 3.5.9 4.9L10 14.1l-4.5 2.3.9-4.9L2.8 8l5-.7z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+    </button>
+    <span class="save-state" id="save-state" title="All changes saved">
+      <span class="save-dot"></span><span class="save-label">saved</span>
+    </span>
+    <button class="iconbtn" id="btn-help" title="Keyboard shortcuts (Ctrl+/)" aria-label="Keyboard shortcuts">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7.2 7.4c.2-1.5 1.4-2.4 2.9-2.4 1.6 0 2.8 1 2.8 2.5 0 1.2-.7 1.8-1.5 2.4-.8.6-1.2 1-1.2 2v.3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="10.1" cy="15.2" r="1.1" fill="currentColor"/></svg>
+    </button>
+    <button class="iconbtn" id="btn-menu" title="Menu" aria-label="Menu" aria-haspopup="true">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="4.5" r="1.5" fill="currentColor"/><circle cx="10" cy="10" r="1.5" fill="currentColor"/><circle cx="10" cy="15.5" r="1.5" fill="currentColor"/></svg>
+    </button>
+  </div>
+</header>
+
+<div class="shell">
+  <nav class="sidebar" id="sidebar" aria-label="Navigation">
+    <div class="side-section" id="side-stars-section" hidden>
+      <div class="side-title">Starred</div>
+      <div id="side-stars"></div>
+    </div>
+    <div class="side-section">
+      <div class="side-title">Outline</div>
+      <div id="side-tree"></div>
+    </div>
+  </nav>
+
+  <main class="page" id="page">
+    <div class="share-banner" id="share-banner" hidden></div>
+    <nav class="crumbs" id="crumbs" aria-label="Breadcrumbs"></nav>
+    <div class="zoom-head" id="zoom-head">
+      <h1 class="zoom-title" id="zoom-title" spellcheck="false"></h1>
+      <div class="zoom-note" id="zoom-note" hidden></div>
+    </div>
+    <div class="search-banner" id="search-banner" hidden></div>
+    <div class="tree" id="tree"></div>
+    <div class="empty-hint" id="empty-hint" hidden></div>
+    <div class="backlinks" id="backlinks" hidden></div>
+  </main>
+</div>
+
+<div class="drop-indicator" id="drop-indicator" hidden><span class="drop-dot"></span></div>
+
+<!-- floating format toolbar -->
+<div class="fmtbar" id="fmtbar" hidden>
+  <button data-cmd="bold" title="Bold (Ctrl+B)"><b>B</b></button>
+  <button data-cmd="italic" title="Italic (Ctrl+I)"><i>I</i></button>
+  <button data-cmd="underline" title="Underline (Ctrl+U)"><u>U</u></button>
+  <button data-cmd="strike" title="Strikethrough (Ctrl+Shift+X)"><s>S</s></button>
+  <button data-cmd="code" title="Code (Ctrl+E)"><span class="mono">&lt;&gt;</span></button>
+  <button data-cmd="link" title="Link (Ctrl+K)">🔗</button>
+  <span class="fmt-sep"></span>
+  <button data-cmd="color" title="Text color"><span class="color-ic">A</span></button>
+  <button data-cmd="highlight" title="Highlight"><span class="hl-ic">A</span></button>
+</div>
+
+<!-- quick jump palette -->
+<div class="overlay" id="jump-overlay" hidden>
+  <div class="jump" role="dialog" aria-label="Jump to item">
+    <input id="jump-input" placeholder="Jump to…" autocomplete="off" spellcheck="false">
+    <div class="jump-results" id="jump-results"></div>
+    <div class="jump-foot">↑↓ navigate · Enter to zoom · Esc to close</div>
+  </div>
+</div>
+
+<!-- help overlay -->
+<div class="overlay" id="help-overlay" hidden>
+  <div class="help" role="dialog" aria-label="Keyboard shortcuts">
+    <div class="help-head">
+      <h2>Keyboard</h2>
+      <button class="iconbtn" id="help-close" aria-label="Close">×</button>
+    </div>
+    <div class="help-cols" id="help-cols"></div>
+  </div>
+</div>
+
+<!-- trash overlay -->
+<div class="overlay" id="trash-overlay" hidden>
+  <div class="help" role="dialog" aria-label="Trash">
+    <div class="help-head">
+      <h2>Trash</h2>
+      <div>
+        <button class="textbtn danger" id="trash-empty">Empty trash</button>
+        <button class="iconbtn" id="trash-close" aria-label="Close">×</button>
+      </div>
+    </div>
+    <div id="trash-list"></div>
+  </div>
+</div>
+
+<!-- calendar overlay -->
+<div class="overlay" id="calendar-overlay" hidden>
+  <div class="help calendar" role="dialog" aria-label="Calendar">
+    <div class="help-head">
+      <button class="iconbtn" id="cal-prev" aria-label="Previous month">‹</button>
+      <h2 id="cal-title">Calendar</h2>
+      <div>
+        <button class="iconbtn" id="cal-next" aria-label="Next month">›</button>
+        <button class="iconbtn" id="cal-close" aria-label="Close">×</button>
+      </div>
+    </div>
+    <div class="cal-grid" id="cal-grid"></div>
+  </div>
+</div>
+
+<!-- presentation -->
+<div class="present" id="present-overlay" hidden>
+  <div class="present-slide" id="present-slide"></div>
+  <div class="present-foot">
+    <span id="present-pos"></span>
+    <span class="present-hint">← → navigate · Esc to exit</span>
+  </div>
+</div>
+
+<!-- quick capture -->
+<div class="overlay" id="capture-overlay" hidden>
+  <div class="jump capture" role="dialog" aria-label="Quick capture">
+    <textarea id="capture-input" placeholder="Capture to Inbox… (multi-line and indentation welcome)" rows="4" spellcheck="false"></textarea>
+    <div class="jump-foot capture-foot">
+      <span>Ctrl+Enter to save · Esc to close</span>
+      <button class="textbtn" id="capture-save">Capture</button>
+    </div>
+  </div>
+</div>
+
+<!-- link dialog -->
+<div class="overlay" id="link-overlay" hidden>
+  <div class="jump" role="dialog" aria-label="Add link">
+    <input id="link-input" placeholder="Paste a URL, or type to search your outline…" autocomplete="off" spellcheck="false">
+    <div class="jump-results" id="link-results"></div>
+    <div class="jump-foot">Enter to link · Esc to cancel</div>
+  </div>
+</div>
+
+<!-- login -->
+<div class="login-screen" id="login-screen" hidden>
+  <form class="login-card" id="login-form">
+    <div class="login-brand">tendril<span class="brand-dot">.</span></div>
+    <p class="login-sub">This outline is password protected.</p>
+    <input type="password" id="login-password" placeholder="Password" autocomplete="current-password">
+    <input type="text" id="login-code" placeholder="6-digit code" autocomplete="one-time-code" inputmode="numeric" maxlength="6" hidden>
+    <button type="submit">Unlock</button>
+    <p class="login-error" id="login-error" hidden></p>
+  </form>
+</div>
+
+<div class="toasts" id="toasts"></div>
+
+<!-- mobile editing bar -->
+<div class="mobilebar" id="mobilebar" hidden>
+  <button data-act="outdent" title="Outdent">⇤</button>
+  <button data-act="indent" title="Indent">⇥</button>
+  <button data-act="move-up" title="Move up">↑</button>
+  <button data-act="move-down" title="Move down">↓</button>
+  <button data-act="note" title="Note">≡</button>
+  <button data-act="complete" title="Complete">✓</button>
+  <button data-act="zoom" title="Zoom in">◎</button>
+</div>
+
+<input type="file" id="import-file" accept=".json,.opml,.xml,.txt,.md" hidden>
+<input type="file" id="attach-file" hidden>
+
+<script src="/app.js"></script>
+<script src="/app2.js"></script>
+</body>
+</html>

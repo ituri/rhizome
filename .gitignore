@@ -1,0 +1,5 @@
+# user data: outline, attachments, backups, secrets, share tokens
+data/
+
+node_modules/
+*.log

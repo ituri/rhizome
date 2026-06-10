@@ -1,0 +1,16 @@
+services:
+  tendril:
+    build: .
+    container_name: tendril
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - tendril-data:/data
+    environment:
+      # Uncomment to require a password:
+      # TENDRIL_PASSWORD: change-me
+      DATA_DIR: /data
+
+volumes:
+  tendril-data:

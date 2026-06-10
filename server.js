@@ -1,0 +1,595 @@
+/*
+ * Tendril — self-hostable infinite outliner.
+ * Zero-dependency Node.js server: static files + JSON document API + live sync.
+ *
+ *   node server.js
+ *   node server.js --gen-totp     # generate a TOTP secret for MFA
+ *
+ * Environment:
+ *   PORT                  port to listen on            (default 3000)
+ *   HOST                  interface to bind            (default 0.0.0.0)
+ *   DATA_DIR              where the outline is stored  (default ./data)
+ *   TENDRIL_PASSWORD      if set, the app requires this password to log in
+ *   TENDRIL_TOTP_SECRET   if set (base32), login additionally requires a TOTP code
+ *   TENDRIL_CAPTURE_TOKEN if set, POST /api/capture with this token appends to the Inbox
+ *   ANTHROPIC_API_KEY     if set, enables the in-app "Ask AI" assistant
+ *   TENDRIL_AI_MODEL      Claude model for Ask AI      (default claude-opus-4-8)
+ */
+'use strict';
+
+const http = require('http');
+const https = require('https');
+const fs = require('fs');
+const fsp = fs.promises;
+const path = require('path');
+const crypto = require('crypto');
+
+const PORT = parseInt(process.env.PORT || '3000', 10);
+const HOST = process.env.HOST || '0.0.0.0';
+const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(__dirname, 'data'));
+const PUBLIC_DIR = path.join(__dirname, 'public');
+const DOC_FILE = path.join(DATA_DIR, 'outline.json');
+const SHARES_FILE = path.join(DATA_DIR, 'shares.json');
+const SECRET_FILE = path.join(DATA_DIR, '.secret');
+const BACKUP_DIR = path.join(DATA_DIR, 'backups');
+const FILES_DIR = path.join(DATA_DIR, 'files');
+const PASSWORD = process.env.TENDRIL_PASSWORD || '';
+const TOTP_SECRET = process.env.TENDRIL_TOTP_SECRET || '';
+const CAPTURE_TOKEN = process.env.TENDRIL_CAPTURE_TOKEN || '';
+const AI_KEY = process.env.ANTHROPIC_API_KEY || '';
+const AI_MODEL = process.env.TENDRIL_AI_MODEL || 'claude-opus-4-8';
+const MAX_BODY = 64 * 1024 * 1024;
+const MAX_UPLOAD = 32 * 1024 * 1024;
+const BACKUP_EVERY_MS = 60 * 60 * 1000;
+const BACKUP_KEEP = 40;
+
+const MIME = {
+  '.html': 'text/html; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.ico': 'image/x-icon',
+  '.pdf': 'application/pdf',
+  '.txt': 'text/plain; charset=utf-8',
+  '.md': 'text/plain; charset=utf-8',
+  '.woff2': 'font/woff2',
+  '.mp3': 'audio/mpeg',
+  '.mp4': 'video/mp4',
+  '.zip': 'application/zip',
+  '.webmanifest': 'application/manifest+json',
+};
+
+/* ---------- TOTP (RFC 6238, zero-dep) ---------- */
+
+const B32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+
+function base32Decode(s) {
+  s = s.toUpperCase().replace(/[^A-Z2-7]/g, '');
+  let bits = 0, value = 0;
+  const out = [];
+  for (const ch of s) {
+    value = (value << 5) | B32.indexOf(ch);
+    bits += 5;
+    if (bits >= 8) { out.push((value >>> (bits - 8)) & 0xff); bits -= 8; }
+  }
+  return Buffer.from(out);
+}
+
+function totpCode(secret, step) {
+  const key = base32Decode(secret);
+  const buf = Buffer.alloc(8);
+  buf.writeBigUInt64BE(BigInt(step));
+  const h = crypto.createHmac('sha1', key).update(buf).digest();
+  const off = h[h.length - 1] & 0x0f;
+  const code = ((h[off] & 0x7f) << 24 | h[off + 1] << 16 | h[off + 2] << 8 | h[off + 3]) % 1e6;
+  return String(code).padStart(6, '0');
+}
+
+function totpValid(secret, code) {
+  const now = Math.floor(Date.now() / 30000);
+  for (const step of [now, now - 1, now + 1]) {
+    if (timingSafeEq(totpCode(secret, step), String(code || '').trim())) return true;
+  }
+  return false;
+}
+
+if (process.argv.includes('--gen-totp')) {
+  const raw = crypto.randomBytes(20);
+  let secret = '';
+  let bits = 0, value = 0;
+  for (const byte of raw) {
+    value = (value << 8) | byte; bits += 8;
+    while (bits >= 5) { secret += B32[(value >>> (bits - 5)) & 31]; bits -= 5; }
+  }
+  console.log('TOTP secret (set as TENDRIL_TOTP_SECRET):\n  ' + secret);
+  console.log('\nAdd to your authenticator app with this URI:');
+  console.log(`  otpauth://totp/Tendril?secret=${secret}&issuer=Tendril`);
+  process.exit(0);
+}
+
+/* ---------- storage ---------- */
+
+fs.mkdirSync(DATA_DIR, { recursive: true });
+fs.mkdirSync(BACKUP_DIR, { recursive: true });
+fs.mkdirSync(FILES_DIR, { recursive: true });
+
+function loadSecret() {
+  try {
+    return fs.readFileSync(SECRET_FILE, 'utf8').trim();
+  } catch {
+    const s = crypto.randomBytes(32).toString('hex');
+    fs.writeFileSync(SECRET_FILE, s, { mode: 0o600 });
+    return s;
+  }
+}
+const SECRET = loadSecret();
+
+function authToken() {
+  return crypto.createHmac('sha256', SECRET).update('auth:' + PASSWORD + ':' + TOTP_SECRET).digest('hex');
+}
+
+let store = { version: 0, doc: null };
+try {
+  store = JSON.parse(fs.readFileSync(DOC_FILE, 'utf8'));
+  if (typeof store.version !== 'number') store.version = 0;
+} catch { /* fresh install */ }
+
+let shares = {};
+try { shares = JSON.parse(fs.readFileSync(SHARES_FILE, 'utf8')); } catch { /* none */ }
+
+function persistShares() {
+  fs.writeFileSync(SHARES_FILE, JSON.stringify(shares, null, 1));
+}
+
+let lastBackupAt = 0;
+try {
+  const entries = fs.readdirSync(BACKUP_DIR).filter(f => f.endsWith('.json')).sort();
+  if (entries.length) lastBackupAt = fs.statSync(path.join(BACKUP_DIR, entries[entries.length - 1])).mtimeMs;
+} catch { /* ignore */ }
+
+let writeChain = Promise.resolve();
+function persist() {
+  const snapshot = JSON.stringify(store);
+  writeChain = writeChain.then(async () => {
+    const tmp = DOC_FILE + '.tmp';
+    await fsp.writeFile(tmp, snapshot, 'utf8');
+    await fsp.rename(tmp, DOC_FILE);
+    const now = Date.now();
+    if (now - lastBackupAt > BACKUP_EVERY_MS) {
+      lastBackupAt = now;
+      const stamp = new Date(now).toISOString().replace(/[:.]/g, '-');
+      await fsp.writeFile(path.join(BACKUP_DIR, `outline-${stamp}.json`), snapshot, 'utf8');
+      const all = (await fsp.readdir(BACKUP_DIR)).filter(f => f.endsWith('.json')).sort();
+      for (const stale of all.slice(0, Math.max(0, all.length - BACKUP_KEEP))) {
+        await fsp.unlink(path.join(BACKUP_DIR, stale)).catch(() => {});
+      }
+    }
+  }).catch(err => console.error('persist failed:', err));
+  return writeChain;
+}
+
+/* ---------- live sync (SSE) ---------- */
+
+const sseClients = new Set();
+
+function broadcast(payload) {
+  const msg = `data: ${JSON.stringify(payload)}\n\n`;
+  for (const res of sseClients) {
+    try { res.write(msg); } catch { sseClients.delete(res); }
+  }
+}
+
+setInterval(() => {
+  for (const res of sseClients) {
+    try { res.write(':hb\n\n'); } catch { sseClients.delete(res); }
+  }
+}, 25000).unref();
+
+function commitDoc(doc) {
+  store = { version: store.version + 1, doc };
+  persist();
+  broadcast({ version: store.version });
+  return store.version;
+}
+
+/* ---------- doc helpers (server-side mutations: capture, share merge) ---------- */
+
+const uid = () => Date.now().toString(36).slice(-6) + crypto.randomBytes(4).toString('hex').slice(0, 6);
+
+function makeNode(text) {
+  return { id: uid(), text, note: null, done: false, collapsed: false, children: [], m: Date.now() };
+}
+
+function subtreeIds(doc, rootId) {
+  const out = [];
+  const stack = [rootId];
+  while (stack.length) {
+    const id = stack.pop();
+    const n = doc.nodes[id];
+    if (!n) continue;
+    out.push(id);
+    stack.push(...(n.children || []));
+  }
+  return out;
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function captureText(text) {
+  if (!store.doc || !store.doc.nodes || !store.doc.nodes.root) {
+    store.doc = { root: 'root', nodes: { root: { id: 'root', text: '', note: null, done: false, collapsed: false, children: [] } } };
+  }
+  const doc = store.doc;
+  let inboxId = doc.nodes.root.children.find(id => {
+    const t = (doc.nodes[id]?.text || '').replace(/<[^>]+>/g, '').trim().toLowerCase();
+    return t === 'inbox';
+  });
+  if (!inboxId) {
+    const inbox = makeNode('Inbox');
+    doc.nodes[inbox.id] = inbox;
+    doc.nodes.root.children.unshift(inbox.id);
+    inboxId = inbox.id;
+  }
+  const lines = String(text).replace(/\r/g, '').split('\n').filter(l => l.trim());
+  let count = 0;
+  // indentation-aware: tabs/2-spaces nest under the previous shallower line
+  const stack = []; // { depth, id }
+  for (const line of lines) {
+    const indent = line.match(/^[\t ]*/)[0];
+    const depth = [...indent].reduce((d, ch) => d + (ch === '\t' ? 2 : 1), 0);
+    const node = makeNode(escHtml(line.trim().replace(/^([-*•]|\d+[.)])\s+/, '')));
+    doc.nodes[node.id] = node;
+    while (stack.length && stack[stack.length - 1].depth >= depth) stack.pop();
+    const parent = stack.length ? stack[stack.length - 1].id : inboxId;
+    doc.nodes[parent].children.push(node.id);
+    stack.push({ depth, id: node.id });
+    count++;
+  }
+  if (count) commitDoc(doc);
+  return count;
+}
+
+/* ---------- helpers ---------- */
+
+function send(res, status, body, headers = {}) {
+  const data = typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body);
+  res.writeHead(status, {
+    'Content-Type': headers['Content-Type'] || 'application/json; charset=utf-8',
+    'Content-Length': Buffer.byteLength(data),
+    'Cache-Control': 'no-store',
+    ...headers,
+  });
+  res.end(data);
+}
+
+function readBody(req, limit = MAX_BODY) {
+  return new Promise((resolve, reject) => {
+    let size = 0;
+    const chunks = [];
+    req.on('data', c => {
+      size += c.length;
+      if (size > limit) { reject(new Error('body too large')); req.destroy(); return; }
+      chunks.push(c);
+    });
+    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('error', reject);
+  });
+}
+
+function cookies(req) {
+  const out = {};
+  for (const part of (req.headers.cookie || '').split(';')) {
+    const i = part.indexOf('=');
+    if (i > 0) out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
+  }
+  return out;
+}
+
+function timingSafeEq(a, b) {
+  const ba = Buffer.from(String(a));
+  const bb = Buffer.from(String(b));
+  return ba.length === bb.length && crypto.timingSafeEqual(ba, bb);
+}
+
+function isAuthed(req) {
+  if (!PASSWORD) return true;
+  return timingSafeEq(cookies(req).tendril_auth || '', authToken());
+}
+
+const attempts = new Map();
+function throttled(ip) {
+  const a = attempts.get(ip);
+  if (!a) return false;
+  if (Date.now() > a.until) { attempts.delete(ip); return false; }
+  return a.count >= 8;
+}
+function recordAttempt(ip, ok) {
+  if (ok) { attempts.delete(ip); return; }
+  const a = attempts.get(ip) || { count: 0, until: 0 };
+  a.count += 1;
+  a.until = Date.now() + 10 * 60 * 1000;
+  attempts.set(ip, a);
+}
+
+/* ---------- share helpers ---------- */
+
+function shareDocFor(share) {
+  const doc = store.doc;
+  if (!doc || !doc.nodes[share.id]) return null;
+  const nodes = {};
+  for (const id of subtreeIds(doc, share.id)) nodes[id] = doc.nodes[id];
+  return { root: share.id, nodes };
+}
+
+function mergeShareDoc(share, incoming) {
+  const doc = store.doc;
+  if (!doc || !doc.nodes[share.id] || !incoming.nodes || !incoming.nodes[share.id]) return false;
+  // remove the old subtree (keep the root node's slot in its parent)
+  for (const id of subtreeIds(doc, share.id)) {
+    if (id !== share.id) delete doc.nodes[id];
+  }
+  for (const [id, n] of Object.entries(incoming.nodes)) {
+    if (id === share.id) {
+      const mine = doc.nodes[share.id];
+      mine.text = n.text; mine.note = n.note; mine.done = n.done;
+      mine.collapsed = n.collapsed; mine.children = n.children || [];
+      mine.format = n.format; mine.files = n.files; mine.comments = n.comments;
+      mine.m = Date.now();
+    } else {
+      doc.nodes[id] = n;
+    }
+  }
+  commitDoc(doc);
+  return true;
+}
+
+/* ---------- AI proxy ---------- */
+
+function askClaude(prompt, context) {
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify({
+      model: AI_MODEL,
+      max_tokens: 4096,
+      system: 'You are an assistant inside an outliner app. The user gives you an outline excerpt and an instruction. ' +
+        'Respond ONLY with outline items: one item per line, using two-space indentation for nesting. ' +
+        'No prose, no preamble, no markdown headers — just the indented list of items.',
+      messages: [{
+        role: 'user',
+        content: `Outline context:\n${context || '(empty)'}\n\nInstruction: ${prompt}`,
+      }],
+    });
+    const req = https.request({
+      hostname: 'api.anthropic.com',
+      path: '/v1/messages',
+      method: 'POST',
+      headers: {
+        'x-api-key': AI_KEY,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+        'content-length': Buffer.byteLength(body),
+      },
+      timeout: 120000,
+    }, res => {
+      let data = '';
+      res.on('data', c => { data += c; });
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(data);
+          if (res.statusCode !== 200) return reject(new Error(json.error?.message || `API error ${res.statusCode}`));
+          const text = (json.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
+          resolve(text);
+        } catch (e) { reject(e); }
+      });
+    });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(new Error('AI request timed out')); });
+    req.end(body);
+  });
+}
+
+/* ---------- static ---------- */
+
+async function serveStatic(req, res, urlPath) {
+  let p = decodeURIComponent(urlPath.split('?')[0]);
+  if (p === '/' || /^\/s\/[a-f0-9]+\/?$/.test(p)) p = '/index.html';
+  const file = path.normalize(path.join(PUBLIC_DIR, p));
+  if (!file.startsWith(PUBLIC_DIR)) return send(res, 403, { error: 'forbidden' });
+  let data;
+  try {
+    data = await fsp.readFile(file);
+  } catch {
+    if (!path.extname(p)) {
+      try { data = await fsp.readFile(path.join(PUBLIC_DIR, 'index.html')); }
+      catch { return send(res, 404, { error: 'not found' }); }
+      return send(res, 200, data, { 'Content-Type': MIME['.html'] });
+    }
+    return send(res, 404, { error: 'not found' });
+  }
+  const type = MIME[path.extname(file).toLowerCase()] || 'application/octet-stream';
+  const cache = /\.(css|js|svg|png|woff2)$/.test(file) ? 'no-cache' : 'no-store';
+  send(res, 200, data, { 'Content-Type': type, 'Cache-Control': cache });
+}
+
+async function serveUserFile(req, res, urlPath) {
+  const name = path.basename(decodeURIComponent(urlPath.replace(/^\/files\//, '').split('?')[0]));
+  const file = path.normalize(path.join(FILES_DIR, name));
+  if (!file.startsWith(FILES_DIR)) return send(res, 403, { error: 'forbidden' });
+  try {
+    const data = await fsp.readFile(file);
+    const type = MIME[path.extname(file).toLowerCase()] || 'application/octet-stream';
+    send(res, 200, data, { 'Content-Type': type, 'Cache-Control': 'private, max-age=31536000' });
+  } catch {
+    send(res, 404, { error: 'not found' });
+  }
+}
+
+/* ---------- server ---------- */
+
+const server = http.createServer(async (req, res) => {
+  const ip = req.socket.remoteAddress || '?';
+  const url = req.url || '/';
+
+  try {
+    /* ---- share access (token-scoped, no cookie needed) ---- */
+    const shareMatch = url.match(/^\/api\/share\/([a-f0-9]{24,})\/doc(\?.*)?$/);
+    if (shareMatch) {
+      const share = shares[shareMatch[1]];
+      if (!share) return send(res, 404, { error: 'share not found or revoked' });
+      if (req.method === 'GET') {
+        const doc = shareDocFor(share);
+        if (!doc) return send(res, 410, { error: 'shared item was deleted' });
+        return send(res, 200, { version: store.version, doc, mode: share.mode, root: share.id });
+      }
+      if (req.method === 'PUT' || req.method === 'POST') {
+        if (share.mode !== 'edit') return send(res, 403, { error: 'this share is view-only' });
+        const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+        if (typeof body.baseVersion === 'number' && body.baseVersion !== store.version && !body.force) {
+          const doc = shareDocFor(share);
+          return send(res, 409, { version: store.version, doc });
+        }
+        if (!mergeShareDoc(share, body.doc || {})) return send(res, 400, { error: 'malformed share document' });
+        return send(res, 200, { version: store.version });
+      }
+      return send(res, 405, { error: 'method not allowed' });
+    }
+
+    if (url.startsWith('/api/')) {
+      /* ---- auth-free endpoints ---- */
+      if (url === '/api/auth' && req.method === 'GET') {
+        return send(res, 200, {
+          required: !!PASSWORD,
+          totp: !!(PASSWORD && TOTP_SECRET),
+          ok: isAuthed(req),
+          ai: !!AI_KEY,
+        });
+      }
+      if (url === '/api/login' && req.method === 'POST') {
+        if (throttled(ip)) return send(res, 429, { error: 'too many attempts — try again in 10 minutes' });
+        const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+        let ok = !!PASSWORD && timingSafeEq(body.password || '', PASSWORD);
+        if (ok && TOTP_SECRET) ok = totpValid(TOTP_SECRET, body.code);
+        recordAttempt(ip, ok);
+        if (!ok) return send(res, 401, { error: TOTP_SECRET ? 'wrong password or code' : 'wrong password' });
+        return send(res, 200, { ok: true }, {
+          'Set-Cookie': `tendril_auth=${authToken()}; HttpOnly; SameSite=Lax; Path=/; Max-Age=31536000`,
+        });
+      }
+      if (url === '/api/logout' && req.method === 'POST') {
+        return send(res, 200, { ok: true }, {
+          'Set-Cookie': 'tendril_auth=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0',
+        });
+      }
+      if (url.startsWith('/api/capture') && req.method === 'POST') {
+        const token = new URL(url, 'http://x').searchParams.get('token')
+          || req.headers['x-capture-token'] || '';
+        const allowed = (CAPTURE_TOKEN && timingSafeEq(token, CAPTURE_TOKEN)) || isAuthed(req);
+        if (!allowed) return send(res, 401, { error: 'unauthorized' });
+        const raw = (await readBody(req, 1024 * 1024)).toString('utf8');
+        let text = raw;
+        try { const j = JSON.parse(raw); if (typeof j.text === 'string') text = j.text; } catch { /* plain text body */ }
+        const count = captureText(text);
+        return send(res, 200, { ok: true, captured: count });
+      }
+
+      /* ---- everything below requires auth ---- */
+      if (!isAuthed(req)) return send(res, 401, { error: 'unauthorized' });
+
+      if (url === '/api/doc' && req.method === 'GET') return send(res, 200, store);
+      if (url === '/api/version' && req.method === 'GET') return send(res, 200, { version: store.version });
+      if (url === '/api/doc' && (req.method === 'PUT' || req.method === 'POST')) {
+        const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+        if (!body.doc || typeof body.doc !== 'object' || !body.doc.nodes) {
+          return send(res, 400, { error: 'malformed document' });
+        }
+        if (typeof body.baseVersion === 'number' && body.baseVersion !== store.version && !body.force) {
+          return send(res, 409, store);
+        }
+        const v = commitDoc(body.doc);
+        return send(res, 200, { version: v });
+      }
+
+      if (url === '/api/events' && req.method === 'GET') {
+        res.writeHead(200, {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-store',
+          'Connection': 'keep-alive',
+          'X-Accel-Buffering': 'no',
+        });
+        res.write(`data: ${JSON.stringify({ version: store.version })}\n\n`);
+        sseClients.add(res);
+        req.on('close', () => sseClients.delete(res));
+        return;
+      }
+
+      if (url === '/api/shares' && req.method === 'GET') {
+        return send(res, 200, Object.entries(shares).map(([token, s]) => ({ token, ...s })));
+      }
+      if (url === '/api/shares' && req.method === 'POST') {
+        const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+        if (!store.doc?.nodes?.[body.nodeId]) return send(res, 400, { error: 'unknown node' });
+        const token = crypto.randomBytes(16).toString('hex');
+        shares[token] = { id: body.nodeId, mode: body.mode === 'edit' ? 'edit' : 'view', created: Date.now() };
+        persistShares();
+        return send(res, 200, { token, url: `/s/${token}` });
+      }
+      const delShare = url.match(/^\/api\/shares\/([a-f0-9]+)$/);
+      if (delShare && req.method === 'DELETE') {
+        delete shares[delShare[1]];
+        persistShares();
+        return send(res, 200, { ok: true });
+      }
+
+      if (url.startsWith('/api/upload') && req.method === 'POST') {
+        const rawName = new URL(url, 'http://x').searchParams.get('name') || 'file';
+        const safe = path.basename(rawName).replace(/[^\w.\- ()]/g, '_').slice(0, 120) || 'file';
+        const data = await readBody(req, MAX_UPLOAD);
+        if (!data.length) return send(res, 400, { error: 'empty upload' });
+        const stored = `${uid()}-${safe}`;
+        await fsp.writeFile(path.join(FILES_DIR, stored), data);
+        return send(res, 200, { url: `/files/${encodeURIComponent(stored)}`, name: safe, size: data.length });
+      }
+
+      if (url === '/api/ai' && req.method === 'POST') {
+        if (!AI_KEY) return send(res, 400, { error: 'AI is not configured — set ANTHROPIC_API_KEY on the server' });
+        const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+        if (!body.prompt) return send(res, 400, { error: 'missing prompt' });
+        try {
+          const text = await askClaude(String(body.prompt).slice(0, 4000), String(body.context || '').slice(0, 100000));
+          return send(res, 200, { text });
+        } catch (err) {
+          return send(res, 502, { error: 'AI request failed: ' + err.message });
+        }
+      }
+
+      return send(res, 404, { error: 'not found' });
+    }
+
+    if (url.startsWith('/files/')) {
+      // attachments are private unless the doc is shared; require auth or any valid share token cookie-free ref
+      if (!isAuthed(req) && !Object.keys(shares).length) return send(res, 401, { error: 'unauthorized' });
+      return serveUserFile(req, res, url);
+    }
+
+    if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, { error: 'method not allowed' });
+    return serveStatic(req, res, url);
+  } catch (err) {
+    console.error(err);
+    return send(res, 500, { error: 'internal error' });
+  }
+});
+
+server.listen(PORT, HOST, () => {
+  console.log(`Tendril listening on http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);
+  console.log(`Data directory: ${DATA_DIR}`);
+  console.log(PASSWORD ? `Password protection: ON${TOTP_SECRET ? ' + TOTP MFA' : ''}` : 'Password protection: off (set TENDRIL_PASSWORD to enable)');
+  if (CAPTURE_TOKEN) console.log('Capture API: POST /api/capture?token=…');
+  if (AI_KEY) console.log(`Ask AI: enabled (${AI_MODEL})`);
+});
