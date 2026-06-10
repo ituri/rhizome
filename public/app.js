@@ -2444,6 +2444,10 @@ function onKeydown(e) {
         navGoalX = x;
         setCaretAtX(target, x, up ? 'last' : 'first');
         target.scrollIntoView({ block: 'nearest' });
+      } else if (!up && (isTitle || field === 'zoom-note') && !state.readOnly && !kidsOf(state.zoom).length) {
+        // ArrowDown off the header of an empty page starts the first bullet
+        e.preventDefault();
+        opNewAt(state.zoom, 0);
       }
     }
     return;
@@ -3350,6 +3354,7 @@ function applyTheme() {
   else delete html.dataset.density;
   if (settings.width === 'full') html.dataset.width = 'full'; else delete html.dataset.width;
   if (settings.arrows === 'always') html.dataset.arrows = 'always'; else delete html.dataset.arrows;
+  html.classList.toggle('no-anim', settings.animations === false);
   document.body.classList.toggle('sidebar-open', !!settings.sidebar && !SHARE_TOKEN);
 }
 darkMQ.addEventListener('change', () => { if (settings.theme === 'auto') applyTheme(); });

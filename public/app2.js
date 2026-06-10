@@ -660,6 +660,27 @@ const dateHintEl = (() => {
   const el = document.createElement('div');
   el.className = 'date-hint';
   el.hidden = true;
+  el.addEventListener('mousedown', e => e.preventDefault());  // keep the editor focused
+  el.addEventListener('click', e => {
+    if (!dateSuggest) return;
+    if (e.target.closest('.dh-cal')) {
+      // open the full picker: drop the typed phrase first, then pick a date there
+      const sug = dateSuggest;
+      clearDateSuggest();
+      if (document.activeElement === sug.el && doc.nodes[sug.id]) {
+        const off = caretOffsetIn(sug.el);
+        if (off != null && off >= sug.start) {
+          snapshot();
+          selectPlainRange(sug.el, sug.start, off);
+          getSelection().getRangeAt(0).deleteContents();
+          scheduleCommit(sug.el);
+        }
+        openDatePop({ id: sug.id, field: sug.field, el: sug.el });
+      }
+    } else {
+      window.applyDateSuggest();           // click anywhere else = convert now
+    }
+  });
   document.body.append(el);
   return el;
 })();
@@ -683,7 +704,10 @@ function maybeDateSuggest(ctx) {
   if (!hit) { clearDateSuggest(); return; }
   dateSuggest = { id: ctx.id, field: ctx.field, el: ctx.el, start: hit.start, iso: hit.iso, iso2: hit.iso2 };
   const label = hit.iso2 ? `${formatDate(hit.iso)} – ${formatDate(hit.iso2)}` : formatDate(hit.iso);
-  dateHintEl.innerHTML = `<kbd>Tab</kbd><span>${escHtml(label)}</span>`;
+  dateHintEl.innerHTML =
+    `<div class="dh-row"><span class="dh-date">${escHtml(label)}</span>` +
+    `<span class="dh-cal" title="Open date picker">📅</span></div>` +
+    `<div class="dh-foot">Press <kbd>Tab</kbd> or click here</div>`;
   dateHintEl.hidden = false;
   const rect = caretViewportRect();
   if (rect) {
@@ -1217,6 +1241,7 @@ function showCalendar() {
   renderCalendar();
 }
 
+$('#btn-calendar').addEventListener('click', () => showCalendar());
 $('#cal-prev').addEventListener('click', () => { calMonth.setMonth(calMonth.getMonth() - 1); renderCalendar(); });
 $('#cal-next').addEventListener('click', () => { calMonth.setMonth(calMonth.getMonth() + 1); renderCalendar(); });
 $('#cal-close').addEventListener('click', () => { $('#calendar-overlay').hidden = true; });
@@ -1680,7 +1705,7 @@ $('#btn-menu').addEventListener('click', e => {
       toggle(settings.markdownPaste !== false, 'Paste markdown as plain text', 'Convert markdown on paste', '↧',
         () => { settings.markdownPaste = settings.markdownPaste === false; }),
       toggle(settings.animations !== false, 'Turn off smooth animations', 'Turn on smooth animations', '✨',
-        () => { settings.animations = settings.animations === false; }),
+        () => { settings.animations = settings.animations === false; applyTheme(); }),
     );
 
     if (!SHARE_TOKEN) {
@@ -1733,6 +1758,7 @@ async function init() {
   if (SHARE_TOKEN) {
     $('#btn-sidebar').hidden = true;
     $('#btn-star').hidden = true;
+    $('#btn-calendar').hidden = true;
   }
   try {
     if (!SHARE_TOKEN) {

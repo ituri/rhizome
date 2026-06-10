@@ -900,11 +900,15 @@ html.vt-back::view-transition-new(root) { animation: vt-fade 0.34s both, vt-drif
   .page { padding-left: 30px; }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    animation-duration: 0.01ms !important;
-    transition-duration: 0.01ms !important;
-  }
+/* Animations are opt-out via the menu (the "smooth animations" toggle), not
+   gated on the OS reduced-motion preference — so collapse/expand, zoom and the
+   rest play for everyone unless they turn them off. Turning the toggle off
+   (which reduced-motion users can do) disables them via .no-anim. */
+html.no-anim, html.no-anim *, html.no-anim *::before, html.no-anim *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
 }
 
 @media print {
@@ -1456,29 +1460,41 @@ time[datetime].today { color: oklch(0.5 0.14 150); background: oklch(0.55 0.14 1
 .date-hint {
   position: fixed;
   z-index: 86;
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  background: var(--ink);
-  color: var(--bg);
-  font-size: 12.5px;
-  padding: 4px 10px 4px 5px;
-  border-radius: 9px;
+  min-width: 158px;
+  background: var(--bg-raised);
+  color: var(--ink);
+  border: 1px solid var(--line-soft);
+  border-radius: 11px;
   box-shadow: var(--shadow);
-  pointer-events: none;
+  padding: 7px 9px;
+  cursor: pointer;
   animation: pop-in 0.12s var(--ease-out);
   white-space: nowrap;
 }
-[data-theme="dark"] .date-hint { background: var(--bg-raised); color: var(--ink); border: 1px solid var(--line); }
-.date-hint kbd {
-  background: color-mix(in oklab, var(--bg) 22%, transparent);
-  color: inherit;
-  border: 0;
-  border-radius: 5px;
-  font-size: 11px;
-  padding: 2px 6px;
+.date-hint:hover { border-color: var(--accent); }
+.date-hint .dh-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.date-hint .dh-date { font-size: 13.5px; font-weight: 500; }
+.date-hint .dh-cal {
+  font-size: 14px;
+  padding: 1px 4px;
+  border-radius: 6px;
+  line-height: 1;
 }
-[data-theme="dark"] .date-hint kbd { background: var(--accent-softer); }
+.date-hint .dh-cal:hover { background: var(--accent-softer); }
+.date-hint .dh-foot { font-size: 11px; color: var(--ink-faint); margin-top: 4px; }
+.date-hint .dh-foot kbd {
+  font-size: 10.5px;
+  border-bottom-width: 2px;
+}
+
+/* discoverability: a focused, empty bullet teaches the hidden triggers */
+.content:empty:focus::before {
+  content: "Type to add — “/” for menu, “[[” to link";
+  color: var(--ink-faint);
+  font-style: italic;
+  opacity: 0.7;
+  pointer-events: none;
+}
 
 .datepick { padding: 8px 10px; }
 .datepick .quick { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; }
