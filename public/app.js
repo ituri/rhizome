@@ -538,10 +538,22 @@ function markDirty() {
   scheduleSave();
 }
 
+// every doc that arrives from the network passes through the whitelist
+// serializer — guests with edit-share tokens can PUT arbitrary markup
+function sanitizeDocTexts(d) {
+  for (const id of Object.keys(d.nodes)) {
+    const n = d.nodes[id];
+    n.text = sanitizeHtml(n.text || '');
+    if (!Array.isArray(n.children)) n.children = [];
+  }
+  return d;
+}
+
 // graft any nodes that exist on the server but not locally (e.g. captured via API
 // or added from another device) into our copy before we overwrite the server.
 function graftMissing(serverDoc) {
   if (!serverDoc || !serverDoc.nodes) return;
+  sanitizeDocTexts(serverDoc);
   const queue = [serverDoc.root];
   while (queue.length) {
     const pid = queue.shift();
@@ -616,7 +628,7 @@ async function doSave() {
 }
 
 function adoptRemote(version, remoteDoc) {
-  doc = remoteDoc;
+  doc = sanitizeDocTexts(remoteDoc);
   state.version = version;
   rebuildParentMap();
   if (!doc.nodes[state.zoom]) state.zoom = HOME;
@@ -771,7 +783,8 @@ function parseQuery(q) {
     let cond = null;
     if (!tok.quoted) {
       const op = text.match(/^(is|has|text|highlight|changed|in|on):(.*)$/i);
-      if (op) cond = { neg, kind: op[1].toLowerCase(), value: op[2].toLowerCase() };
+      // 'text:' gets its own kind so it can't collide with plain search terms
+      if (op) cond = { neg, kind: op[1].toLowerCase() === 'text' ? 'textfmt' : op[1].toLowerCase(), value: op[2].toLowerCase() };
     }
     if (!cond) cond = { neg, kind: 'text', value: text.toLowerCase() };
     if (cond.value !== '' || cond.kind !== 'text') pushCond(cond);
@@ -801,9 +814,6 @@ function nodeMeetsCond(n, cond, hay, html) {
       else if (cond.value === 'link') hit = html.includes('<a ');
       else if (cond.value === 'tag') hit = /[#@][\w]/.test(plainOf(n.text));
       break;
-    case 'text2':
-      break;
-    case 'text': break;
     case 'highlight':
       hit = cond.value === 'any' || cond.value === ''
         ? /class="[^"]*hl-/.test(html)
@@ -844,19 +854,10 @@ function nodeMatchesSegment(id, seg) {
   const html = (n.text || '') + ' ' + (n.note || '');
   const hay = (plainOf(n.text) + ' ' + (n.note || '')).toLowerCase();
   for (const clause of seg) {
-    let ok = false;
-    for (const cond of clause.or) {
-      const v = cond.kind === 'text' && cond.value === 'or' ? { ...cond, value: 'or' } : cond;
-      if (v.kind === 'text2') continue;
-      const res = v.kind === 'text' || v.kind !== 'text'
-        ? (v.kind === 'text' ? nodeMeetsCond(n, v, hay, html)
-          : v.kind === 'text' ? false
-            : v.kind === 'highlight' || v.kind === 'is' || v.kind === 'has' || v.kind === 'changed' || v.kind === 'in' || v.kind === 'on'
-              ? nodeMeetsCond(n, v, hay, html)
-              : nodeMeetsTextFormat(n, v, html))
-        : false;
-      if (res) { ok = true; break; }
-    }
+    const ok = clause.or.some(cond =>
+      cond.kind === 'textfmt'
+        ? nodeMeetsTextFormat(n, cond, html)
+        : nodeMeetsCond(n, cond, hay, html));
     if (!ok) return false;
   }
   return true;
@@ -3099,11 +3100,7 @@ async function loadDoc() {
     state.version = data.version || 0;
     state.shareMode = data.mode;
     state.readOnly = data.mode !== 'edit';
-    for (const id of Object.keys(doc.nodes)) {
-      const n = doc.nodes[id];
-      n.text = sanitizeHtml(n.text || '');
-      if (!Array.isArray(n.children)) n.children = [];
-    }
+    sanitizeDocTexts(doc);
     rebuildParentMap();
     const banner = $('#share-banner');
     banner.hidden = false;
@@ -3117,11 +3114,7 @@ async function loadDoc() {
     doc = data.doc;
     doc.root = doc.root || ROOT;
     state.version = data.version || 0;
-    for (const id of Object.keys(doc.nodes)) {
-      const n = doc.nodes[id];
-      n.text = sanitizeHtml(n.text || '');
-      if (!Array.isArray(n.children)) n.children = [];
-    }
+    sanitizeDocTexts(doc);
     rebuildParentMap();
   } else {
     welcomeDoc();

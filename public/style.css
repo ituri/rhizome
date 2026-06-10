@@ -162,6 +162,12 @@ button { font-family: inherit; }
 .save-state.saving .save-label::after { content: ""; }
 @keyframes pulse { 50% { opacity: 0.4; } }
 @media (max-width: 640px) { .save-label { display: none; } }
+@media (max-width: 540px) {
+  #btn-help { display: none; }
+  #search { width: 120px; }
+  .topbar { gap: 8px; }
+  .topbar-right { gap: 2px; }
+}
 
 .iconbtn {
   border: 0;

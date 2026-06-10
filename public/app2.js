@@ -1031,7 +1031,6 @@ function restoreTrashEntry(entry) {
   for (const [oldId, node] of Object.entries(entry.nodes)) {
     const cloned = structuredClone(node);
     cloned.id = idMap.get(oldId);
-    cloned.children = (cloned.children || []).map(c => idMap.get(c) || c).filter(c => entry.nodes[[...idMap.entries()].find(([, v]) => v === c)?.[0]] || entry.nodes[c]);
     cloned.children = (node.children || []).map(c => idMap.get(c)).filter(Boolean);
     doc.nodes[cloned.id] = cloned;
   }
