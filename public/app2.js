@@ -286,6 +286,12 @@ function refreshCaretPop(query) {
     renderCaretItems(all.slice(0, 8).map(t => ({ label: t, icon: t[0] === '@' ? '@' : '#', tag: t })),
       it => pickTag(it.tag), '');
     if (!all.length) window.closeCaretPop();
+  } else if (caretPop.type === 'linkpop') {
+    // use the original-case `query` for the new-item title, `q` only for matching
+    const found = searchNodes(query, 8).filter(it => it.id !== caretPop.ctx.id);
+    const items = found.map(it => ({ label: it.plain.slice(0, 60), icon: '↗', linkId: it.id }));
+    if (query.trim()) items.push({ label: `Create “${query.trim().slice(0, 40)}”`, icon: '＋', create: query.trim() });
+    renderCaretItems(items, it => pickLink(it), 'Type to link to another item');
   }
 }
 
@@ -341,6 +347,43 @@ function pickTag(tag) {
   scheduleCommit(ctx.el);
 }
 
+// [[ inline linking: replace the typed "[[query" with a link to an item,
+// creating the item if requested. Backlinks pick it up automatically.
+function pickLink(it) {
+  const { ctx, start } = caretPop;
+  const caret = caretOffsetIn(ctx.el) ?? start;
+  window.closeCaretPop();
+  snapshot();
+  let linkId, label;
+  if (it.create) {
+    linkId = makeNode(escHtml(it.create));
+    insertAt(state.zoom, kidsOf(state.zoom).length, linkId);
+    label = it.create;
+  } else {
+    if (!doc.nodes[it.linkId]) return;
+    linkId = it.linkId;
+    label = plainOf(N(linkId).text).trim() || 'Untitled';
+  }
+  selectPlainRange(ctx.el, start, caret);
+  const sel = getSelection();
+  const r = sel.getRangeAt(0);
+  r.deleteContents();
+  const a = document.createElement('a');
+  a.setAttribute('href', '#/n/' + linkId);
+  a.setAttribute('rel', 'noopener');
+  a.textContent = label;
+  const space = document.createTextNode(' ');
+  r.insertNode(space);
+  r.insertNode(a);
+  const after = document.createRange();
+  after.setStartAfter(space);
+  after.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(after);
+  scheduleCommit(ctx.el);
+  markDirty();
+}
+
 window.slashWillOpen = function slashWillOpen(ctx, offset) {
   pendingSlash = { id: ctx.id, field: ctx.field, start: offset };
 };
@@ -368,6 +411,21 @@ window.editorInputHook = function editorInputHook(ctx) {
     refreshCaretPop(before.slice(caretPop.start + 1, off));
     return;
   }
+  if (caretPop && caretPop.type === 'linkpop') {
+    const m = before.match(/\[\[([^\]\n]*)$/);
+    if (!m || off <= caretPop.start) { window.closeCaretPop(); }
+    else refreshCaretPop(m[1]);
+    return;
+  }
+
+  // [[ → internal-link autocomplete
+  const lm = before.match(/\[\[([^\]\n]*)$/);
+  if (lm && ctx.field === 'text' && fmtOf(ctx.id) !== 'codeblock') {
+    openCaretPop('linkpop', ctx, off - lm[0].length);
+    refreshCaretPop(lm[1]);
+    clearDateSuggest();
+    return;
+  }
 
   // ``` → code block
   if (ctx.field === 'text' && before === '```' && fmtOf(ctx.id) !== 'codeblock') {
@@ -392,8 +450,13 @@ window.editorInputHook = function editorInputHook(ctx) {
     if (collectTags().some(t => t.toLowerCase().startsWith(prefix.toLowerCase()) && t.length > prefix.length)) {
       openCaretPop('tag', ctx, start, { prefix });
       refreshCaretPop('');
+      clearDateSuggest();
+      return;
     }
   }
+
+  // natural-language date: typing "today"/"next thu"/"oct 7" offers Tab → date
+  if (fmtOf(ctx.id) !== 'codeblock') maybeDateSuggest(ctx);
 };
 
 window.caretPopKeydown = function caretPopKeydown(e) {
@@ -589,6 +652,78 @@ function dateOffset(days) {
   d.setDate(d.getDate() + days);
   return isoFromDate(d);
 }
+
+/* ---------------- D3. natural-language date suggestion (type "today" → Tab) ---------------- */
+
+let dateSuggest = null;  // { id, field, start, iso }
+const dateHintEl = (() => {
+  const el = document.createElement('div');
+  el.className = 'date-hint';
+  el.hidden = true;
+  document.body.append(el);
+  return el;
+})();
+
+window.dateSuggestActive = () => !!dateSuggest;
+
+function clearDateSuggest() {
+  if (!dateSuggest) return;
+  dateSuggest = null;
+  dateHintEl.hidden = true;
+}
+window.clearDateSuggest = clearDateSuggest;
+
+function maybeDateSuggest(ctx) {
+  // only where a <time> pill can render, and not while another caret pop is open
+  if (window.caretPopOpen?.() || ctx.field === 'note' || ctx.field === 'zoom-note') { clearDateSuggest(); return; }
+  const off = caretOffsetIn(ctx.el);
+  if (off == null) { clearDateSuggest(); return; }
+  const before = (ctx.el.textContent || '').slice(0, off);
+  const hit = nlDate(before);
+  if (!hit) { clearDateSuggest(); return; }
+  dateSuggest = { id: ctx.id, field: ctx.field, el: ctx.el, start: hit.start, iso: hit.iso, iso2: hit.iso2 };
+  const label = hit.iso2 ? `${formatDate(hit.iso)} – ${formatDate(hit.iso2)}` : formatDate(hit.iso);
+  dateHintEl.innerHTML = `<kbd>Tab</kbd><span>${escHtml(label)}</span>`;
+  dateHintEl.hidden = false;
+  const rect = caretViewportRect();
+  if (rect) {
+    const pr = dateHintEl.getBoundingClientRect();
+    dateHintEl.style.left = clamp(rect.left, 8, innerWidth - pr.width - 8) + 'px';
+    dateHintEl.style.top = (rect.bottom + 7) + 'px';
+  }
+}
+
+window.applyDateSuggest = function applyDateSuggest() {
+  if (!dateSuggest) return false;
+  const sug = dateSuggest;
+  clearDateSuggest();
+  if (document.activeElement !== sug.el || !doc.nodes[sug.id]) return false;
+  const off = caretOffsetIn(sug.el);
+  if (off == null || off < sug.start) return false;
+  snapshot();
+  selectPlainRange(sug.el, sug.start, off);          // select the typed phrase
+  const sel = getSelection();
+  const r = sel.getRangeAt(0);
+  r.deleteContents();                                 // remove it
+  const time = document.createElement('time');
+  if (sug.iso2) {
+    time.setAttribute('datetime', sug.iso + '/' + sug.iso2);
+    time.textContent = formatDate(sug.iso) + ' – ' + formatDate(sug.iso2);
+  } else {
+    time.setAttribute('datetime', sug.iso);
+    time.textContent = formatDate(sug.iso);
+  }
+  const space = document.createTextNode(' ');
+  r.insertNode(space);
+  r.insertNode(time);                                 // drop in the date pill
+  const after = document.createRange();
+  after.setStartAfter(space);
+  after.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(after);
+  scheduleCommit(sug.el);
+  return true;
+};
 
 /* ---------------- E. inline formatting (fmtbar, colors, links) ---------------- */
 

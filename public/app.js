@@ -108,6 +108,91 @@ const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'S
 const MONTHS_LONG = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const DOW_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
+// ---- natural-language date parsing (today, next thu, oct 7, in 3 days…) ----
+const NUM_WORDS = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12 };
+const WD = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
+const MON = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
+
+function isoOf(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// returns { iso, start } — or { iso, iso2, start } for a range — when `before`
+// ends with a recognized date phrase (single, or "<dateA> - <dateB>")
+function nlDate(before) {
+  const sep = before.match(/^(.*\S)\s*[-–]\s*(\S.*)$/);
+  if (sep) {
+    const right = nlDateSingle(sep[2]);
+    const left = nlDateSingle(sep[1]);
+    if (right && left && right.start === 0 && left.start + left.phrase.length === sep[1].length) {
+      return { iso: left.iso, iso2: right.iso, start: left.start, phrase: before.slice(left.start) };
+    }
+  }
+  return nlDateSingle(before);
+}
+
+function nlDateSingle(before) {
+  const lower = before.toLowerCase();
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const add = n => { const d = new Date(today); d.setDate(d.getDate() + n); return d; };
+  const matchers = [
+    [/(?:^|\s)in\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+(day|days|week|weeks|month|months|year|years)$/, m => {
+      const n = NUM_WORDS[m[1]] ?? parseInt(m[1], 10);
+      const d = new Date(today), u = m[2];
+      if (u.startsWith('day')) d.setDate(d.getDate() + n);
+      else if (u.startsWith('week')) d.setDate(d.getDate() + n * 7);
+      else if (u.startsWith('month')) d.setMonth(d.getMonth() + n);
+      else d.setFullYear(d.getFullYear() + n);
+      return d;
+    }],
+    [/(?:^|\s)(next|last|this)\s+(week|month|year)$/, m => {
+      const dir = m[1] === 'next' ? 1 : m[1] === 'last' ? -1 : 0, d = new Date(today);
+      if (m[2] === 'week') d.setDate(d.getDate() + dir * 7);
+      else if (m[2] === 'month') d.setMonth(d.getMonth() + dir);
+      else d.setFullYear(d.getFullYear() + dir);
+      return d;
+    }],
+    [/(?:^|\s)next\s+(sun|mon|tue|wed|thu|fri|sat)[a-z]*$/, m => {
+      let delta = (WD[m[1]] - today.getDay() + 7) % 7;
+      return add((delta === 0 ? 7 : delta) + 7);
+    }],
+    [/(?:^|\s)(sun|mon|tue|wed|thu|fri|sat)(?:day|sday|nesday|rsday|urday)?$/, m => add((WD[m[1]] - today.getDay() + 7) % 7)],
+    [/(?:^|\s)(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})(?:,?\s*(\d{4}))?$/, m => {
+      const mo = MON[m[1].slice(0, 3)], day = +m[2];
+      if (day < 1 || day > 31) return null;
+      let d = new Date(m[3] ? +m[3] : today.getFullYear(), mo, day);
+      if (!m[3] && d < today) d = new Date(today.getFullYear() + 1, mo, day);
+      return d;
+    }],
+    [/(?:^|\s)(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?(?:\s+(\d{4}))?$/, m => {
+      const day = +m[1], mo = MON[m[2].slice(0, 3)];
+      if (day < 1 || day > 31) return null;
+      let d = new Date(m[3] ? +m[3] : today.getFullYear(), mo, day);
+      if (!m[3] && d < today) d = new Date(today.getFullYear() + 1, mo, day);
+      return d;
+    }],
+    [/(?:^|\s)(\d{4})-(\d{1,2})-(\d{1,2})$/, m => new Date(+m[1], +m[2] - 1, +m[3])],
+    [/(?:^|\s)(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?$/, m => {
+      let yr = m[3] ? (m[3].length === 2 ? 2000 + +m[3] : +m[3]) : today.getFullYear();
+      const d = new Date(yr, +m[1] - 1, +m[2]);
+      if (!m[3] && d < today) d.setFullYear(yr + 1);
+      return d;
+    }],
+    [/(?:^|\s)(today|tonight)$/, () => add(0)],
+    [/(?:^|\s)(tomorrow|tmrw|tmr)$/, () => add(1)],
+    [/(?:^|\s)(yesterday|yest)$/, () => add(-1)],
+  ];
+  for (const [re, fn] of matchers) {
+    const m = lower.match(re);
+    if (!m) continue;
+    let phrase = m[0], start = before.length - phrase.length;
+    if (/^\s/.test(phrase)) { start += 1; phrase = phrase.slice(1); }
+    const d = fn(m);
+    if (d && !isNaN(d)) return { iso: isoOf(d), start, phrase };
+  }
+  return null;
+}
+
 // derives a date pill's label from its ISO value, honoring the format setting,
 // so changing the setting reformats every existing date live
 function formatDate(iso) {
@@ -231,11 +316,19 @@ function decorate(html, opts = {}) {
     for (const child of [...node.childNodes]) {
       if (child.nodeType === Node.ELEMENT_NODE) {
         if (child.tagName === 'TIME' && child.getAttribute('datetime')) {
-          const d = child.getAttribute('datetime').slice(0, 10);
+          const dt = child.getAttribute('datetime');
           const t = todayStr();
-          child.textContent = formatDate(d);
-          child.classList.toggle('today', d === t);
-          child.classList.toggle('past', d < t);
+          if (dt.includes('/')) {
+            const [a, b] = dt.split('/').map(s => s.slice(0, 10));
+            child.textContent = formatDate(a) + ' – ' + formatDate(b);
+            child.classList.toggle('today', a <= t && t <= b);
+            child.classList.toggle('past', b < t);
+          } else {
+            const d = dt.slice(0, 10);
+            child.textContent = formatDate(d);
+            child.classList.toggle('today', d === t);
+            child.classList.toggle('past', d < t);
+          }
           continue;
         }
         walk(child, inLink || child.tagName === 'A' || child.tagName === 'CODE');
@@ -858,7 +951,7 @@ function parseQuery(q) {
     }
     let cond = null;
     if (!tok.quoted) {
-      const op = text.match(/^(is|has|text|highlight|changed|in|on):(.*)$/i);
+      const op = text.match(/^(is|has|text|highlight|changed|in|on|link):(.*)$/i);
       // 'text:' gets its own kind so it can't collide with plain search terms
       if (op) cond = { neg, kind: op[1].toLowerCase() === 'text' ? 'textfmt' : op[1].toLowerCase(), value: op[2].toLowerCase() };
     }
@@ -913,6 +1006,12 @@ function nodeMeetsCond(n, cond, hay, html) {
     case 'on':
       hit = html.includes(`datetime="${cond.value}`);
       break;
+    case 'link': {
+      // match by URL/href even when the link's display text was changed
+      const hrefs = [...html.matchAll(/href="([^"]*)"/gi)].map(x => x[1].toLowerCase());
+      hit = cond.value ? hrefs.some(h => h.includes(cond.value)) : hrefs.length > 0;
+      break;
+    }
   }
   return cond.neg ? !hit : hit;
 }
@@ -2186,6 +2285,11 @@ function onKeydown(e) {
   }
 
   /* ----- Tab ----- */
+  if (e.key === 'Tab' && !e.shiftKey && window.dateSuggestActive?.()) {
+    // typed a date phrase ("today", "next thu", "oct 7") — Tab turns it into a pill
+    e.preventDefault();
+    if (window.applyDateSuggest()) return;
+  }
   if (e.key === 'Tab') {
     e.preventDefault();
     if (isTitle || field === 'zoom-note') return;
@@ -2313,6 +2417,7 @@ function onKeydown(e) {
   /* ----- escape ----- */
   if (e.key === 'Escape') {
     e.preventDefault();
+    if (window.dateSuggestActive?.()) { window.clearDateSuggest(); return; }
     if (isNote) { focusItem(id, field === 'zoom-note' ? 'title' : 'text', 'end'); return; }
     if (searchActive()) {
       // clearing search shouldn't lose your place
@@ -2409,6 +2514,7 @@ pageEl.addEventListener('compositionend', e => {
 pageEl.addEventListener('focusout', e => {
   const ctx = editableCtx(e.target);
   if (!ctx) return;
+  window.clearDateSuggest?.();
   commitActiveText();
   if ((ctx.field === 'note' || ctx.field === 'zoom-note') && doc.nodes[ctx.id]) {
     const n = N(ctx.id);
@@ -3061,7 +3167,9 @@ const HELP = [
     ['Numbered list', '1. + space'],
     ['Divider', '--- + Enter'],
     ['All block types & more', '/ slash menu'],
-    ['Insert a date', '!! or /date'],
+    ['Link to another item', '[[ …'],
+    ['Type a date', 'today / next fri + Tab'],
+    ['Date picker', '!! or /date'],
   ]],
   ['Navigation', [
     ['Zoom in', 'Alt+→ or Alt+.'],
@@ -3309,7 +3417,8 @@ function welcomeDoc() {
   add(power, 'Tag things with #tags and @people, then click a tag to filter');
   add(power, '<b>Ctrl+K</b> jumps to any item by name');
   add(power, 'Type <b>/</b> for block types: headings, to-dos, numbered lists, boards, code, dividers…');
-  add(power, 'Type <b>!!</b> to insert a date, then find it in the Calendar');
+  add(power, 'Type a date in plain words — <b>today</b>, <b>next friday</b>, <b>oct 7</b>, <b>in 3 days</b> — then press <b>Tab</b>');
+  add(power, 'Type <b>[[</b> to link to any other item; links show up under “Linked from”');
   add(power, '<b>Ctrl+A</b> twice selects whole items — then Tab, move, complete or delete in bulk');
   add(power, 'Select text to format it — colors and highlights included');
   add(power, 'Search supports <code>"phrases"</code>, <code>-not</code>, <code>OR</code>, <code>is:complete</code>, <code>has:note</code>, <code>changed:7d</code>…');
