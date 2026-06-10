@@ -191,12 +191,23 @@ function positionCaretPop() {
   if (!caretPop) return;
   const rect = caretViewportRect();
   if (!rect) return;
-  const pr = caretPop.el.getBoundingClientRect();
-  let left = clamp(rect.left, 8, innerWidth - pr.width - 8);
-  let top = rect.bottom + 6;
-  if (top + pr.height > innerHeight - 8) top = Math.max(8, rect.top - pr.height - 6);
-  caretPop.el.style.left = left + 'px';
-  caretPop.el.style.top = top + 'px';
+  const margin = 8, gap = 6;
+  const el = caretPop.el;
+  el.style.maxHeight = '';
+  let pr = el.getBoundingClientRect();
+  const below = innerHeight - margin - (rect.bottom + gap);
+  const above = (rect.top - gap) - margin;
+  let placeAbove, maxH = innerHeight - 2 * margin;
+  if (pr.height <= below) placeAbove = false;
+  else if (pr.height <= above) placeAbove = true;
+  else { placeAbove = above > below; maxH = Math.max(below, above); }
+  el.style.maxHeight = Math.max(120, maxH) + 'px';
+  pr = el.getBoundingClientRect();
+  const left = clamp(rect.left, margin, Math.max(margin, innerWidth - pr.width - margin));
+  let top = placeAbove ? rect.top - gap - pr.height : rect.bottom + gap;
+  top = clamp(top, margin, Math.max(margin, innerHeight - pr.height - margin));
+  el.style.left = left + 'px';
+  el.style.top = top + 'px';
 }
 
 function renderCaretItems(items, onPick, emptyMsg) {

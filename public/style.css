@@ -549,6 +549,9 @@ body.dragging-item .content, body.dragging-item .note { cursor: grabbing; }
   position: fixed;
   z-index: 80;
   min-width: 200px;
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   background: var(--bg-raised);
   border: 1px solid var(--line-soft);
   border-radius: 12px;

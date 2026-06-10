@@ -8,6 +8,9 @@
 | `test2.js` | v2 features: search operators, blocks, slash menu, dates, tags, stars, trash, mirrors, comments, capture, SSE, sharing, presentation, calendar (41) |
 | `test3.js` | Gap coverage: formatting shortcuts, link dialog, imports/exports, attachments, embeds, templates, appearance, share revoke, XSS sanitization (36) |
 | `test-board.js` | Kanban: render, edit, cross-column drag, column reorder, zoomed board view (11) |
+| `test4.js` | Parity additions: numbered lists, sort, board buttons, move/mirror-to, dates, embeds, markdown paste (19) |
+| `test-nav.js` | Caret memory across zoom/search + smooth View-Transition zoom + popover viewport-fit (17) |
+| `test-api.js` | Per-node REST API + live SSE pickup (run with `TENDRIL_AGENT_TOKEN=… TENDRIL_PASSWORD=pw`, port 3214) (21) |
 | `test-auth.js` | Password login flow (run the server with `TENDRIL_PASSWORD` set) |
 
 ## Running

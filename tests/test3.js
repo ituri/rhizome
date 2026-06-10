@@ -373,6 +373,52 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   assert(ok, 'main menu renders with item count and version footer');
   await page.keyboard.press('Escape');
 
+  /* ---- 17. popovers always fit the viewport (even when tall / short screen) ---- */
+  await page.setViewport({ width: 1280, height: 460 }); // short screen, tall menu
+  await sleep(150);
+  await page.click('#btn-menu');
+  await sleep(250);
+  let fit = await page.evaluate(() => {
+    const pop = document.querySelector('.popover');
+    const r = pop.getBoundingClientRect();
+    return {
+      onScreen: r.top >= 0 && r.bottom <= innerHeight + 0.5 && r.left >= 0 && r.right <= innerWidth + 0.5,
+      scrolls: pop.scrollHeight > pop.clientHeight + 1,
+      reachable: /Week starts|Print/.test(pop.textContent),
+    };
+  });
+  assert(fit.onScreen, 'tall menu on a short screen stays fully within the viewport');
+  assert(fit.scrolls, 'tall menu becomes internally scrollable');
+  assert(fit.reachable, 'the bottom of the menu is present (scrollable to)');
+  // scrolling inside the popover does NOT close it
+  await page.evaluate(() => { document.querySelector('.popover').scrollTop = 200; });
+  await sleep(150);
+  ok = await page.evaluate(() => !!document.querySelector('.popover'));
+  assert(ok, 'scrolling inside the popover keeps it open');
+  await page.keyboard.press('Escape');
+
+  // item menu near the bottom edge flips up to stay on screen
+  await page.setViewport({ width: 1280, height: 640 });
+  await sleep(150);
+  await page.evaluate(() => {
+    const items = [...document.querySelectorAll('.tree .item')];
+    window.__last = items[items.length - 1];
+    window.__last.scrollIntoView({ block: 'end' });
+  });
+  await sleep(250); // let the scroll settle before opening (scroll closes popovers)
+  await page.evaluate(() => {
+    window.showItemMenu(window.__last.querySelector('.itemmenu-btn'), window.__last.dataset.id);
+  });
+  await sleep(250);
+  fit = await page.evaluate(() => {
+    const pop = document.querySelector('.popover');
+    const r = pop.getBoundingClientRect();
+    return r.top >= 0 && r.bottom <= innerHeight + 0.5;
+  });
+  assert(fit, 'item menu opened near the bottom edge stays on screen');
+  await page.keyboard.press('Escape');
+  await page.setViewport({ width: 1380, height: 940 });
+
   await browser.close();
   console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL GAP TESTS PASSED');
   process.exit(failures ? 1 : 0);

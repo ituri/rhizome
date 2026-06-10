@@ -12,6 +12,7 @@
  *   TENDRIL_PASSWORD      if set, the app requires this password to log in
  *   TENDRIL_TOTP_SECRET   if set (base32), login additionally requires a TOTP code
  *   TENDRIL_CAPTURE_TOKEN if set, POST /api/capture with this token appends to the Inbox
+ *   TENDRIL_AGENT_TOKEN   if set, unlocks the per-node REST API at /api/v1 (Bearer or ?token=)
  *   ANTHROPIC_API_KEY     if set, enables the in-app "Ask AI" assistant
  *   TENDRIL_AI_MODEL      Claude model for Ask AI      (default claude-opus-4-8)
  */
@@ -36,6 +37,7 @@ const FILES_DIR = path.join(DATA_DIR, 'files');
 const PASSWORD = process.env.TENDRIL_PASSWORD || '';
 const TOTP_SECRET = process.env.TENDRIL_TOTP_SECRET || '';
 const CAPTURE_TOKEN = process.env.TENDRIL_CAPTURE_TOKEN || '';
+const AGENT_TOKEN = process.env.TENDRIL_AGENT_TOKEN || '';
 const AI_KEY = process.env.ANTHROPIC_API_KEY || '';
 const AI_MODEL = process.env.TENDRIL_AI_MODEL || 'claude-opus-4-8';
 const MAX_BODY = 64 * 1024 * 1024;
@@ -257,6 +259,209 @@ function captureText(text) {
   return count;
 }
 
+/* ---------- per-node API (v1) ---------- */
+
+function ensureDoc() {
+  if (!store.doc || !store.doc.nodes || !store.doc.nodes.root) {
+    store.doc = { root: 'root', nodes: { root: { id: 'root', text: '', note: null, done: false, collapsed: false, children: [] } } };
+  }
+  return store.doc;
+}
+
+// strip the obvious dangerous bits server-side; the client applies a full
+// inline-tag whitelist on render, so simple <b>/<i>/<a> markup survives
+function sanitizeServerHtml(s) {
+  if (typeof s !== 'string') return '';
+  return s
+    .replace(/<\/?(?:script|style|iframe|object|embed|link|meta|svg|img)\b[^>]*>/gi, '')
+    .replace(/\son\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+    .replace(/(href|src)\s*=\s*(?:"javascript:[^"]*"|'javascript:[^']*'|javascript:[^\s>]+)/gi, '$1="#"');
+}
+
+const serverPlain = html => String(html || '').replace(/<[^>]+>/g, '')
+  .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&nbsp;/g, ' ').trim();
+
+function nodeParent(id) {
+  for (const pid of Object.keys(store.doc.nodes)) {
+    if ((store.doc.nodes[pid].children || []).includes(id)) return pid;
+  }
+  return null;
+}
+function nodeDetach(id) {
+  const p = nodeParent(id);
+  if (p) { const a = store.doc.nodes[p].children; const i = a.indexOf(id); if (i >= 0) a.splice(i, 1); }
+}
+function nodeInsert(parent, index, id) {
+  const a = store.doc.nodes[parent].children;
+  if (!Number.isInteger(index) || index < 0 || index > a.length) index = a.length;
+  a.splice(index, 0, id);
+}
+function nodeDelete(id) {
+  const parent = nodeParent(id);
+  const ids = subtreeIds(store.doc, id);
+  const nodes = {};
+  for (const x of ids) nodes[x] = store.doc.nodes[x];
+  if (!store.doc.trash) store.doc.trash = [];
+  store.doc.trash.unshift({
+    ts: Date.now(), parent, index: parent ? store.doc.nodes[parent].children.indexOf(id) : 0, root: id, nodes,
+  });
+  if (store.doc.trash.length > 200) store.doc.trash = store.doc.trash.slice(0, 200);
+  nodeDetach(id);
+  for (const x of ids) delete store.doc.nodes[x];
+  return ids.length;
+}
+function nodeView(id) {
+  const n = store.doc.nodes[id];
+  return {
+    id, text: n.text || '', plain: serverPlain(n.text), note: n.note ?? null,
+    done: !!n.done, collapsed: !!n.collapsed, format: n.format || 'bullet',
+    children: n.children || [], created: n.c ?? null, modified: n.m ?? null,
+    parent: nodeParent(id),
+  };
+}
+function nodeTree(id, depth) {
+  const v = nodeView(id);
+  if (depth === undefined || depth > 0) {
+    v.children = (store.doc.nodes[id].children || []).map(c => nodeTree(c, depth === undefined ? undefined : depth - 1));
+  }
+  return v;
+}
+function apiSearch(q, limit) {
+  const terms = q.toLowerCase().split(/\s+/).filter(Boolean);
+  const out = [];
+  const walk = (id, path) => {
+    for (const c of (store.doc.nodes[id].children || [])) {
+      const n = store.doc.nodes[c];
+      if (!n) continue;
+      const plain = serverPlain(n.text);
+      const hay = (plain + ' ' + (n.note || '')).toLowerCase();
+      if (plain && terms.every(t => hay.includes(t))) {
+        out.push({ id: c, plain, path: path.join(' > '), done: !!n.done });
+      }
+      walk(c, [...path, plain || 'Untitled']);
+    }
+  };
+  walk('root', []);
+  return out.slice(0, limit || 50);
+}
+
+function apiAuthed(req, url) {
+  if (isAuthed(req)) return true;
+  if (!AGENT_TOKEN) return false;
+  const bearer = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+  const qtoken = new URL(url, 'http://x').searchParams.get('token') || req.headers['x-agent-token'] || '';
+  return timingSafeEq(bearer || qtoken, AGENT_TOKEN);
+}
+
+async function readJson(req) {
+  return JSON.parse((await readBody(req, 16 * 1024 * 1024)).toString('utf8') || '{}');
+}
+
+async function handleV1(req, res, url) {
+  if (!apiAuthed(req, url)) return send(res, 401, { error: 'unauthorized — set TENDRIL_AGENT_TOKEN and send Authorization: Bearer <token>' });
+  ensureDoc();
+  const path = url.split('?')[0];
+  const method = req.method;
+  const u = new URL(url, 'http://x');
+
+  if (path === '/api/v1' || path === '/api/v1/') {
+    return send(res, 200, {
+      name: 'Tendril node API', version: store.version,
+      endpoints: [
+        'GET    /api/v1/doc',
+        'GET    /api/v1/version',
+        'GET    /api/v1/search?q=&limit=',
+        'GET    /api/v1/nodes/:id            (?tree=1&depth=N for the subtree)',
+        'GET    /api/v1/nodes/:id/children',
+        'POST   /api/v1/nodes                {parent,text,note,done,format,index}',
+        'PATCH  /api/v1/nodes/:id            {text,note,done,collapsed,format}',
+        'POST   /api/v1/nodes/:id/complete   {done}',
+        'POST   /api/v1/nodes/:id/move       {parent,index}',
+        'DELETE /api/v1/nodes/:id',
+      ],
+    });
+  }
+  if (path === '/api/v1/version' && method === 'GET') return send(res, 200, { version: store.version });
+  if (path === '/api/v1/doc' && method === 'GET') return send(res, 200, { version: store.version, doc: store.doc });
+  if (path === '/api/v1/search' && method === 'GET') {
+    const q = u.searchParams.get('q') || '';
+    const lim = parseInt(u.searchParams.get('limit') || '50', 10);
+    return send(res, 200, { results: q.trim() ? apiSearch(q, lim) : [] });
+  }
+  if (path === '/api/v1/nodes' && method === 'POST') {
+    const body = await readJson(req);
+    const parent = body.parent || 'root';
+    if (!store.doc.nodes[parent]) return send(res, 400, { error: 'unknown parent node' });
+    const now = Date.now();
+    const node = {
+      id: uid(), text: sanitizeServerHtml(body.text || ''),
+      note: body.note != null ? String(body.note) : null,
+      done: !!body.done, collapsed: false, children: [], c: now, m: now,
+    };
+    if (body.format) node.format = String(body.format);
+    store.doc.nodes[node.id] = node;
+    nodeInsert(parent, body.index, node.id);
+    commitDoc(store.doc);
+    return send(res, 201, nodeView(node.id));
+  }
+
+  const m = path.match(/^\/api\/v1\/nodes\/([A-Za-z0-9]+)(\/tree|\/children|\/move|\/complete)?$/);
+  if (m) {
+    const id = m[1], sub = m[2];
+    if (!store.doc.nodes[id]) return send(res, 404, { error: 'node not found' });
+
+    if (!sub && method === 'GET') {
+      if (u.searchParams.get('tree')) {
+        const d = u.searchParams.get('depth');
+        return send(res, 200, nodeTree(id, d != null ? parseInt(d, 10) : undefined));
+      }
+      return send(res, 200, nodeView(id));
+    }
+    if (sub === '/children' && method === 'GET') {
+      return send(res, 200, { children: (store.doc.nodes[id].children || []).map(nodeView) });
+    }
+    if (!sub && method === 'PATCH') {
+      const body = await readJson(req);
+      const n = store.doc.nodes[id];
+      if ('text' in body) n.text = sanitizeServerHtml(String(body.text));
+      if ('note' in body) n.note = body.note == null ? null : String(body.note);
+      if ('done' in body) n.done = !!body.done;
+      if ('collapsed' in body) n.collapsed = !!body.collapsed;
+      if ('format' in body) { if (body.format) n.format = String(body.format); else delete n.format; }
+      n.m = Date.now();
+      commitDoc(store.doc);
+      return send(res, 200, nodeView(id));
+    }
+    if (sub === '/complete' && method === 'POST') {
+      const body = await readJson(req);
+      store.doc.nodes[id].done = body.done === undefined ? true : !!body.done;
+      store.doc.nodes[id].m = Date.now();
+      commitDoc(store.doc);
+      return send(res, 200, nodeView(id));
+    }
+    if (sub === '/move' && method === 'POST') {
+      const body = await readJson(req);
+      const target = body.parent || 'root';
+      if (!store.doc.nodes[target]) return send(res, 400, { error: 'unknown target parent' });
+      if (target === id || subtreeIds(store.doc, id).includes(target)) {
+        return send(res, 400, { error: 'cannot move a node into itself or its own subtree' });
+      }
+      nodeDetach(id);
+      nodeInsert(target, body.index, id);
+      store.doc.nodes[id].m = Date.now();
+      commitDoc(store.doc);
+      return send(res, 200, nodeView(id));
+    }
+    if (!sub && method === 'DELETE') {
+      if (id === 'root') return send(res, 400, { error: 'cannot delete the root' });
+      const count = nodeDelete(id);
+      commitDoc(store.doc);
+      return send(res, 200, { ok: true, deleted: count });
+    }
+  }
+  return send(res, 404, { error: 'not found' });
+}
+
 /* ---------- helpers ---------- */
 
 function send(res, status, body, headers = {}) {
@@ -438,6 +643,9 @@ const server = http.createServer(async (req, res) => {
   const url = req.url || '/';
 
   try {
+    /* ---- per-node REST API (agent token or session cookie) ---- */
+    if (url.startsWith('/api/v1')) return await handleV1(req, res, url);
+
     /* ---- share access (token-scoped, no cookie needed) ---- */
     const shareMatch = url.match(/^\/api\/share\/([a-f0-9]{24,})\/doc(\?.*)?$/);
     if (shareMatch) {
@@ -591,5 +799,6 @@ server.listen(PORT, HOST, () => {
   console.log(`Data directory: ${DATA_DIR}`);
   console.log(PASSWORD ? `Password protection: ON${TOTP_SECRET ? ' + TOTP MFA' : ''}` : 'Password protection: off (set TENDRIL_PASSWORD to enable)');
   if (CAPTURE_TOKEN) console.log('Capture API: POST /api/capture?token=…');
+  if (AGENT_TOKEN) console.log('Node API: /api/v1 (agent token enabled)');
   if (AI_KEY) console.log(`Ask AI: enabled (${AI_MODEL})`);
 });

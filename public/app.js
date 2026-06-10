@@ -2862,11 +2862,38 @@ function cancelDrag() {
 /* ---------------- 20. popovers & toasts ---------------- */
 
 let currentPopover = null;
+let popoverAnchor = null;
+let popoverOpts = null;
 
 function closeAllPopovers() {
   currentPopover?.remove();
   currentPopover = null;
+  popoverAnchor = null;
+  popoverOpts = null;
   window.closeCaretPop?.();
+}
+
+// Place a popover so it is ALWAYS fully on-screen: prefer below the anchor,
+// flip above if it fits better there, and when it fits neither side cap its
+// height to the larger gap and let it scroll. Width is clamped horizontally.
+function positionPopover(pop, anchor, opts = {}) {
+  const margin = 8, gap = 6;
+  pop.style.maxHeight = '';
+  const ar = anchor.getBoundingClientRect();
+  let pr = pop.getBoundingClientRect();
+  const below = innerHeight - margin - (ar.bottom + gap);
+  const above = (ar.top - gap) - margin;
+  let placeAbove, maxH = innerHeight - 2 * margin;
+  if (pr.height <= below) placeAbove = false;
+  else if (pr.height <= above) placeAbove = true;
+  else { placeAbove = above > below; maxH = Math.max(below, above); }
+  pop.style.maxHeight = Math.max(120, maxH) + 'px';
+  pr = pop.getBoundingClientRect();
+  let top = placeAbove ? ar.top - gap - pr.height : ar.bottom + gap;
+  top = clamp(top, margin, Math.max(margin, innerHeight - pr.height - margin));
+  const left = clamp(opts.alignX ?? ar.left, margin, Math.max(margin, innerWidth - pr.width - margin));
+  pop.style.left = left + 'px';
+  pop.style.top = top + 'px';
 }
 
 function openPopover(anchor, build, opts = {}) {
@@ -2875,14 +2902,10 @@ function openPopover(anchor, build, opts = {}) {
   pop.className = 'popover' + (opts.className ? ' ' + opts.className : '');
   build(pop);
   document.body.append(pop);
-  const ar = anchor.getBoundingClientRect();
-  const pr = pop.getBoundingClientRect();
-  let left = clamp(opts.alignX ?? ar.left, 8, innerWidth - pr.width - 8);
-  let top = (opts.alignY ?? ar.bottom) + 6;
-  if (top + pr.height > innerHeight - 8) top = Math.max(8, ar.top - pr.height - 6);
-  pop.style.left = left + 'px';
-  pop.style.top = top + 'px';
+  positionPopover(pop, anchor, opts);
   currentPopover = pop;
+  popoverAnchor = anchor;
+  popoverOpts = opts;
   setTimeout(() => {
     const close = ev => {
       if (!pop.contains(ev.target)) { closeAllPopovers(); document.removeEventListener('mousedown', close); }
@@ -2891,6 +2914,17 @@ function openPopover(anchor, build, opts = {}) {
   });
   return pop;
 }
+
+// keep an open popover on-screen as the viewport changes; close it if the
+// page (not the popover's own content) scrolls out from under it
+addEventListener('resize', () => {
+  if (currentPopover && popoverAnchor && document.body.contains(popoverAnchor)) {
+    positionPopover(currentPopover, popoverAnchor, popoverOpts || {});
+  }
+});
+addEventListener('scroll', e => {
+  if (currentPopover && e.target !== currentPopover && !currentPopover.contains(e.target)) closeAllPopovers();
+}, true);
 
 function menuItem(label, icon, fn, opts = {}) {
   const b = document.createElement('button');
