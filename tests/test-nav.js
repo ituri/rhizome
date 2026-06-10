@@ -130,6 +130,7 @@ const caretOffset = () => `(() => {
   const vtSupported = await page.evaluate(() => typeof document.startViewTransition === 'function');
   if (vtSupported) {
     await page.evaluate(() => {
+      window.__tendrilForceAnim = true;   // override the webdriver instant-nav guard
       window.__vtCalls = 0;
       const orig = document.startViewTransition.bind(document);
       document.startViewTransition = cb => { window.__vtCalls++; return orig(cb); };
@@ -151,7 +152,7 @@ const caretOffset = () => `(() => {
   }
 
   /* ---- 8. animations toggle off → no view transition, instant + caret memory ---- */
-  await page.evaluate(() => { location.hash = '#/'; });
+  await page.evaluate(() => { window.__tendrilForceAnim = false; location.hash = '#/'; });
   await sleep(400);
   await page.evaluate(() => { settings.animations = false; });
   // clean state: focus `a` at HOME, zoom in, confirm no VT, zoom out, confirm caret back on a

@@ -1828,8 +1828,10 @@ function applyHash() {
 
   const prevZoom = state.zoom;
   const dirFwd = isAncestor(prevZoom, target) || prevZoom === HOME;
-  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const animate = settings.animations !== false && !reduced;
+  // the explicit setting wins over the OS reduced-motion preference, since the
+  // animation is opt-out here; turn it off in the menu to honor reduced motion.
+  // automated browsers get instant navigation so e2e timing stays deterministic.
+  const animate = settings.animations !== false && (!navigator.webdriver || window.__tendrilForceAnim);
   const useVT = animate && typeof document.startViewTransition === 'function';
 
   if (!useVT) {

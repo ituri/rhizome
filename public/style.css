@@ -870,23 +870,25 @@ kbd {
 /* ---- smooth zoom via the View Transitions API ---- */
 /* the morphing item (row text ⇄ title) glides between its two positions */
 ::view-transition-group(zoom-morph) {
-  animation-duration: 0.36s;
+  animation-duration: 0.42s;
   animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
 }
-::view-transition-image-pair(zoom-morph) { isolation: auto; }
 ::view-transition-old(zoom-morph),
-::view-transition-new(zoom-morph) { mix-blend-mode: normal; height: 100%; }
+::view-transition-new(zoom-morph) { mix-blend-mode: normal; }
 
 /* everything else cross-fades with a gentle directional drift */
 ::view-transition-group(root) {
-  animation-duration: 0.3s;
+  animation-duration: 0.34s;
   animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
 }
-html.vt-fwd::view-transition-new(root) { animation-name: vt-fade, vt-drift-up; }
-html.vt-back::view-transition-new(root) { animation-name: vt-fade, vt-drift-down; }
+html.vt-fwd::view-transition-old(root) { animation: vt-fade-out 0.2s both; }
+html.vt-back::view-transition-old(root) { animation: vt-fade-out 0.2s both; }
+html.vt-fwd::view-transition-new(root) { animation: vt-fade 0.34s both, vt-drift-up 0.34s cubic-bezier(0.22,1,0.36,1) both; }
+html.vt-back::view-transition-new(root) { animation: vt-fade 0.34s both, vt-drift-down 0.34s cubic-bezier(0.22,1,0.36,1) both; }
 @keyframes vt-fade { from { opacity: 0; } }
-@keyframes vt-drift-up { from { transform: translateY(12px); } }
-@keyframes vt-drift-down { from { transform: translateY(-9px); } }
+@keyframes vt-fade-out { to { opacity: 0; } }
+@keyframes vt-drift-up { from { transform: translateY(16px); } }
+@keyframes vt-drift-down { from { transform: translateY(-12px); } }
 
 /* ---------------- misc ---------------- */
 
