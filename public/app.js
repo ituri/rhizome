@@ -365,6 +365,30 @@ function setCaretOffset(el, offset) {
   sel.addRange(range);
 }
 
+function selectPlainRange(el, from, to) {
+  if (from === to) { setCaretOffset(el, from); return; }
+  const range = document.createRange();
+  let rs = from, re = to, startSet = false, endSet = false;
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  let node;
+  while ((node = walker.nextNode())) {
+    const len = node.nodeValue.length;
+    if (!startSet) {
+      if (rs <= len) { range.setStart(node, rs); startSet = true; }
+      else rs -= len;
+    }
+    if (startSet && !endSet) {
+      if (re <= len) { range.setEnd(node, re); endSet = true; break; }
+    }
+    re -= len;
+  }
+  if (!startSet) { setCaretOffset(el, 'end'); return; }
+  if (!endSet) range.setEnd(el, el.childNodes.length);
+  const sel = getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
 function caretRangeAtPoint(x, y) {
   if (document.caretPositionFromPoint) {
     const p = document.caretPositionFromPoint(x, y);
@@ -692,8 +716,9 @@ function commitPending(redecorateOk = false) {
       const display = displayHtml(node);
       if (display !== el.innerHTML) {
         const off = caretOffsetIn(el);
+        const selLen = getSelection().rangeCount ? getSelection().toString().length : 0;
         el.innerHTML = display;
-        if (off !== null) setCaretOffset(el, off);
+        if (off !== null) selectPlainRange(el, off, off + selLen);
       }
     }
   }
