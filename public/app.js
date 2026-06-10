@@ -1789,12 +1789,21 @@ function zoomTo(id) {
   location.hash = id === HOME ? '#/' : '#/n/' + id;
 }
 
+// per-view caret memory: leaving a view stores where the caret was, so
+// returning to it (zoom out, breadcrumb, back) lands exactly there again
+const viewFocus = new Map();
+
 function applyHash() {
   const m = location.hash.match(/^#\/n\/([A-Za-z0-9]+)/);
   let target = m && doc.nodes[m[1]] ? m[1] : HOME;
   if (SHARE_TOKEN && target !== HOME && !isAncestor(HOME, target)) target = HOME;
   if (target === state.zoom) return;
+
+  // remember the caret in the view we're leaving (before it's torn down)
+  const leaving = captureFocus();
   commitActiveText();
+  if (leaving) viewFocus.set(state.zoom, leaving);
+
   const dirFwd = isAncestor(state.zoom, target) || state.zoom === HOME;
   state.zoom = target;
   if (searchActive()) setSearch('');
@@ -1802,8 +1811,23 @@ function applyHash() {
   void pageEl.offsetWidth;
   pageEl.classList.add(dirFwd ? 'anim-fwd' : 'anim-back');
   renderPage();
-  if (state.zoom !== HOME && !state.readOnly) setCaretOffset(zoomTitleEl, 'end');
-  window.scrollTo(0, 0);
+
+  if (state.readOnly) { window.scrollTo(0, 0); return; }
+  const saved = viewFocus.get(target);
+  if (saved && doc.nodes[saved.id] && (saved.id === target || elById.has(saved.id))) {
+    // returning to a known view — restore the exact caret and bring it into view
+    restoreFocus(saved);
+    if (saved.id !== target) elById.get(saved.id)?.scrollIntoView({ block: 'center' });
+    else window.scrollTo(0, 0);
+  } else if (target !== HOME) {
+    // first visit: if we zoomed straight into the item we were editing,
+    // carry its caret offset into the new title; otherwise sit at the end
+    const off = (leaving && leaving.id === target && leaving.field === 'text') ? leaving.offset : 'end';
+    setCaretOffset(zoomTitleEl, off);
+    window.scrollTo(0, 0);
+  } else {
+    window.scrollTo(0, 0);
+  }
 }
 
 window.addEventListener('hashchange', () => { if (doc) applyHash(); });
@@ -2256,7 +2280,13 @@ function onKeydown(e) {
   if (e.key === 'Escape') {
     e.preventDefault();
     if (isNote) { focusItem(id, field === 'zoom-note' ? 'title' : 'text', 'end'); return; }
-    if (searchActive()) { setSearch(''); return; }
+    if (searchActive()) {
+      // clearing search shouldn't lose your place
+      const here = { id, field, offset: caretOffsetIn(el) ?? 0 };
+      setSearch('');
+      if (doc.nodes[here.id]) restoreFocus(here);
+      return;
+    }
     el.blur();
     return;
   }
