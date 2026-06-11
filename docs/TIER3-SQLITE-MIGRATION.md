@@ -339,7 +339,31 @@ Nothing in Phase 2+ ships until 1–4 are green across thousands of seeds.
 
 ---
 
-## 11. One-line summary
+## 11. Implementation status
+
+| Piece | State | Evidence |
+|---|---|---|
+| **Phase 1** — SQLite persistence (incremental rows, FTS5), wire-compatible | **done, shipped** | `db.js`, `tests/test-db.js`; all 10 e2e suites green on the SQLite backend |
+| **Phase 2 core** — convergent op-merge engine (HLC + timestamp-ordered replay + cycle-skip + idempotency) | **done, proven** | `ops.js`, `tests/test-converge.js`: byte-identical convergence + zero cycles across 2500 seeds × 400 ops × 4 replicas |
+| **Phase 2 integration** — server adopts the Replica as source of truth (oplog + per-field HLC persisted), `POST /api/ops`, SSE op broadcast, **client op-log + optimistic apply + op-log undo**, offline queue | **not started** | — |
+| **Phase 3** — client search via FTS endpoint; **virtualized render** | **not started** | — |
+| **Phase 4** — retire whole-doc PUT + snapshots; SQLite sole source of truth | **not started** | — |
+
+**Why the line is drawn here.** Phase-2 *integration* and Phases 3–4 are the multi-week
+"real project" estimated in §10. They require the server to make the op-log the source of
+truth (persisted per-field HLC, all of v1/capture/shares routed through ops) and a full
+client rewrite (mutations emit ops, optimistic apply, op-log undo replacing
+`structuredClone`, offline durable queue), plus virtualized rendering. Each touches the
+hot paths the 250-assertion e2e suite guards. Ramming that in within one session would
+risk exactly the regressions and inconsistencies this spec exists to prevent — so the
+proven engine is committed as the foundation, and the integration is left as deliberate,
+test-gated follow-on work (the §9 fuzz harness already exists to guard it).
+
+What the committed work already buys: **Phase 1** removes the whole-file rewrite per save
+(incremental rows) and adds FTS5 search; **the Phase-2 engine** is the convergence
+guarantee itself — drop-in ready for the server to adopt as its authoritative model.
+
+## 12. One-line summary
 
 Store nodes as rows, express every edit as an invertible, HLC-stamped, transactional op,
 let the single self-hosted server be the total-order sequencer, and **prove convergence
