@@ -804,6 +804,24 @@ async function doSave() {
   saving = true;
   const seq = changeSeq;
   try {
+    // op delta-sync (opt-in): common edits go as ops; deletes/trash changes fall
+    // back to the whole-doc PUT below so trash stays consistent (Phase-4 cutover pending)
+    if (settings.opSync && !SHARE_TOKEN && syncedDoc) {
+      const ops = diffDoc(syncedDoc, doc);
+      const trashSame = deepEq(syncedDoc.trash || [], doc.trash || []);
+      if (ops.length && trashSame && !ops.some(o => o.kind === 'delete')) {
+        const r = await fetch('/api/ops', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ops }),
+        });
+        if (r.ok) {
+          state.version = (await r.json()).version;
+          setSynced();
+          if (changeSeq === seq) { dirty = false; setSaveUI('saved'); localStorage.removeItem('tendril-offline'); }
+          return;
+        }
+        // any failure → fall through to the robust whole-doc PUT
+      }
+    }
     let res = await fetch(SAVE_URL, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -827,6 +845,7 @@ async function doSave() {
     }
     if (!res.ok) throw new Error('save failed: ' + res.status);
     state.version = (await res.json()).version;
+    setSynced();
     if (changeSeq === seq) {
       dirty = false;
       setSaveUI('saved');
@@ -847,6 +866,7 @@ function adoptRemote(version, remoteDoc) {
   doc = sanitizeDocTexts(remoteDoc);
   state.version = version;
   rebuildParentMap();
+  setSynced();
   if (!doc.nodes[state.zoom]) state.zoom = HOME;
   renderPage();
 }
@@ -854,6 +874,85 @@ function adoptRemote(version, remoteDoc) {
 bc?.addEventListener('message', e => {
   if (!dirty && e.data.version > state.version) adoptRemote(e.data.version, e.data.doc);
 });
+
+/* ---------------- 8b. op sync (Phase 2) ----------------
+   Delta sync over /api/ops. Opt-in (settings.opSync) for now: common edits
+   (insert/update/move) go as ops; deletes / trash changes fall back to whole-doc
+   PUT so trash stays consistent until the op-based trash cutover (Phase 4).
+   Receiving the server's authoritative op broadcast is always on — and safe,
+   because the PUT path broadcasts no `ops`, so old behaviour is untouched. */
+let syncedDoc = null;                 // last state we know the server has (diff baseline)
+const setSynced = () => { try { syncedDoc = structuredClone(doc); } catch { syncedDoc = null; } };
+
+const DEVICE_ID = (() => {
+  let d = null; try { d = localStorage.getItem('tendril-device'); } catch { /* private mode */ }
+  if (!d) { d = Math.random().toString(36).slice(2, 8); try { localStorage.setItem('tendril-device', d); } catch { /* ignore */ } }
+  return d;
+})();
+const pad = (n, w) => String(n).padStart(w, '0');
+const hlcClock = {
+  p: 0, c: 0,
+  tick() { const w = Date.now(); if (w > this.p) { this.p = w; this.c = 0; } else this.c++; return `${pad(this.p, 13)}:${pad(this.c, 5)}:${DEVICE_ID}`; },
+  recv(s) { const [rp, rc] = s.split(':'); const w = Date.now(); const p = Math.max(w, this.p, +rp);
+    if (p === this.p && p === +rp) this.c = Math.max(this.c, +rc) + 1; else if (p === this.p) this.c++; else if (p === +rp) this.c = +rc + 1; else this.c = 0; this.p = p; },
+};
+let opSeq = 0;
+const OP_FIELDS = ['text', 'note', 'done', 'collapsed', 'format', 'mirror', 'files', 'comments'];
+const deepEq = (a, b) => a === b || JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+function posMap(d) {
+  const m = {};
+  for (const id in d.nodes) { const ch = d.nodes[id].children || []; for (let i = 0; i < ch.length; i++) m[ch[i]] = { parent: id, ord: i }; }
+  return m;
+}
+// minimal op set turning oldD into newD (id-stable: detects move vs insert/delete)
+function diffDoc(oldD, newD) {
+  const ops = [];
+  const mk = (kind, node, extra) => ops.push({ id: `${DEVICE_ID}-${opSeq++}`, hlc: hlcClock.tick(), kind, node, ...extra });
+  const oldP = posMap(oldD), newP = posMap(newD);
+  for (const id in newD.nodes) {
+    if (id === ROOT) continue;
+    const nn = newD.nodes[id], on = oldD.nodes[id];
+    const np = newP[id] || { parent: ROOT, ord: 0 };
+    if (!on) { const { children, ...data } = nn; mk('insert', id, { parent: np.parent, ord: np.ord, data }); continue; }
+    const op = oldP[id] || {};
+    if (np.parent !== op.parent || np.ord !== op.ord) mk('move', id, { parent: np.parent, ord: np.ord });
+    const patch = {};
+    for (const k of OP_FIELDS) if (!deepEq(on[k], nn[k])) patch[k] = nn[k] === undefined ? null : nn[k];
+    if (Object.keys(patch).length) mk('update', id, { patch });
+  }
+  for (const id in oldD.nodes) { // deletes: subtree roots only (parent still present)
+    if (id === ROOT || newD.nodes[id]) continue;
+    const par = (oldP[id] || {}).parent;
+    if (!par || newD.nodes[par]) mk('delete', id, {});
+  }
+  return ops;
+}
+// apply the server's authoritative op stream to the local doc (server already merged)
+function applyRemoteOps(ops) {
+  for (const o of ops) {
+    hlcClock.recv(o.hlc);
+    const n = doc.nodes[o.node];
+    if (o.kind === 'insert') {
+      if (doc.nodes[o.node]) continue;
+      doc.nodes[o.node] = { ...o.data, id: o.node, children: [] };
+      const p = doc.nodes[o.parent] || doc.nodes[ROOT];
+      if (p) p.children.splice(Math.min(o.ord | 0, p.children.length), 0, o.node);
+    } else if (o.kind === 'update') {
+      if (n) for (const k in o.patch) n[k] = o.patch[k];
+    } else if (o.kind === 'move') {
+      if (n && doc.nodes[o.parent] && !isAncestor(o.node, o.parent)) {
+        detach(o.node); const p = doc.nodes[o.parent]; p.children.splice(Math.min(o.ord | 0, p.children.length), 0, o.node);
+      }
+    } else if (o.kind === 'delete') {
+      if (n) { const ids = subtreeOf(o.node), nodes = {}; for (const x of ids) nodes[x] = doc.nodes[x];
+        if (!doc.trash) doc.trash = []; const par = parentOf(o.node);
+        doc.trash.unshift({ ts: Date.now(), parent: par, index: par ? kidsOf(par).indexOf(o.node) : 0, root: o.node, nodes });
+        detach(o.node); for (const x of ids) delete doc.nodes[x]; }
+    }
+  }
+  rebuildParentMap();
+}
+window.__applyRemoteOps = applyRemoteOps;  // for the convergence e2e test
 
 document.addEventListener('visibilitychange', async () => {
   if (document.visibilityState !== 'visible' || dirty || !doc) return;
@@ -901,7 +1000,14 @@ function connectSSE() {
     es.onmessage = async e => {
       try {
         const data = JSON.parse(e.data);
-        if (data.version > state.version && !dirty) {
+        if (data.version <= state.version || dirty) return;
+        if (data.ops && data.version === state.version + 1) {
+          // contiguous authoritative op batch → replay locally (no whole-doc refetch)
+          applyRemoteOps(data.ops);
+          state.version = data.version;
+          setSynced();
+          renderPage();
+        } else {
           const full = await (await fetch('/api/doc')).json();
           if (!dirty && full.version > state.version) adoptRemote(full.version, full.doc);
         }
@@ -3755,4 +3861,5 @@ async function loadDoc() {
     doc.trash = doc.trash.filter(t => t.ts > cutoff);
     if (doc.trash.length !== before) markDirty();
   }
+  setSynced(); // op-sync diff baseline
 }
