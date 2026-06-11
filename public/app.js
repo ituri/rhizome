@@ -1471,7 +1471,10 @@ function buildBoardEl(boardId, zoomed) {
       const bar = document.createElement('button');
       bar.className = 'col-collapsed';
       bar.dataset.colToggle = col;
-      bar.innerHTML = `<span class="cc-title">${escHtml(plainOf(N(col).text).trim() || 'Untitled')}</span><span class="cc-count">${kidsOf(col).length}</span>`;
+      const cards = kidsOf(col).length;
+      bar.innerHTML = `<span class="cc-title">${escHtml(plainOf(N(col).text).trim() || 'Untitled')}</span>`
+        + `<span class="cc-count">${cards} card${cards === 1 ? '' : 's'}</span>`
+        + '<span class="cc-hint">Expand column</span>';
       colEl.append(bar);
     } else {
       colEl.append(mountItem(col, true));
