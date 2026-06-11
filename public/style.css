@@ -1370,6 +1370,7 @@ time[datetime].today { color: oklch(0.5 0.14 150); background: oklch(0.55 0.14 1
   align-items: flex-start;
 }
 .board-col {
+  position: relative;
   flex: 0 0 230px;
   background: var(--accent-softer);
   border: 1px solid var(--line-soft);
@@ -1379,6 +1380,59 @@ time[datetime].today { color: oklch(0.5 0.14 150); background: oklch(0.55 0.14 1
   max-height: 64vh;
   overflow-y: auto;
   overflow-x: hidden;
+}
+
+/* per-column collapse */
+.col-toggle {
+  position: absolute;
+  top: 7px; right: 6px;
+  width: 18px; height: 18px;
+  border: 0; background: none;
+  color: var(--ink-faint);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  border-radius: 5px;
+  opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 1;
+}
+.board-col:hover .col-toggle, .board-col.collapsed .col-toggle { opacity: 1; }
+.col-toggle:hover { background: var(--accent-soft); color: var(--accent); }
+.col-toggle svg { width: 10px; height: 10px; transform: rotate(90deg); } /* ▾ when expanded */
+.board-col.collapsed .col-toggle svg { transform: rotate(0deg); }         /* ▸ when collapsed */
+.board-col.collapsed {
+  flex-basis: 46px;
+  min-width: 46px;
+  padding: 8px 4px;
+  cursor: pointer;
+  overflow: hidden;
+}
+.col-collapsed {
+  border: 0; background: none;
+  font: inherit;
+  cursor: pointer;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 30px 0 8px;
+  color: var(--ink-soft);
+}
+.col-collapsed .cc-title {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  font-weight: 600;
+  font-size: 13px;
+  white-space: nowrap;
+  max-height: 46vh;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.col-collapsed .cc-count {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--ink-faint);
 }
 
 /* zoomed into the board itself: full-page columns */

@@ -1433,7 +1433,7 @@ function mountItem(id, underMatch = false) {
   const um = underMatch || (searchActive() && state.matchSet?.has(id));
 
   if (fmt === 'board') {
-    item.append(buildBoardEl(id, false));
+    if (expanded) item.append(buildBoardEl(id, false)); // collapsing the board node hides its columns
   } else if (expanded && hasKids(id)) {
     const wrap = buildChildrenWrap(id, um);
     if (wrap) item.append(wrap);
@@ -1455,15 +1455,33 @@ function buildBoardEl(boardId, zoomed) {
   const board = document.createElement('div');
   board.className = 'board' + (zoomed ? ' board-zoomed' : '');
   for (const col of kidsOf(boardId).filter(c => shouldShow(c, true))) {
+    const collapsed = !!N(col).collapsed && !searchActive();
     const colEl = document.createElement('div');
-    colEl.className = 'board-col';
-    colEl.append(mountItem(col, true));
-    if (!state.readOnly && !searchActive()) {
-      const add = document.createElement('button');
-      add.className = 'board-add';
-      add.dataset.addCard = col;
-      add.textContent = '+ New card';
-      colEl.append(add);
+    colEl.className = 'board-col' + (collapsed ? ' collapsed' : '');
+    if (!searchActive()) {
+      const tog = document.createElement('button');
+      tog.className = 'col-toggle';
+      tog.dataset.colToggle = col;
+      tog.title = collapsed ? 'Expand column' : 'Collapse column';
+      tog.tabIndex = -1;
+      tog.innerHTML = CHEVRON;
+      colEl.append(tog);
+    }
+    if (collapsed) {
+      const bar = document.createElement('button');
+      bar.className = 'col-collapsed';
+      bar.dataset.colToggle = col;
+      bar.innerHTML = `<span class="cc-title">${escHtml(plainOf(N(col).text).trim() || 'Untitled')}</span><span class="cc-count">${kidsOf(col).length}</span>`;
+      colEl.append(bar);
+    } else {
+      colEl.append(mountItem(col, true));
+      if (!state.readOnly && !searchActive()) {
+        const add = document.createElement('button');
+        add.className = 'board-add';
+        add.dataset.addCard = col;
+        add.textContent = '+ New card';
+        colEl.append(add);
+      }
     }
     board.append(colEl);
   }
@@ -2422,6 +2440,12 @@ function onKeydown(e) {
       markDirty();
       return;
     }
+    // in a board, Enter on a column header adds a card to that column, not a new lane
+    if (N(parentOf(id))?.format === 'board') {
+      e.preventDefault();
+      opNewAt(id, 0);
+      return;
+    }
     e.preventDefault();
     opSplit(ctx);
     return;
@@ -2607,6 +2631,14 @@ function onKeydown(e) {
   if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && !mod && !e.altKey && !e.shiftKey) {
     const info = caretLineInfo(el);
     const up = e.key === 'ArrowUp';
+    // board column header: ArrowDown goes down INTO the column (first card, or start one),
+    // never sideways to the next column
+    if (!up && info.last && N(parentOf(id))?.format === 'board') {
+      e.preventDefault();
+      if (hasKids(id)) focusItem(kidsOf(id)[0], 'text', 0);
+      else if (!state.readOnly) opNewAt(id, 0);
+      return;
+    }
     if ((up && info.first) || (!up && info.last)) {
       const list = editables();
       const i = list.indexOf(el);
@@ -2728,6 +2760,12 @@ treeEl.addEventListener('click', e => {
     const m = href.match(/#\/n\/([A-Za-z0-9]+)/);
     if (m && doc.nodes[m[1]]) zoomTo(m[1]);
     else window.open(href, '_blank', 'noopener');
+    return;
+  }
+  const colTog = e.target.closest('[data-col-toggle]');
+  if (colTog) {
+    const col = colTog.dataset.colToggle;
+    if (N(col)) { N(col).collapsed = !N(col).collapsed; touch(col); renderPage(); markDirty(); }
     return;
   }
   const addCard = e.target.closest('.board-add');
@@ -2919,20 +2957,28 @@ function insertForest(ctx, forest) {
 let drag = null;
 
 treeEl.addEventListener('pointerdown', e => {
+  if (e.button !== 0) return;
   const bullet = e.target.closest('.bullet');
-  if (!bullet || e.button !== 0) return;
-  const item = bullet.closest('.item');
+  // in a board, the whole card / column header is a drag handle — natural kanban dragging.
+  // (no pointer capture for these, so a plain click still places the text caret)
+  const boardRow = (!bullet && e.target.closest('.board') &&
+    !e.target.closest('.board-add, .col-toggle, .col-collapsed, .todo-box, .itemmenu-btn, .toggle, a, button'))
+    ? e.target.closest('.board-col .item > .row') : null;
+  const handle = bullet || boardRow;
+  if (!handle) return;
+  const item = handle.closest('.item');
+  if (!item) return;
   const id = item.dataset.id;
   const isTouch = e.pointerType === 'touch';
   drag = {
     id, started: false, allowed: !isTouch && !state.readOnly,
     startX: e.clientX, startY: e.clientY,
-    pointerId: e.pointerId, ghost: null, target: null,
+    pointerId: e.pointerId, ghost: null, target: null, fromBody: !bullet,
   };
   if (isTouch && !state.readOnly) {
     drag.holdTimer = setTimeout(() => { if (drag) drag.allowed = true; }, 350);
   }
-  try { bullet.setPointerCapture(e.pointerId); } catch { /* synthetic events */ }
+  if (bullet) { try { bullet.setPointerCapture(e.pointerId); } catch { /* synthetic events */ } }
 });
 
 document.addEventListener('pointermove', e => {
@@ -2958,9 +3004,10 @@ document.addEventListener('pointerup', () => {
   if (!drag) return;
   clearTimeout(drag.holdTimer);
   if (!drag.started) {
-    const id = drag.id;
+    const { id, fromBody } = drag;
     drag = null;
-    zoomTo(isMirror(id) ? (mirrorTarget(id) || id) : id);
+    // a tap on the dot zooms; a tap on a card body just edits (caret already placed)
+    if (!fromBody) zoomTo(isMirror(id) ? (mirrorTarget(id) || id) : id);
     return;
   }
   finishDrag();
@@ -2970,6 +3017,7 @@ document.addEventListener('pointercancel', () => { if (drag) cancelDrag(); });
 
 function startDrag(e) {
   commitActiveText();
+  if (drag.fromBody) { document.activeElement?.blur?.(); getSelection().removeAllRanges(); } // stop text selection mid-drag
   drag.started = true;
   document.body.classList.add('dragging-item');
   const item = elById.get(drag.id);

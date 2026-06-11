@@ -22,7 +22,7 @@ Status as of 2026-06-11. ✅ implemented (covered by the e2e suites in [`tests/`
 | **Blocks & formatting** | Headings H1–H3, quote, code block, divider, paragraph | ✅ | |
 | | To-do checkboxes | ✅ | |
 | | Numbered lists (auto-renumber) | ✅ | `1. ` shortcut, Enter continues |
-| | Kanban boards | ✅ | Inline + full-page when zoomed; +card/+column; drag across columns; column reorder |
+| | Kanban boards | ✅ | Inline + full-page when zoomed; +card/+column; drag cards by the body across columns; column reorder; collapse the board node or individual columns; Enter/↓ on a column header adds/enters a card |
 | | Markdown shortcuts (`# `, `## `, `### `, `> `, `[] `, `1. `, `---`, triple-backtick) | ✅ | |
 | | Slash command menu (`/`) | ✅ | Block types, dates, every item action (move/mirror/sort/export/count/share/AI), templates — kept in sync with the item ⋯ menu |
 | | Selection toolbar (B/I/U/S/code/link) | ✅ | Plus `Ctrl+B/I/U`, `Ctrl+Shift+X`, `Ctrl+E` |

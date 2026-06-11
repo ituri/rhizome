@@ -241,6 +241,80 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   });
   assert(ok, 'Enter on the board title adds a new column');
 
+  // 11. cards are draggable by their body, not only the dot
+  const bodyDrag = await page.evaluate(() => {
+    document.querySelector('.board').scrollLeft = 0;
+    const cols = [...document.querySelectorAll('.board > .board-col')];
+    const src = cols.find(c => c.querySelector('.children .item'));
+    const dst = cols.find(c => c !== src && !c.classList.contains('collapsed'));
+    const card = src.querySelector('.children .item');
+    const cont = card.querySelector(':scope > .row .content').getBoundingClientRect();
+    const head = dst.querySelector(':scope > .item > .row').getBoundingClientRect();
+    return {
+      cardId: card.dataset.id, dstId: dst.querySelector(':scope > .item').dataset.id,
+      fx: cont.x + 25, fy: cont.y + cont.height / 2, tx: head.x + 40, ty: head.bottom + 12,
+    };
+  });
+  await page.mouse.move(bodyDrag.fx, bodyDrag.fy);
+  await page.mouse.down();
+  await page.mouse.move(bodyDrag.fx + 22, bodyDrag.fy + 6, { steps: 4 });
+  await page.mouse.move(bodyDrag.tx, bodyDrag.ty, { steps: 10 });
+  await sleep(120);
+  await page.mouse.up();
+  await sleep(300);
+  ok = await page.evaluate(d => kidsOf(d.dstId).includes(d.cardId), bodyDrag);
+  assert(ok, 'a card can be dragged by its body (not only the dot)');
+
+  // 12. columns collapse to a labeled bar and expand again
+  const colId = await page.evaluate(() => {
+    const col = [...document.querySelectorAll('.board-col')].find(c => c.querySelector('.col-toggle'));
+    const id = col.querySelector('.col-toggle').dataset.colToggle;
+    col.querySelector('.col-toggle').click();
+    return id;
+  });
+  await sleep(150);
+  ok = await page.evaluate(id => {
+    const col = [...document.querySelectorAll('.board-col')].find(c => c.querySelector(`[data-col-toggle="${id}"]`));
+    return doc.nodes[id].collapsed === true && col.classList.contains('collapsed') &&
+      !col.querySelector('.children .item') && !!col.querySelector('.cc-title');
+  }, colId);
+  assert(ok, 'clicking the column toggle collapses it to a labeled bar');
+  await page.evaluate(id => document.querySelector(`[data-col-toggle="${id}"]`).click(), colId);
+  await sleep(150);
+  ok = await page.evaluate(id => doc.nodes[id].collapsed === false, colId);
+  assert(ok, 'clicking again expands the column');
+
+  // 13. Enter on a column header adds a card to that column, not a new lane
+  const before13 = await page.evaluate(() => document.querySelectorAll('.board > .board-col').length);
+  await page.evaluate(() => {
+    const col = [...document.querySelectorAll('.board-col')].find(c => !c.classList.contains('collapsed'));
+    const content = col.querySelector(':scope > .item > .row .content');
+    content.focus();
+    setCaretOffset(content, 'end');
+  });
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('keyed card');
+  await sleep(500);
+  const r13 = await page.evaluate(() => {
+    const after = document.querySelectorAll('.board > .board-col').length;
+    const cardId = Object.keys(doc.nodes).find(id => plainOf(doc.nodes[id].text) === 'keyed card');
+    const parent = Object.keys(doc.nodes).find(id => kidsOf(id).includes(cardId));
+    const grand = Object.keys(doc.nodes).find(id => kidsOf(id).includes(parent));
+    return { after, isCard: doc.nodes[grand]?.format === 'board' };
+  });
+  assert(r13.after === before13 && r13.isCard, `Enter on a column header adds a card, not a lane (cols ${before13}→${r13.after}, card=${r13.isCard})`);
+
+  // 14. collapsing the board node hides its columns (inline view)
+  await page.evaluate(() => { location.hash = '#/'; });
+  await sleep(350);
+  ok = await page.evaluate(() => {
+    N(window.__board).collapsed = true; renderPage();
+    const hidden = !document.querySelector(`.item[data-id="${window.__board}"] .board`);
+    N(window.__board).collapsed = false; renderPage();
+    return hidden;
+  });
+  assert(ok, 'collapsing the board node hides its columns');
+
   await browser.close();
   console.log(failures ? `\n${failures} FAILURE(S)` : '\nBOARD TESTS PASSED');
   process.exit(failures ? 1 : 0);
