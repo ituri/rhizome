@@ -343,25 +343,32 @@ Nothing in Phase 2+ ships until 1–4 are green across thousands of seeds.
 
 | Piece | State | Evidence |
 |---|---|---|
-| **Phase 1** — SQLite persistence (incremental rows, FTS5), wire-compatible | **done, shipped** | `db.js`, `tests/test-db.js`; all 10 e2e suites green on the SQLite backend |
+| **Phase 1** — SQLite persistence (incremental rows, FTS5), wire-compatible | **done, shipped** | `db.js`, `tests/test-db.js`; all e2e suites green on the SQLite backend |
 | **Phase 2 core** — convergent op-merge engine (HLC + timestamp-ordered replay + cycle-skip + idempotency) | **done, proven** | `ops.js`, `tests/test-converge.js`: byte-identical convergence + zero cycles across 2500 seeds × 400 ops × 4 replicas |
-| **Phase 2 integration** — server adopts the Replica as source of truth (oplog + per-field HLC persisted), `POST /api/ops`, SSE op broadcast, **client op-log + optimistic apply + op-log undo**, offline queue | **not started** | — |
-| **Phase 3** — client search via FTS endpoint; **virtualized render** | **not started** | — |
-| **Phase 4** — retire whole-doc PUT + snapshots; SQLite sole source of truth | **not started** | — |
+| **Phase 2 integration** — `POST /api/ops` + SSE op broadcast (server), `opsdoc.js` field-LWW + cycle-skip; client HLC + id-stable diff + op delta-sync + remote-op apply | **done, tested** | `opsdoc.js`, `server.js`; `tests/test-ops-server.js` (engine-equivalence, LWW, cycle-skip, idempotency, round-trip), `tests/test-opsync.js` (two browsers converge via ops) |
+| **Phase 3** — FTS5-backed quick-jump for large docs | **done** | `tests/test-search.js` |
+| **Phase 3** — virtualized render | **deferred** | conflicts with the e2e suite's "every visible item is in the DOM" assumption and is explicitly out-of-scope in FEATURES; a standalone effort |
+| **Phase 4** — op delta-sync is the **default** save path (PUT = trash + fallback) | **done** | full e2e suite green with `settings.opSync` default-on |
+| **Phase 4** — fully retire PUT (op-based trash) + retire `structuredClone` undo (op-log undo) | **remaining** | the two genuine cutover refinements (see below) |
 
-**Why the line is drawn here.** Phase-2 *integration* and Phases 3–4 are the multi-week
-"real project" estimated in §10. They require the server to make the op-log the source of
-truth (persisted per-field HLC, all of v1/capture/shares routed through ops) and a full
-client rewrite (mutations emit ops, optimistic apply, op-log undo replacing
-`structuredClone`, offline durable queue), plus virtualized rendering. Each touches the
-hot paths the 250-assertion e2e suite guards. Ramming that in within one session would
-risk exactly the regressions and inconsistencies this spec exists to prevent — so the
-proven engine is committed as the foundation, and the integration is left as deliberate,
-test-gated follow-on work (the §9 fuzz harness already exists to guard it).
+**Topology simplification that made integration tractable.** The decentralized engine
+(`ops.js`) needs full timestamp-ordered replay to converge. But Tendril has a single
+self-hosted server, so it can be the **total-order sequencer**: `opsdoc.js` applies ops in
+receive order with field-LWW + cycle-skip and broadcasts that order; every client replays
+it and converges (ops.js is the stronger proof of the same merge semantics). This is §2's
+argument, realized — far less machinery than per-peer CRDT.
 
-What the committed work already buys: **Phase 1** removes the whole-file rewrite per save
-(incremental rows) and adds FTS5 search; **the Phase-2 engine** is the convergence
-guarantee itself — drop-in ready for the server to adopt as its authoritative model.
+**What's live now.** Saves send a minimal op set (`/api/ops`) instead of the whole
+document; the server persists only changed rows and broadcasts the ops; other tabs/devices
+replay them with no whole-doc transfer. Deletes / trash changes still fall back to the
+whole-doc PUT so trash stays consistent.
+
+**The two honest remainders.** (1) *Fully* retiring PUT needs op-based trash —
+delete/restore ops carrying the trash entry's timestamp so client and server build
+identical trash (today trash uses PUT). (2) Retiring `structuredClone` undo needs op-log
+undo — instrumenting client mutations to record inverse ops, which is the per-edit-jank fix
+and the larger client refactor. Both are well-bounded follow-ons; neither blocks the
+delta-sync win that's already shipping.
 
 ## 12. One-line summary
 

@@ -38,6 +38,7 @@ const settings = Object.assign(
     showCompleted: true, embeds: true, copyTag: true, sidebar: false,
     width: 'reading', arrows: 'hover', capitalize: false, richTags: false,
     dateFormat: 'medium', weekStart: 'mon', markdownPaste: true, animations: true,
+    opSync: true, // op delta-sync is the default save path (PUT remains the fallback)
   },
   JSON.parse(localStorage.getItem('tendril-settings') || '{}')
 );
@@ -875,12 +876,13 @@ bc?.addEventListener('message', e => {
   if (!dirty && e.data.version > state.version) adoptRemote(e.data.version, e.data.doc);
 });
 
-/* ---------------- 8b. op sync (Phase 2) ----------------
-   Delta sync over /api/ops. Opt-in (settings.opSync) for now: common edits
-   (insert/update/move) go as ops; deletes / trash changes fall back to whole-doc
-   PUT so trash stays consistent until the op-based trash cutover (Phase 4).
-   Receiving the server's authoritative op broadcast is always on — and safe,
-   because the PUT path broadcasts no `ops`, so old behaviour is untouched. */
+/* ---------------- 8b. op sync (Phase 2/4) ----------------
+   Delta sync over /api/ops is the default save path (settings.opSync, on unless
+   disabled): common edits (insert/update/move) go as a minimal op set; deletes /
+   trash changes fall back to the whole-doc PUT so trash stays consistent (op-based
+   trash is the remaining cutover step). Receiving the server's authoritative op
+   broadcast is always on, and replaying it is safe because the PUT path broadcasts
+   no `ops` — so a PUT-only peer just refetches as before. */
 let syncedDoc = null;                 // last state we know the server has (diff baseline)
 const setSynced = () => { try { syncedDoc = structuredClone(doc); } catch { syncedDoc = null; } };
 
