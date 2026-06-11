@@ -265,6 +265,36 @@ would otherwise be O(siblings) writes and a sync hazard.
 This is asserted *and tested* (§9); the spec is not "trust me," it's "here's the property
 and the fuzzer that tries to break it."
 
+### 7.7 Route B — what actually shipped (drift-proof *by construction*)
+
+The first cut of op-sync had the client compute a delta by diffing against a `syncedDoc`
+**baseline** — a guess about what the server had. Every sync bug we hit (self-echo
+re-apply, version regression, lost-update, the multi-field LWW drop) was a *stale-baseline*
+bug. The fix was to **delete the baseline entirely** rather than test it harder:
+
+- **Send** — the client emits each operation's ops straight from the **undo journal**
+  (`opsFromJournal`, O(change)). There is no baseline to diff against, so there is nothing
+  to drift. Normal ops *and* undo/redo go through the same emitter. (`tests/test-emit.js`
+  proves fidelity: the emitted ops, applied by the server, reproduce the client's tree.)
+- **Server** — the sole sequencer: `version` is a monotonic seq, ops are **deduped by id**
+  (idempotent re-sends), applied in receive order. The HLC/per-field-LWW machinery is no
+  longer load-bearing — the seq *is* the total order.
+- **Receive** — clients apply contiguous batches and **refetch the whole doc on any gap**
+  (the self-healing floor) and skip duplicates by version. A client can never be wrong
+  about what the server has — it only ever holds a prefix identified by a sequence number.
+
+The drift/lost-update class is therefore gone **by construction**, not by testing — the
+shape of the protocol makes it impossible, the same way the whole-doc PUT is safe by being
+total. `tests/test-rb-converge.js` is the adversarial proof: the server's op-log delivered
+to 4 clients with random ~30% drops, ~15% duplicates, and full reordering — every client
+converges to the server across 500 seeds.
+
+**Save-path serialization.** The interactive save body is now ops (not a whole-doc
+`JSON.stringify`), so the per-save ~80 ms hitch at 100k is gone. The `BroadcastChannel`
+nudge posts only `{version}` (peers refetch) instead of cloning the doc. Off-thread
+serialization (`public/serialize-worker.js`) is wired to the remaining user-initiated
+whole-doc serialize — **export** — so dumping a 100k outline to JSON doesn't freeze the UI.
+
 ### 7.7 Offline, crash, GC
 
 - **Offline**: a device durably queues its ops (client-side, e.g. IndexedDB); on reconnect

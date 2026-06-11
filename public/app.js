@@ -3762,11 +3762,30 @@ function download(name, mime, content) {
   setTimeout(() => URL.revokeObjectURL(a.href), 5000);
 }
 
+// off-thread JSON serialization (a Web Worker), so exporting a huge document doesn't
+// freeze the UI during stringify; falls back to the main thread if Workers are unavailable
+const serializeWorker = (() => { try { return ('Worker' in window) ? new Worker('/serialize-worker.js') : null; } catch { return null; } })();
+let serializeSeq = 0;
+const serializePending = new Map();
+serializeWorker?.addEventListener('message', e => {
+  const { id, json, error } = e.data || {};
+  const r = serializePending.get(id);
+  if (r) { serializePending.delete(id); error ? r.reject(new Error(error)) : r.resolve(json); }
+});
+serializeWorker?.addEventListener('error', () => { for (const r of serializePending.values()) r.reject(new Error('worker failed')); serializePending.clear(); }); // → callers fall back to the main thread
+function serializeAsync(payload, indent = 0) {
+  if (!serializeWorker) return Promise.resolve(JSON.stringify(payload, null, indent));
+  const id = ++serializeSeq;
+  return new Promise((resolve, reject) => { serializePending.set(id, { resolve, reject }); serializeWorker.postMessage({ id, payload, indent }); });
+}
+
 function exportDoc(format) {
   commitActiveText();
   const stamp = new Date().toISOString().slice(0, 10);
   if (format === 'json') {
-    download(`tendril-${stamp}.json`, 'application/json', JSON.stringify(doc, null, 1));
+    serializeAsync(doc, 1)
+      .then(json => download(`tendril-${stamp}.json`, 'application/json', json))
+      .catch(() => download(`tendril-${stamp}.json`, 'application/json', JSON.stringify(doc, null, 1)));
   } else if (format === 'txt') {
     download(`tendril-${stamp}.txt`, 'text/plain',
       kidsOf(HOME).map(id => subtreeToText(id, 0)).join(''));

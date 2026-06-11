@@ -1,8 +1,8 @@
 /* Tendril service worker — offline shell cache (network-first). */
 'use strict';
 
-const CACHE = 'tendril-shell-v2';
-const SHELL = ['/', '/index.html', '/style.css', '/app.js', '/app2.js'];
+const CACHE = 'tendril-shell-v3';
+const SHELL = ['/', '/index.html', '/style.css', '/app.js', '/app2.js', '/serialize-worker.js'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
