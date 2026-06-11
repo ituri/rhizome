@@ -25,6 +25,7 @@ const fsp = fs.promises;
 const path = require('path');
 const crypto = require('crypto');
 const { Store } = require('./db');
+const { applyOpsToDoc } = require('./opsdoc');
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -236,6 +237,22 @@ function commitDoc(doc) {
   persist();
   broadcast({ version: store.version });
   return store.version;
+}
+
+// commit after an op-batch: same version bump + persist, but broadcast the applied ops
+// so peers converge by replaying them (and can fall back to a refetch if they fell behind)
+function commitOps(ops) {
+  store = { version: store.version + 1, doc: store.doc };
+  persist();
+  broadcast({ version: store.version, ops });
+  return store.version;
+}
+
+// remove a subtree into the trash (the doc-model equivalent of a tombstone)
+function trashSubtreeInDoc(doc, id, parent) {
+  const ids = pushTrash(doc, id, parent, parent && doc.nodes[parent] ? doc.nodes[parent].children.indexOf(id) : 0);
+  if (parent && doc.nodes[parent]) { const a = doc.nodes[parent].children; const i = a.indexOf(id); if (i >= 0) a.splice(i, 1); }
+  for (const x of ids) delete doc.nodes[x];
 }
 
 /* ---------- doc helpers (server-side mutations: capture, share merge) ---------- */
@@ -832,6 +849,18 @@ const server = http.createServer(async (req, res) => {
         }
         const v = commitDoc(sanitizeDocNodes(body.doc));
         return send(res, 200, { version: v });
+      }
+      if (url === '/api/ops' && req.method === 'POST') {
+        const body = await readJson(req);
+        if (!Array.isArray(body.ops)) return send(res, 400, { error: 'ops array required' });
+        if (!store.doc) store.doc = { root: 'root', nodes: { root: { id: 'root', text: '', note: null, done: false, collapsed: false, children: [] } } };
+        for (const op of body.ops) { // sanitize incoming text/note server-side (same guarantee as the doc path)
+          if (op && op.data) { if (typeof op.data.text === 'string') op.data.text = sanitizeServerHtml(op.data.text); if (typeof op.data.note === 'string') op.data.note = sanitizeServerHtml(op.data.note); }
+          if (op && op.patch) { if (typeof op.patch.text === 'string') op.patch.text = sanitizeServerHtml(op.patch.text); if (typeof op.patch.note === 'string') op.patch.note = sanitizeServerHtml(op.patch.note); }
+        }
+        const applied = applyOpsToDoc(store.doc, body.ops, trashSubtreeInDoc);
+        const v = applied.length ? commitOps(applied) : store.version;
+        return send(res, 200, { version: v, applied: applied.length });
       }
 
       if (url === '/api/events' && req.method === 'GET') {

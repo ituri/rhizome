@@ -25,7 +25,7 @@ module.exports = [
 
   // Node side: the server, the benchmarks (CommonJS, Node globals)
   {
-    files: ['server.js', 'db.js', 'ops.js', 'bench/**/*.js'],
+    files: ['server.js', 'db.js', 'ops.js', 'opsdoc.js', 'bench/**/*.js'],
     languageOptions: { ecmaVersion: 2023, sourceType: 'commonjs', globals: { ...globals.node, structuredClone: 'readonly' } },
     rules,
   },
