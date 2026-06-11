@@ -358,6 +358,42 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   });
   assert(nav.inFirstCol && nav.expanded, `ArrowDown from a collapsed-board header opens the first column and enters it (${JSON.stringify(nav)})`);
 
+  // 17. inline (un-zoomed) board: ArrowDown from the board node enters its first column too
+  await page.evaluate(() => { location.hash = '#/'; });
+  await sleep(300);
+  await page.evaluate(() => {
+    kidsOf(window.__board).forEach(c => N(c).collapsed = true);
+    renderPage();
+    focusItem(window.__board, 'text', 'end');
+  });
+  await sleep(150);
+  await page.keyboard.press('ArrowDown');
+  await sleep(150);
+  const inl = await page.evaluate(() => {
+    const firstCol = kidsOf(window.__board)[0];
+    return {
+      inFirstCol: document.activeElement?.closest?.('.item')?.dataset.id === firstCol,
+      expanded: N(firstCol).collapsed === false,
+    };
+  });
+  assert(inl.inFirstCol && inl.expanded, `ArrowDown from an inline board node enters its first column (${JSON.stringify(inl)})`);
+
+  // 18. ArrowDown from an expanded column header lands on its first card
+  await page.evaluate(() => { location.hash = '#/n/' + window.__board; });
+  await sleep(350);
+  const colWithCards = await page.evaluate(() => {
+    const col = kidsOf(window.__board).find(c => kidsOf(c).length > 0);
+    N(col).collapsed = false;
+    renderPage();
+    focusItem(col, 'text', 'end');
+    return col;
+  });
+  await sleep(150);
+  await page.keyboard.press('ArrowDown');
+  await sleep(150);
+  const intoCard = await page.evaluate(c => document.activeElement?.closest?.('.item')?.dataset.id === kidsOf(c)[0], colWithCards);
+  assert(intoCard, 'ArrowDown from a column header lands on its first card');
+
   await browser.close();
   console.log(failures ? `\n${failures} FAILURE(S)` : '\nBOARD TESTS PASSED');
   process.exit(failures ? 1 : 0);

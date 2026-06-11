@@ -635,6 +635,40 @@ function editables() {
   return out;
 }
 
+// The ordered stops for arrow-key navigation. Same as editables(), but it also
+// includes collapsed board-column bars so a column can never become an
+// unreachable dead-end — the renderer decides the order, nav just walks it.
+function navTargets() {
+  const out = [];
+  if (state.zoom !== HOME && !zoomHeadEl.hidden && zoomHeadEl.style.display !== 'none') {
+    if (zoomTitleEl.isContentEditable) out.push(zoomTitleEl);
+    if (!zoomNoteEl.hidden && zoomNoteEl.isContentEditable) out.push(zoomNoteEl);
+  }
+  for (const el of treeEl.querySelectorAll('.content, .note, .col-collapsed')) {
+    if (el.offsetParent === null) continue;
+    if (el.isContentEditable || el.classList.contains('col-collapsed')) out.push(el);
+  }
+  return out;
+}
+
+// Move the caret onto a nav stop. A collapsed column bar isn't editable, so
+// entering it expands the column first and lands in its header.
+function focusNavTarget(target, edge, x) {
+  if (target.classList.contains('col-collapsed')) {
+    const colId = target.dataset.colToggle;
+    if (colId && N(colId)) {
+      N(colId).collapsed = false;
+      touch(colId);
+      renderPage();
+      focusItem(colId, 'text', edge === 'last' ? 'end' : 0);
+      markDirty();
+    }
+    return;
+  }
+  setCaretAtX(target, x, edge);
+  target.scrollIntoView({ block: 'nearest' });
+}
+
 function editableCtx(el) {
   if (!el || !(el instanceof Element)) return null;
   el = el.closest?.('[contenteditable="true"]');
@@ -2641,34 +2675,15 @@ function onKeydown(e) {
   if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && !mod && !e.altKey && !e.shiftKey) {
     const info = caretLineInfo(el);
     const up = e.key === 'ArrowUp';
-    // board column header: ArrowDown goes down INTO the column (first card, or start one),
-    // never sideways to the next column
-    if (!up && info.last && N(parentOf(id))?.format === 'board') {
-      e.preventDefault();
-      if (hasKids(id)) focusItem(kidsOf(id)[0], 'text', 0);
-      else if (!state.readOnly) opNewAt(id, 0);
-      return;
-    }
     if ((up && info.first) || (!up && info.last)) {
-      const list = editables();
+      const list = navTargets();
       const i = list.indexOf(el);
       const target = list[i + (up ? -1 : 1)];
       if (target) {
         e.preventDefault();
         const x = navGoalX ?? info.x;
         navGoalX = x;
-        setCaretAtX(target, x, up ? 'last' : 'first');
-        target.scrollIntoView({ block: 'nearest' });
-      } else if (!up && (isTitle || field === 'zoom-note') && fmtOf(state.zoom) === 'board' && kidsOf(state.zoom).length && !state.readOnly) {
-        // ArrowDown off a zoomed board header whose columns are all collapsed:
-        // open the first column and drop into it (otherwise there's nothing editable below)
-        e.preventDefault();
-        const firstCol = kidsOf(state.zoom)[0];
-        N(firstCol).collapsed = false;
-        touch(firstCol);
-        renderPage();
-        focusItem(firstCol, 'text', 0);
-        markDirty();
+        focusNavTarget(target, up ? 'last' : 'first', x);
       } else if (!up && (isTitle || field === 'zoom-note') && !state.readOnly && !kidsOf(state.zoom).length) {
         // ArrowDown off the header of an empty page starts the first bullet
         e.preventDefault();
