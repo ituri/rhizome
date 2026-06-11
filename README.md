@@ -109,7 +109,7 @@ share tokens in `data/shares.json`). Copy the `data` folder and you've backed up
 ## Development
 
 The app is plain JS — no build step; edit and refresh. End-to-end test suites
-(250+ browser-driven assertions via `puppeteer-core` + headless Chrome) live in
+(250+ assertions via `puppeteer-core` + headless Chrome) live in
 [`tests/`](tests/README.md), with per-suite run instructions there.
 
 ## Notes on collaboration

@@ -23,7 +23,7 @@ Status as of 2026-06-11. ✅ implemented (covered by the e2e suites in [`tests/`
 | | To-do checkboxes | ✅ | |
 | | Numbered lists (auto-renumber) | ✅ | `1. ` shortcut, Enter continues |
 | | Kanban boards | ✅ | Inline + full-page when zoomed; +card/+column; drag across columns; column reorder |
-| | Markdown shortcuts (`# ## ### > [] 1. --- ` ``` ``) | ✅ | |
+| | Markdown shortcuts (`# `, `## `, `### `, `> `, `[] `, `1. `, `---`, triple-backtick) | ✅ | |
 | | Slash command menu (`/`) | ✅ | Block types, dates, actions, templates |
 | | Selection toolbar (B/I/U/S/code/link) | ✅ | Plus `Ctrl+B/I/U`, `Ctrl+Shift+X`, `Ctrl+E` |
 | | 8 text colors + 8 highlights | ✅ | |
@@ -48,13 +48,13 @@ Status as of 2026-06-11. ✅ implemented (covered by the e2e suites in [`tests/`
 | | Content indicator (dot) on populated strip days | ❌ | Cheap add if wanted |
 | **Search** | Live search scoped to zoom, highlights, ancestor context | ✅ | |
 | | `"phrase"`, `-not`, `OR` | ✅ | |
-| | `is:` `has:` `text:` `highlight:` `changed:` `on:` `link:` | ✅ | |
+| | `is:` `has:` `text:` `highlight:` `changed:` `on:` `link:` `in:note:` | ✅ | |
 | | Nested search (`ancestor > term`) | ✅ | |
 | | Quick jump (`Ctrl+K`) | ✅ | |
 | **Navigation** | Sidebar with outline tree + starred section | ✅ | |
 | | Starring pages and searches (`Ctrl+Shift+8`) | ✅ | |
 | | `Ctrl+'` home | ✅ | |
-| | Backlinks ("Linked from") | ✅ | From `[[ ]]` links and mirrors |
+| | Backlinks ("Linked from") | ✅ | From any internal link (`[[ ]]`, Ctrl+K, pasted) and mirrors |
 | | `[[inline linking]]` with autocomplete + create-new | ✅ | |
 | | Starred-page switcher (`Ctrl+;`) | ❌ | Covered by sidebar + `Ctrl+K` |
 | **Reuse & review** | Mirrors (`Alt+Shift+M`, Mirror to…) | 🟡 | Live read-only views; click opens original. Workflowy's are editable in place |
@@ -70,7 +70,7 @@ Status as of 2026-06-11. ✅ implemented (covered by the e2e suites in [`tests/`
 | | Image thumbnail size setting | ❌ | Cosmetic |
 | | Bulk "download all files" | ❌ | Per-file download works |
 | **Capture** | Quick capture overlay (`Ctrl+Shift+Space`) → Inbox | ✅ | Tab indents; trailing dates become pills; markdown todos kept |
-| | Capture API (`POST /api/capture?token=…`) | ✅ | Email-automation equivalent |
+| | Capture API (`POST /api/capture?token=…`) | ✅ | Email-automation equivalent; stores plain text (no date conversion, unlike the overlay) |
 | | Rich editor inside the capture box | ❌ | Deliberate: capture is a plain transcription surface |
 | **Sharing** | Per-subtree secret links, view-only or editable, revocable | ✅ | Ring marks shared items; guest edits flow back live |
 | | Multi-account collaboration (named users, permissions) | ❌ | Single-owner model by design |
