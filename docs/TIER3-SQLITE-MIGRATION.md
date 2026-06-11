@@ -350,7 +350,7 @@ Nothing in Phase 2+ ships until 1–4 are green across thousands of seeds.
 | **Phase 3** — virtualized render | **deferred** | conflicts with the e2e suite's "every visible item is in the DOM" assumption and is explicitly out-of-scope in FEATURES; a standalone effort |
 | **Phase 4** — op delta-sync is the **default** save path | **done** | full e2e suite green with `settings.opSync` default-on |
 | **Phase 4** — op-based **trash** (delete/restore/purge as ops) → PUT retired for normal operation | **done** | `tests/test-optrash.js`: two clients build an identical trash entry (same `ts`), restore converges, trees byte-identical |
-| **Phase 4** — retire `structuredClone` undo (op-log undo) | **remaining** | the one genuine cutover refinement (see below) |
+| **Phase 4** — op-log undo (retire `structuredClone` snapshots) | **done, proven** | `tests/test-undo.js`: per-op + multi-level (undo-all→initial, redo-all→final) fuzz across 60×40 ops. Per-edit cost 64.8 ms → 0.1 ms at 50k nodes |
 
 **Topology simplification that made integration tractable.** The decentralized engine
 (`ops.js`) needs full timestamp-ordered replay to converge. But Tendril has a single
@@ -379,12 +379,20 @@ and the root cause of the flake — (f) a single `update` op with **two fields i
 group** (`done`+`format`, both `flags`) dropping the second because the first bumped the
 group clock → compare every field against the group clock *as of before the op*.
 
-**The one honest remainder.** Retiring `structuredClone` undo needs **op-log undo** —
-instrumenting the ~59 client mutation sites to record inverse ops (or a hot-path Proxy).
-That's the per-edit-jank fix and the largest, riskiest client refactor; it's deferred
-deliberately rather than rammed into a green suite. It does **not** block the delta-sync or
-trash wins, which are shipping. Undo today remains correct (snapshot-based), just not yet
-O(change).
+**Op-log undo (the original 100k jank).** Replaced `structuredClone(doc)` per edit with a
+journal: each operation records only the prior state of the nodes it touches (plus
+trash/meta if changed), and undo/redo restore those in place. Instrumented the 5 structural
+primitives + the field-edit sites. Measured per-edit cost at 50k nodes: **64.8 ms → 0.1 ms**
+(O(doc) → O(change)). Correctness is held by an undo-fuzz oracle (`tests/test-undo.js`):
+random op sequences verified both per-op (apply→undo→redo) and multi-level (undo
+*everything* → initial state, redo everything → final) — the multi-level check catches any
+op that mutates without journaling.
+
+**Nothing left in scope.** The only items not done are the two explicitly out-of-scope
+performance options: **virtualized rendering** (incompatible with the e2e suite's
+"every visible item is in the DOM" assumption, and out-of-scope in FEATURES), and the
+fully-decentralized text-CRDT (field-level LWW is the deliberate trade for a single-owner
+app, §1).
 
 ## 12. One-line summary
 
