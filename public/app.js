@@ -401,15 +401,17 @@ const isAncestor = (a, b) => {
 function makeNode(text = '', extra = {}) {
   const id = uid();
   const now = Date.now();
+  recOld(id); // new node → recorded as "didn't exist" so undo removes it
   doc.nodes[id] = { id, text, note: null, done: false, collapsed: false, children: [], c: now, m: now, ...extra };
   return id;
 }
 
-const touch = id => { if (doc.nodes[id]) N(id).m = Date.now(); };
+const touch = id => { if (doc.nodes[id]) { recOld(id); N(id).m = Date.now(); } };
 
 function detach(id) {
   const p = parentOf(id);
   if (!p) return;
+  recOld(p); // the parent's children array changes
   const arr = kidsOf(p);
   const i = arr.indexOf(id);
   if (i >= 0) arr.splice(i, 1);
@@ -417,6 +419,7 @@ function detach(id) {
 }
 
 function insertAt(parent, index, id) {
+  recOld(parent); // the parent's children array changes
   const arr = kidsOf(parent);
   arr.splice(clamp(index, 0, arr.length), 0, id);
   parentMap.set(id, parent);
@@ -439,6 +442,7 @@ function deleteSubtree(id) {
   while (stack.length) {
     const cur = stack.pop();
     stack.push(...kidsOf(cur));
+    recOld(cur); // record each removed node so undo restores the whole subtree
     delete doc.nodes[cur];
     parentMap.delete(cur);
   }
@@ -700,36 +704,85 @@ function restoreFocus(f) {
 
 /* ---------------- 7. undo / redo ---------------- */
 
+/* Op-log undo. Instead of structuredClone'ing the whole doc per edit (O(doc) — the 100k
+   jank), each operation records only the prior state of the nodes it touches (O(change)).
+   An undo entry is a Map(id → prior node clone | null); undo/redo restore those nodes in
+   place and re-derive the parent map. recOld() is called by the mutation primitives and
+   field-edit sites; it's a no-op when no operation is being recorded. */
+const ABSENT = Symbol('absent'); // "this op didn't touch trash/meta"
+let undoTxn = null;       // { nodes: Map(id→prior clone|null), trash: ABSENT|clone, meta: ABSENT|clone }
+let undoFocus = null;     // focus captured at the start of the op
+
+function recOld(id) {     // remember a node's state BEFORE this op changes it (once per op)
+  if (undoTxn && !undoTxn.nodes.has(id)) undoTxn.nodes.set(id, doc.nodes[id] ? structuredClone(doc.nodes[id]) : null);
+}
+function recTrash() { if (undoTxn && undoTxn.trash === ABSENT) undoTxn.trash = structuredClone(doc.trash || []); }
+function recMeta() { if (undoTxn && undoTxn.meta === ABSENT) undoTxn.meta = structuredClone(doc.meta || {}); }
+
+function captureNodes(ids) {
+  const m = new Map();
+  for (const id of ids) m.set(id, doc.nodes[id] ? structuredClone(doc.nodes[id]) : null);
+  return m;
+}
+// snapshot the current state of whatever an entry touched (used to build the inverse entry)
+function captureLike(entry) {
+  return {
+    nodes: captureNodes(entry.nodes.keys()),
+    trash: entry.trash !== ABSENT ? structuredClone(doc.trash || []) : ABSENT,
+    meta: entry.meta !== ABSENT ? structuredClone(doc.meta || {}) : ABSENT,
+    focus: captureFocus(),
+  };
+}
+function commitUndoTxn() { // close the in-progress op into an undo entry
+  if (undoTxn && (undoTxn.nodes.size || undoTxn.trash !== ABSENT || undoTxn.meta !== ABSENT)) {
+    undoStack.push({ ...undoTxn, focus: undoFocus });
+    if (undoStack.length > 200) undoStack.shift();
+  }
+  undoTxn = null;
+}
+function resetHistory() { undoStack.length = 0; redoStack.length = 0; undoTxn = null; } // whole-doc swaps (import/adopt)
+
 function snapshot() {
-  undoStack.push({ doc: structuredClone(doc), zoom: state.zoom, focus: captureFocus() });
-  if (undoStack.length > 200) undoStack.shift();
+  commitUndoTxn();             // finalize the previous op
+  undoTxn = { nodes: new Map(), trash: ABSENT, meta: ABSENT }; // begin recording the next
+  undoFocus = captureFocus();
   redoStack.length = 0;
 }
 
-function applyHistory(entry) {
+function applyEntry(entry) {   // restore the recorded nodes/trash/meta in place — O(change)
+  for (const [id, node] of entry.nodes) { if (node === null) delete doc.nodes[id]; else doc.nodes[id] = node; }
+  if (entry.trash !== ABSENT) doc.trash = entry.trash;
+  if (entry.meta !== ABSENT) doc.meta = entry.meta;
+}
+function applyHistory(focus) {
   burst = { key: '', at: 0 }; // typing right after undo/redo must snapshot afresh
-  doc = entry.doc;
   rebuildParentMap();
   if (!doc.nodes[state.zoom]) state.zoom = HOME;
   renderPage();
-  restoreFocus(entry.focus);
+  restoreFocus(focus);
   markDirty();
 }
 
 function undo() {
-  if (!undoStack.length || state.readOnly) return;
+  if (state.readOnly) return;
   commitActiveText();
+  commitUndoTxn();             // finalize any in-progress op so it's undoable
+  if (!undoStack.length) return;
   const entry = undoStack.pop();
-  redoStack.push({ doc: structuredClone(doc), zoom: state.zoom, focus: captureFocus() });
-  applyHistory(entry);
+  redoStack.push(captureLike(entry)); // current state → redo
+  applyEntry(entry);
+  applyHistory(entry.focus);
 }
 
 function redo() {
-  if (!redoStack.length || state.readOnly) return;
+  if (state.readOnly) return;
   commitActiveText();
+  commitUndoTxn();
+  if (!redoStack.length) return;
   const entry = redoStack.pop();
-  undoStack.push({ doc: structuredClone(doc), zoom: state.zoom, focus: captureFocus() });
-  applyHistory(entry);
+  undoStack.push(captureLike(entry));
+  applyEntry(entry);
+  applyHistory(entry.focus);
 }
 
 /* ---------------- 8. persistence & sync ---------------- */
@@ -1075,11 +1128,12 @@ function commitPending(redecorateOk = false) {
   const node = N(ctx.id);
   if (ctx.field === 'note' || ctx.field === 'zoom-note') {
     const v = (el.innerText || '').replace(/ /g, ' ').replace(/\n$/, '');
-    if (node.note !== v) { node.note = v; touch(ctx.id); markDirty(); }
+    if (node.note !== v) { recOld(ctx.id); node.note = v; touch(ctx.id); markDirty(); }
   } else {
     let html = serializeEl(el);
     if (settings.capitalize && (ctx.field === 'text' || ctx.field === 'title')) html = applyCapitalize(html);
     if (node.text !== html) {
+      recOld(ctx.id);
       node.text = html;
       touch(ctx.id);
       markDirty();
@@ -1800,6 +1854,7 @@ function opSplit(ctx) {
   })());
 
   snapshot();
+  recOld(id);
   n.text = beforeHtml;
   touch(id);
   // a split item inherits to-do / numbered format so lists stay homogeneous
@@ -1837,6 +1892,7 @@ function mergeInto(keepId, goneId) {
   const keep = N(keepId), gone = N(goneId);
   snapshot();
   const joinAt = plainOf(keep.text).length;
+  recOld(keepId); recOld(goneId); // keep absorbs text/note/children; gone is deleted
   keep.text = keep.text + gone.text;
   if (gone.note) keep.note = keep.note ? keep.note + '\n' + gone.note : gone.note;
   const kids = [...kidsOf(goneId)];
@@ -1901,6 +1957,7 @@ function opIndent(id, focus) {
   const newParent = arr[i - 1];
   commitActiveText();
   snapshot();
+  recOld(newParent);
   N(newParent).collapsed = false;
   moveNode(id, newParent, kidsOf(newParent).length);
   renderPage();
@@ -1941,6 +1998,7 @@ function opToggleDone(id) {
   commitActiveText();
   snapshot();
   const n = N(id);
+  recOld(id);
   n.done = !n.done;
   touch(id);
   if (id === state.zoom) {
@@ -2040,6 +2098,7 @@ function opDelete(id, { toast = true } = {}) {
   const nf = neighborFocus(item);
 
   // move to trash before removing
+  recTrash();
   const nodes = {};
   const stack = [id];
   while (stack.length) {
@@ -2109,6 +2168,7 @@ function opRemoveNote(id) {
   const n = N(id);
   if (n.note === null || n.note === undefined) return;
   snapshot();
+  recOld(id);
   n.note = null;
   markDirty();
   if (id === state.zoom) { renderZoomHead(); setCaretOffset(zoomTitleEl, 'end'); return; }
@@ -2122,6 +2182,7 @@ function opSetFormat(id, fmt, { focus = true } = {}) {
   commitActiveText();
   snapshot();
   const n = N(id);
+  recOld(id);
   if (fmt === 'bullet' || n.format === fmt) delete n.format;
   else n.format = fmt;
   touch(id);

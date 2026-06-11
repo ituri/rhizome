@@ -1481,6 +1481,7 @@ function showTrash() {
       restore.textContent = 'Restore';
       restore.addEventListener('click', () => {
         snapshot();
+        recTrash();
         restoreTrashEntry(entry);
         trashList().splice(i, 1);
         renderPage();
@@ -1493,6 +1494,7 @@ function showTrash() {
       del.textContent = 'Delete forever';
       del.addEventListener('click', () => {
         snapshot();
+        recTrash();
         trashList().splice(i, 1);
         markDirty();
         render();
@@ -1515,6 +1517,7 @@ function restoreTrashEntry(entry) {
     const cloned = structuredClone(node);
     cloned.id = idMap.get(oldId);
     cloned.children = (node.children || []).map(c => idMap.get(c)).filter(Boolean);
+    recOld(cloned.id); // restored node → undo removes it
     doc.nodes[cloned.id] = cloned;
   }
   const newRoot = idMap.get(entry.root);
@@ -1529,6 +1532,7 @@ $('#trash-empty').addEventListener('click', () => {
   if (!trashList().length) return;
   if (!confirm('Permanently delete everything in the trash?')) return;
   snapshot();
+  recTrash();
   doc.trash = [];
   markDirty();
   $('#trash-list').innerHTML = '<div class="trash-empty-msg">The trash is empty.</div>';

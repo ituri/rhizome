@@ -12,6 +12,7 @@
     "test:converge": "node tests/test-converge.js",
     "test:ops": "node tests/test-ops-server.js",
     "test:optrash": "node tests/test-optrash.js",
+    "test:undo": "node tests/test-undo.js",
     "test:opsync": "node tests/test-opsync.js",
     "test:search": "node tests/test-search.js",
     "bench:curve": "node --expose-gc bench/curve.js",
