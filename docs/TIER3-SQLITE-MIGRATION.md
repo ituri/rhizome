@@ -348,8 +348,9 @@ Nothing in Phase 2+ ships until 1–4 are green across thousands of seeds.
 | **Phase 2 integration** — `POST /api/ops` + SSE op broadcast (server), `opsdoc.js` field-LWW + cycle-skip; client HLC + id-stable diff + op delta-sync + remote-op apply | **done, tested** | `opsdoc.js`, `server.js`; `tests/test-ops-server.js` (engine-equivalence, LWW, cycle-skip, idempotency, round-trip), `tests/test-opsync.js` (two browsers converge via ops) |
 | **Phase 3** — FTS5-backed quick-jump for large docs | **done** | `tests/test-search.js` |
 | **Phase 3** — virtualized render | **deferred** | conflicts with the e2e suite's "every visible item is in the DOM" assumption and is explicitly out-of-scope in FEATURES; a standalone effort |
-| **Phase 4** — op delta-sync is the **default** save path (PUT = trash + fallback) | **done** | full e2e suite green with `settings.opSync` default-on |
-| **Phase 4** — fully retire PUT (op-based trash) + retire `structuredClone` undo (op-log undo) | **remaining** | the two genuine cutover refinements (see below) |
+| **Phase 4** — op delta-sync is the **default** save path | **done** | full e2e suite green with `settings.opSync` default-on |
+| **Phase 4** — op-based **trash** (delete/restore/purge as ops) → PUT retired for normal operation | **done** | `tests/test-optrash.js`: two clients build an identical trash entry (same `ts`), restore converges, trees byte-identical |
+| **Phase 4** — retire `structuredClone` undo (op-log undo) | **remaining** | the one genuine cutover refinement (see below) |
 
 **Topology simplification that made integration tractable.** The decentralized engine
 (`ops.js`) needs full timestamp-ordered replay to converge. But Tendril has a single
@@ -358,17 +359,32 @@ receive order with field-LWW + cycle-skip and broadcasts that order; every clien
 it and converges (ops.js is the stronger proof of the same merge semantics). This is §2's
 argument, realized — far less machinery than per-peer CRDT.
 
-**What's live now.** Saves send a minimal op set (`/api/ops`) instead of the whole
-document; the server persists only changed rows and broadcasts the ops; other tabs/devices
-replay them with no whole-doc transfer. Deletes / trash changes still fall back to the
-whole-doc PUT so trash stays consistent.
+**What's live now.** The whole save — edits, moves, deletes (carrying the trash `ts`),
+restores and purges (`untrash`) — goes as a minimal op set to `/api/ops`; the server
+persists only changed rows and broadcasts the ops tagged with the originating device;
+other tabs/devices replay them with no whole-doc transfer. **PUT is retired** for normal
+operation (kept only as a robustness fallback if an op-POST fails, and to seed the welcome
+outline on a fresh install).
 
-**The two honest remainders.** (1) *Fully* retiring PUT needs op-based trash —
-delete/restore ops carrying the trash entry's timestamp so client and server build
-identical trash (today trash uses PUT). (2) Retiring `structuredClone` undo needs op-log
-undo — instrumenting client mutations to record inverse ops, which is the per-edit-jank fix
-and the larger client refactor. Both are well-bounded follow-ons; neither blocks the
-delta-sync win that's already shipping.
+**Sync races found and fixed (the "under any condition" tax).** Bringing op-sync up as the
+default surfaced six concrete races/correctness bugs that the e2e suite caught; all are
+fixed and regression-tested: (a) a client re-applying its **own** op echo before its POST
+response landed → broadcasts are tagged with the origin device and the sender skips its own;
+(b) the POST response moving `state.version` **backwards** after a peer advanced it → take
+the max; (c) edits made **during** an in-flight save folded into the diff baseline and lost
+→ the baseline becomes exactly what was sent; (d) a **no-op save** falling through to PUT,
+whose self-echo triggered a reverting refetch → no-op saves don't write; (e) the welcome
+baseline pre-set so the first save never seeded the server → leave it null on a fresh load;
+and the root cause of the flake — (f) a single `update` op with **two fields in one HLC
+group** (`done`+`format`, both `flags`) dropping the second because the first bumped the
+group clock → compare every field against the group clock *as of before the op*.
+
+**The one honest remainder.** Retiring `structuredClone` undo needs **op-log undo** —
+instrumenting the ~59 client mutation sites to record inverse ops (or a hot-path Proxy).
+That's the per-edit-jank fix and the largest, riskiest client refactor; it's deferred
+deliberately rather than rammed into a green suite. It does **not** block the delta-sync or
+trash wins, which are shipping. Undo today remains correct (snapshot-based), just not yet
+O(change).
 
 ## 12. One-line summary
 

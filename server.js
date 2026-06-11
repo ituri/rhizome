@@ -232,25 +232,27 @@ setInterval(() => {
   }
 }, 25000).unref();
 
-function commitDoc(doc) {
+function commitDoc(doc, origin) {
   store = { version: store.version + 1, doc };
   persist();
-  broadcast({ version: store.version });
+  broadcast({ version: store.version, origin });
   return store.version;
 }
 
 // commit after an op-batch: same version bump + persist, but broadcast the applied ops
-// so peers converge by replaying them (and can fall back to a refetch if they fell behind)
-function commitOps(ops) {
+// (tagged with the originating device) so peers converge by replaying them — the origin
+// lets the sender ignore its own echo and avoid re-applying ops it already made locally
+function commitOps(ops, origin) {
   store = { version: store.version + 1, doc: store.doc };
   persist();
-  broadcast({ version: store.version, ops });
+  broadcast({ version: store.version, ops, origin });
   return store.version;
 }
 
-// remove a subtree into the trash (the doc-model equivalent of a tombstone)
-function trashSubtreeInDoc(doc, id, parent) {
-  const ids = pushTrash(doc, id, parent, parent && doc.nodes[parent] ? doc.nodes[parent].children.indexOf(id) : 0);
+// remove a subtree into the trash (the doc-model equivalent of a tombstone). The op's
+// `ts` is used for the trash entry so client and server build an identical entry.
+function trashSubtreeInDoc(doc, id, parent, ts) {
+  const ids = pushTrash(doc, id, parent, parent && doc.nodes[parent] ? doc.nodes[parent].children.indexOf(id) : 0, ts);
   if (parent && doc.nodes[parent]) { const a = doc.nodes[parent].children; const i = a.indexOf(id); if (i >= 0) a.splice(i, 1); }
   for (const x of ids) delete doc.nodes[x];
 }
@@ -368,12 +370,12 @@ function nodeInsert(parent, index, id) {
 }
 const TRASH_CAP = 200;
 // move a subtree into the trash (newest first, capped); returns its node ids
-function pushTrash(doc, id, parent, index) {
+function pushTrash(doc, id, parent, index, ts) {
   const ids = subtreeIds(doc, id);
   const nodes = {};
   for (const x of ids) nodes[x] = doc.nodes[x];
   if (!doc.trash) doc.trash = [];
-  doc.trash.unshift({ ts: Date.now(), parent, index, root: id, nodes });
+  doc.trash.unshift({ ts: ts != null ? ts : Date.now(), parent, index, root: id, nodes });
   if (doc.trash.length > TRASH_CAP) doc.trash = doc.trash.slice(0, TRASH_CAP);
   return ids;
 }
@@ -847,7 +849,7 @@ const server = http.createServer(async (req, res) => {
         if (typeof body.baseVersion === 'number' && body.baseVersion !== store.version) {
           return send(res, 409, store);
         }
-        const v = commitDoc(sanitizeDocNodes(body.doc));
+        const v = commitDoc(sanitizeDocNodes(body.doc), body.device);
         return send(res, 200, { version: v });
       }
       if (url === '/api/ops' && req.method === 'POST') {
@@ -859,7 +861,7 @@ const server = http.createServer(async (req, res) => {
           if (op && op.patch) { if (typeof op.patch.text === 'string') op.patch.text = sanitizeServerHtml(op.patch.text); if (typeof op.patch.note === 'string') op.patch.note = sanitizeServerHtml(op.patch.note); }
         }
         const applied = applyOpsToDoc(store.doc, body.ops, trashSubtreeInDoc);
-        const v = applied.length ? commitOps(applied) : store.version;
+        const v = applied.length ? commitOps(applied, body.device) : store.version;
         return send(res, 200, { version: v, applied: applied.length });
       }
 

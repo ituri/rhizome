@@ -805,28 +805,35 @@ async function doSave() {
   saving = true;
   const seq = changeSeq;
   try {
-    // op delta-sync (opt-in): common edits go as ops; deletes/trash changes fall
-    // back to the whole-doc PUT below so trash stays consistent (Phase-4 cutover pending)
+    // op delta-sync (default): the whole save — edits, moves, deletes (with trash ts),
+    // restores and purges (untrash) — goes as a minimal op set. PUT remains the fallback.
     if (settings.opSync && !SHARE_TOKEN && syncedDoc) {
       const ops = diffDoc(syncedDoc, doc);
-      const trashSame = deepEq(syncedDoc.trash || [], doc.trash || []);
-      if (ops.length && trashSame && !ops.some(o => o.kind === 'delete')) {
-        const r = await fetch('/api/ops', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ops }),
-        });
-        if (r.ok) {
-          state.version = (await r.json()).version;
-          setSynced();
-          if (changeSeq === seq) { dirty = false; setSaveUI('saved'); localStorage.removeItem('tendril-offline'); }
-          return;
-        }
-        // any failure → fall through to the robust whole-doc PUT
+      if (!ops.length) {
+        // nothing differs from the server — DON'T send a no-op PUT (its self-echo could
+        // trigger a refetch that reverts a not-yet-saved local edit). Just mark clean.
+        if (changeSeq === seq) { dirty = false; setSaveUI('saved'); localStorage.removeItem('tendril-offline'); }
+        return;
       }
+      // the exact state these ops bring the server to. Edits made *during* the await are
+      // NOT folded in here, so the next diff still captures them — prevents a lost update.
+      const sent = structuredClone(doc);
+      const r = await fetch('/api/ops', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ops, device: DEVICE_ID }),
+      });
+      if (r.ok) {
+        const rv = (await r.json()).version;
+        if (rv > state.version) state.version = rv; // never regress if a peer broadcast already advanced us
+        syncedDoc = sent;                           // baseline = what we sent, not the (possibly newer) current doc
+        if (changeSeq === seq) { dirty = false; setSaveUI('saved'); localStorage.removeItem('tendril-offline'); }
+        return;
+      }
+      // any failure → fall through to the robust whole-doc PUT
     }
     let res = await fetch(SAVE_URL, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ baseVersion: state.version, doc }),
+      body: JSON.stringify({ baseVersion: state.version, doc, device: DEVICE_ID }),
     });
     if (res.status === 409) {
       const server = await res.json();
@@ -835,7 +842,7 @@ async function doSave() {
       res = await fetch(SAVE_URL, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ baseVersion: server.version, doc }),
+        body: JSON.stringify({ baseVersion: server.version, doc, device: DEVICE_ID }),
       });
     }
     if (res.status === 401) { location.reload(); return; }
@@ -886,11 +893,11 @@ bc?.addEventListener('message', e => {
 let syncedDoc = null;                 // last state we know the server has (diff baseline)
 const setSynced = () => { try { syncedDoc = structuredClone(doc); } catch { syncedDoc = null; } };
 
-const DEVICE_ID = (() => {
-  let d = null; try { d = localStorage.getItem('tendril-device'); } catch { /* private mode */ }
-  if (!d) { d = Math.random().toString(36).slice(2, 8); try { localStorage.setItem('tendril-device', d); } catch { /* ignore */ } }
-  return d;
-})();
+// Per-SESSION actor id (fresh per page load), NOT per device. It tags op ids, the HLC
+// tiebreak, and the broadcast origin. It must be unique per tab so the origin-skip only
+// ignores *this* tab's own echo — two tabs of one browser share localStorage, so a
+// persisted id would make them wrongly ignore each other's ops.
+const DEVICE_ID = Math.random().toString(36).slice(2, 8) + Math.random().toString(36).slice(2, 6);
 const pad = (n, w) => String(n).padStart(w, '0');
 const hlcClock = {
   p: 0, c: 0,
@@ -906,17 +913,26 @@ function posMap(d) {
   for (const id in d.nodes) { const ch = d.nodes[id].children || []; for (let i = 0; i < ch.length; i++) m[ch[i]] = { parent: id, ord: i }; }
   return m;
 }
-// minimal op set turning oldD into newD (id-stable: detects move vs insert/delete)
+// minimal op set turning oldD into newD (id-stable: detects move vs insert/delete/restore)
 function diffDoc(oldD, newD) {
   const ops = [];
   const mk = (kind, node, extra) => ops.push({ id: `${DEVICE_ID}-${opSeq++}`, hlc: hlcClock.tick(), kind, node, ...extra });
   const oldP = posMap(oldD), newP = posMap(newD);
+
+  // inserts in tree order (parents before children) so the server attaches each under an
+  // already-present parent — this also re-creates a restored subtree correctly
+  for (const queue = [ROOT]; queue.length;) {
+    const id = queue.shift();
+    for (const c of (newD.nodes[id] ? newD.nodes[id].children || [] : [])) {
+      if (!oldD.nodes[c]) { const { children, ...data } = newD.nodes[c]; const np = newP[c] || { parent: id, ord: 0 }; mk('insert', c, { parent: np.parent, ord: np.ord, data }); }
+      queue.push(c);
+    }
+  }
+  // moves + field updates for nodes present in both
   for (const id in newD.nodes) {
-    if (id === ROOT) continue;
-    const nn = newD.nodes[id], on = oldD.nodes[id];
-    const np = newP[id] || { parent: ROOT, ord: 0 };
-    if (!on) { const { children, ...data } = nn; mk('insert', id, { parent: np.parent, ord: np.ord, data }); continue; }
-    const op = oldP[id] || {};
+    if (id === ROOT || !oldD.nodes[id]) continue;
+    const on = oldD.nodes[id], nn = newD.nodes[id];
+    const np = newP[id] || {}, op = oldP[id] || {};
     if (np.parent !== op.parent || np.ord !== op.ord) mk('move', id, { parent: np.parent, ord: np.ord });
     const patch = {};
     for (const k of new Set([...Object.keys(on), ...Object.keys(nn)])) { // any field, incl. calendar markers/custom
@@ -925,11 +941,21 @@ function diffDoc(oldD, newD) {
     }
     if (Object.keys(patch).length) mk('update', id, { patch });
   }
-  for (const id in oldD.nodes) { // deletes: subtree roots only (parent still present)
+  // deletes: subtree roots whose parent survived; carry the trash ts so the server builds
+  // an identical trash entry
+  const trashTsByRoot = new Map((newD.trash || []).map(t => [t.root, t.ts]));
+  for (const id in oldD.nodes) {
     if (id === ROOT || newD.nodes[id]) continue;
     const par = (oldP[id] || {}).parent;
-    if (!par || newD.nodes[par]) mk('delete', id, {});
+    if (par && !newD.nodes[par]) continue; // covered by an ancestor's delete
+    const ts = trashTsByRoot.get(id);
+    mk('delete', id, ts != null ? { ts } : {});
   }
+  // untrash: a trash entry that disappeared (restore-cleanup — nodes came back as inserts
+  // above — or a purge)
+  const liveTrash = new Set((newD.trash || []).map(t => t.ts));
+  for (const t of (oldD.trash || [])) if (!liveTrash.has(t.ts)) mk('untrash', t.root, { ts: t.ts });
+
   return ops;
 }
 // apply the server's authoritative op stream to the local doc (server already merged)
@@ -951,8 +977,10 @@ function applyRemoteOps(ops) {
     } else if (o.kind === 'delete') {
       if (n) { const ids = subtreeOf(o.node), nodes = {}; for (const x of ids) nodes[x] = doc.nodes[x];
         if (!doc.trash) doc.trash = []; const par = parentOf(o.node);
-        doc.trash.unshift({ ts: Date.now(), parent: par, index: par ? kidsOf(par).indexOf(o.node) : 0, root: o.node, nodes });
+        doc.trash.unshift({ ts: o.ts != null ? o.ts : Date.now(), parent: par, index: par ? kidsOf(par).indexOf(o.node) : 0, root: o.node, nodes });
         detach(o.node); for (const x of ids) delete doc.nodes[x]; }
+    } else if (o.kind === 'untrash') {
+      if (doc.trash && o.ts != null) { const i = doc.trash.findIndex(t => t.ts === o.ts); if (i >= 0) doc.trash.splice(i, 1); }
     }
   }
   rebuildParentMap();
@@ -1005,6 +1033,9 @@ function connectSSE() {
     es.onmessage = async e => {
       try {
         const data = JSON.parse(e.data);
+        // our own op echo: we already applied these locally — just track the version,
+        // never re-apply (this closes the POST-response vs SSE-broadcast race)
+        if (data.origin && data.origin === DEVICE_ID) { if (data.version > state.version) state.version = data.version; return; }
         if (data.version <= state.version || dirty) return;
         if (data.ops && data.version === state.version + 1) {
           // contiguous authoritative op batch → replay locally (no whole-doc refetch)
@@ -3873,7 +3904,10 @@ async function loadDoc() {
     state.version = data.version || 0;
     sanitizeDocTexts(doc);
     rebuildParentMap();
+    setSynced(); // op-sync baseline = the server's state (before any offline restore below)
   } else {
+    // fresh install: the server has no doc yet, so leave syncedDoc null → the first save
+    // is a whole-doc PUT that seeds the welcome outline (op-diff has nothing to diff against)
     welcomeDoc();
     rebuildParentMap();
     markDirty();
@@ -3897,5 +3931,4 @@ async function loadDoc() {
     doc.trash = doc.trash.filter(t => t.ts > cutoff);
     if (doc.trash.length !== before) markDirty();
   }
-  setSynced(); // op-sync diff baseline
 }

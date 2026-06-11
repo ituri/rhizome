@@ -74,6 +74,15 @@ let H = 0; const hlc = () => String(++H).padStart(8, '0') + ':d'; // monotonic s
   ok(doc.nodes.a.text === 'newer', `LWW: newer write survives a later-arriving older write (${doc.nodes.a.text})`);
 }
 
+// 2b. multiple fields in ONE hlc group all apply (regression: done+format both 'flags')
+{
+  const doc = freshDoc();
+  applyOpsToDoc(doc, [{ id: 'i', hlc: '00000010:d', kind: 'insert', node: 'a', parent: 'root', ord: 0, data: { text: 'x' } }]);
+  applyOpsToDoc(doc, [{ id: 'u', hlc: '00000020:d', kind: 'update', node: 'a', patch: { done: true, format: 'todo', collapsed: true } }]);
+  ok(doc.nodes.a.done === true && doc.nodes.a.format === 'todo' && doc.nodes.a.collapsed === true,
+    `all same-group fields apply in one op (done=${doc.nodes.a.done} format=${doc.nodes.a.format} collapsed=${doc.nodes.a.collapsed})`);
+}
+
 // 3. move cycle-skip — moving an ancestor under its own descendant is refused
 {
   const doc = freshDoc();

@@ -47,12 +47,16 @@ function applyOpsToDoc(doc, ops, trashFn) {
       }
       case 'update': {
         if (!n) break;
+        // Compare every field against its group's HLC as it was BEFORE this op. Otherwise
+        // the first field in a group bumps the group HLC and the rest (same op, same group,
+        // e.g. done+format both in 'flags') fail the > check and get silently dropped.
+        const base = {};
+        for (const k in (op.patch || {})) { const g = GROUP[k] || 'meta'; if (!(g in base)) base[g] = hlcOf(n, g); }
         let changed = false;
         for (const k in (op.patch || {})) {
-          const g = GROUP[k] || 'meta';
-          if (op.hlc > hlcOf(n, g)) { n[k] = op.patch[k]; setHlc(n, g, op.hlc); changed = true; }
+          if (op.hlc > base[GROUP[k] || 'meta']) { n[k] = op.patch[k]; changed = true; }
         }
-        if (changed) out.push(op);
+        if (changed) { for (const g in base) if (op.hlc > base[g]) setHlc(n, g, op.hlc); out.push(op); }
         break;
       }
       case 'move': {
@@ -68,11 +72,17 @@ function applyOpsToDoc(doc, ops, trashFn) {
       }
       case 'delete': {
         if (!n || !(op.hlc > hlcOf(n, 'struct'))) break;            // LWW: delete wins concurrent edit
-        if (trashFn) trashFn(doc, op.node, pm[op.node] || null);
+        if (trashFn) trashFn(doc, op.node, pm[op.node] || null, op.ts); // carries the client's trash ts → identical entry
         out.push(op);
         break;
       }
-      // 'restore' is not part of the op wire yet — trash-restore still goes through PUT /api/doc.
+      case 'untrash': {                                             // restore-cleanup or purge: drop a trash entry by ts
+        if (!doc.trash || op.ts == null) break;
+        const i = doc.trash.findIndex(t => t.ts === op.ts);
+        if (i >= 0) { doc.trash.splice(i, 1); out.push(op); }       // idempotent
+        break;
+      }
+      // restore = the removed nodes reappear as normal insert ops + an untrash that clears the entry
       default: break;
     }
   }
