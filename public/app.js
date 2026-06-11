@@ -1693,15 +1693,10 @@ function opToggleDone(id) {
     refreshItemShell(id);
     if (n.done && !settings.showCompleted) {
       const item = elById.get(id);
+      const nf = neighborFocus(item);
       if (item) {
         item.classList.add('vanishing');
-        setTimeout(() => { renderPage(); }, 230);
-      }
-      const next = visiblePrevNextContent(item?.querySelector('.content'), 1)
-        || visiblePrevNextContent(item?.querySelector('.content'), -1);
-      if (next) {
-        const c = editableCtx(next);
-        if (c) setTimeout(() => focusItem(c.id, 'text', 'end'), 240);
+        setTimeout(() => { renderPage(); applyNeighborFocus(nf); }, 230);
       }
     }
   }
@@ -1740,6 +1735,37 @@ function opToggleCollapse(id, collapse) {
   }
 }
 
+// where the caret should land after `items` disappear: end of the previous
+// visible line; else start of the next line outside the vanishing subtrees;
+// else the page title (when zoomed). Computed BEFORE the items are removed.
+function neighborFocus(items) {
+  const list = (Array.isArray(items) ? items : [items]).filter(Boolean);
+  if (!list.length) return null;
+  // prefer the previous bullet, then the next one; the page title only as a
+  // last resort — deleting the first bullet should land on the line that
+  // slides up into its place, not jump out of the list
+  const all = editables().filter(e => e.classList.contains('content') && !list.some(it => it.contains(e)));
+  const first = list[0], last = list[list.length - 1];
+  let prev = null, next = null;
+  for (const e of all) {
+    if (first.compareDocumentPosition(e) & Node.DOCUMENT_POSITION_PRECEDING) prev = e;
+    if (!next && (last.compareDocumentPosition(e) & Node.DOCUMENT_POSITION_FOLLOWING)) next = e;
+  }
+  const el = prev || next;
+  if (!el) {
+    return state.zoom !== HOME && !state.readOnly ? { id: state.zoom, field: 'title', offset: 'end' } : null;
+  }
+  const ctx = editableCtx(el);
+  if (!ctx) return null;
+  return { id: ctx.id, field: 'text', offset: prev ? 'end' : 0 };
+}
+
+function applyNeighborFocus(nf) {
+  if (!nf) return;
+  if (nf.field === 'title' ? state.zoom !== nf.id : !doc.nodes[nf.id]) return;
+  focusItem(nf.id, nf.field, nf.offset);
+}
+
 function opDelete(id, { toast = true } = {}) {
   if (state.readOnly) return;
   commitActiveText();
@@ -1748,9 +1774,7 @@ function opDelete(id, { toast = true } = {}) {
   const label = plainOf(n.text).trim() || 'item';
   const count = countDescendants(id);
   const item = elById.get(id);
-  const neighbor = item && (visiblePrevNextContent(item.querySelector('.content'), -1)
-    || visiblePrevNextContent(item.querySelector('.content'), 1));
-  const nctx = neighbor ? editableCtx(neighbor) : null;
+  const nf = neighborFocus(item);
 
   // move to trash before removing
   const nodes = {};
@@ -1772,7 +1796,7 @@ function opDelete(id, { toast = true } = {}) {
   deleteSubtree(id);
   if (state.zoom === id || !doc.nodes[state.zoom]) state.zoom = HOME;
   renderPage();
-  if (nctx && doc.nodes[nctx.id]) focusItem(nctx.id, nctx.field === 'title' ? 'title' : 'text', 'end');
+  applyNeighborFocus(nf);
   markDirty();
   if (toast) {
     showToast(`Deleted “${label.slice(0, 40)}”${count ? ` and ${count} sub-item${count === 1 ? '' : 's'}` : ''}`,
@@ -2079,9 +2103,11 @@ function selKeydown(e) {
     e.preventDefault();
     snapshot();
     const count = ids.length;
+    const nf = neighborFocus(ids.map(x => elById.get(x)));
     for (const id of ids) deleteSubtree(id);
     selClear(false);
     renderPage();
+    applyNeighborFocus(nf);
     markDirty();
     showToast(`Deleted ${count} item${count === 1 ? '' : 's'}`, { label: 'Undo', fn: undo });
     return true;

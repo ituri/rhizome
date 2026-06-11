@@ -137,6 +137,61 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   });
   assert(ok, 'clicking the date hint converts the phrase to a pill');
 
+  /* ---- 7b. Ctrl+Shift+Backspace always leaves the caret somewhere sensible ---- */
+  await page.evaluate(() => {
+    const p = makeNode('del page');
+    insertAt('root', 0, p);
+    ['alpha', 'beta', 'gamma'].forEach(t => insertAt(p, kidsOf(p).length, makeNode(t)));
+    // beta gets expanded children — the old bug repro when deleting the FIRST item
+    location.hash = '#/n/' + p;
+    window.__delPage = p;
+  });
+  await sleep(400);
+  // (a) delete a middle item → caret at END of the previous line
+  await page.evaluate(() => {
+    const it = [...document.querySelectorAll('.tree .item')].find(e => e.querySelector('.content').textContent === 'beta');
+    it.querySelector('.content').focus();
+  });
+  await page.keyboard.down('Control'); await page.keyboard.down('Shift');
+  await page.keyboard.press('Backspace');
+  await page.keyboard.up('Shift'); await page.keyboard.up('Control');
+  await sleep(300);
+  let del = await page.evaluate(() => ({
+    text: document.activeElement?.textContent,
+    field: editableCtx(document.activeElement)?.field,
+  }));
+  assert(del.text === 'alpha' && del.field === 'text', `deleting a middle item focuses the previous line (got "${del.text}")`);
+  // (b) delete the FIRST item when it has expanded children (the reported bug)
+  await page.evaluate(() => {
+    const a = [...document.querySelectorAll('.tree .item')].find(e => e.querySelector('.content').textContent === 'alpha');
+    insertAt(a.dataset.id, 0, makeNode('alpha child'));
+    renderPage();
+    const a2 = [...document.querySelectorAll('.tree .item')].find(e => e.querySelector(':scope > .row .content').textContent === 'alpha');
+    a2.querySelector(':scope > .row .content').focus();
+  });
+  await sleep(150);
+  await page.keyboard.down('Control'); await page.keyboard.down('Shift');
+  await page.keyboard.press('Backspace');
+  await page.keyboard.up('Shift'); await page.keyboard.up('Control');
+  await sleep(300);
+  del = await page.evaluate(() => ({
+    text: document.activeElement?.textContent,
+    isBody: document.activeElement === document.body,
+  }));
+  assert(!del.isBody && del.text === 'gamma',
+    `deleting the first item (with children) focuses the next surviving line (got "${del.text}")`);
+  // (c) delete the LAST remaining item → caret on the page title
+  await page.keyboard.down('Control'); await page.keyboard.down('Shift');
+  await page.keyboard.press('Backspace');
+  await page.keyboard.up('Shift'); await page.keyboard.up('Control');
+  await sleep(300);
+  del = await page.evaluate(() => ({
+    isTitle: document.activeElement === document.querySelector('#zoom-title'),
+  }));
+  assert(del.isTitle, 'deleting the last item on a page focuses the page title');
+  await page.evaluate(() => { location.hash = '#/'; });
+  await sleep(300);
+
   /* ---- 8. empty focused bullet shows a discoverability placeholder ---- */
   await page.evaluate(() => { const id = opNewAt('root', 0); document.querySelector(`.item[data-id="${id}"] .content`).focus(); });
   await sleep(150);
