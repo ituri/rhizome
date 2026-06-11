@@ -45,6 +45,8 @@ const settings = Object.assign(
 
 const undoStack = [];
 const redoStack = [];
+let pendingOps = [];   // Route B: ops emitted from the journal, awaiting the next save
+let serverHasDoc = false; // false until we've loaded/seeded a doc on the server (then ops apply)
 let burst = { key: '', at: 0 };
 
 let dirty = false;
@@ -735,6 +737,7 @@ function captureLike(entry) {
 }
 function commitUndoTxn() { // close the in-progress op into an undo entry
   if (undoTxn && (undoTxn.nodes.size || undoTxn.trash !== ABSENT || undoTxn.meta !== ABSENT)) {
+    queueOps(undoTxn);       // Route B: emit this operation's sync ops from the same journal
     undoStack.push({ ...undoTxn, focus: undoFocus });
     if (undoStack.length > 200) undoStack.shift();
   }
@@ -769,8 +772,10 @@ function undo() {
   commitUndoTxn();             // finalize any in-progress op so it's undoable
   if (!undoStack.length) return;
   const entry = undoStack.pop();
-  redoStack.push(captureLike(entry)); // current state → redo
+  const inv = captureLike(entry); // current (pre-undo) state of the touched nodes
+  redoStack.push(inv);
   applyEntry(entry);
+  queueOps(inv);                   // Route B: sync the undo as ops (pre-undo → restored)
   applyHistory(entry.focus);
 }
 
@@ -780,8 +785,10 @@ function redo() {
   commitUndoTxn();
   if (!redoStack.length) return;
   const entry = redoStack.pop();
-  undoStack.push(captureLike(entry));
+  const inv = captureLike(entry);
+  undoStack.push(inv);
   applyEntry(entry);
+  queueOps(inv);
   applyHistory(entry.focus);
 }
 
@@ -858,30 +865,28 @@ async function doSave() {
   saving = true;
   const seq = changeSeq;
   try {
-    // op delta-sync (default): the whole save — edits, moves, deletes (with trash ts),
-    // restores and purges (untrash) — goes as a minimal op set. PUT remains the fallback.
-    if (settings.opSync && !SHARE_TOKEN && syncedDoc) {
-      const ops = diffDoc(syncedDoc, doc);
-      if (!ops.length) {
-        // nothing differs from the server — DON'T send a no-op PUT (its self-echo could
-        // trigger a refetch that reverts a not-yet-saved local edit). Just mark clean.
+    // Route B op delta-sync (default): send the ops the journal emitted — no baseline is
+    // consulted, so the send path cannot drift. The server dedupes by op id and orders by
+    // a monotonic version, so a re-send after a failure is safe. PUT remains the fallback.
+    if (settings.opSync && !SHARE_TOKEN && serverHasDoc) {
+      commitActiveText(true); // flush the active edit into the op WITH re-decorate (so e.g. a
+      commitUndoTxn();        // just-inserted date pill is styled), then finalize the op
+      if (!pendingOps.length) {
         if (changeSeq === seq) { dirty = false; setSaveUI('saved'); localStorage.removeItem('tendril-offline'); }
         return;
       }
-      // the exact state these ops bring the server to. Edits made *during* the await are
-      // NOT folded in here, so the next diff still captures them — prevents a lost update.
-      const sent = structuredClone(doc);
+      const batch = pendingOps;        // take the queue; edits during the await accumulate a fresh one
+      pendingOps = [];
       const r = await fetch('/api/ops', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ops, device: DEVICE_ID }),
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ops: batch, device: DEVICE_ID }),
       });
       if (r.ok) {
         const rv = (await r.json()).version;
         if (rv > state.version) state.version = rv; // never regress if a peer broadcast already advanced us
-        syncedDoc = sent;                           // baseline = what we sent, not the (possibly newer) current doc
         if (changeSeq === seq) { dirty = false; setSaveUI('saved'); localStorage.removeItem('tendril-offline'); }
         return;
       }
-      // any failure → fall through to the robust whole-doc PUT
+      pendingOps = batch.concat(pendingOps); // failed → requeue (idempotent), fall to the whole-doc PUT
     }
     let res = await fetch(SAVE_URL, {
       method: 'PUT',
@@ -906,7 +911,8 @@ async function doSave() {
     }
     if (!res.ok) throw new Error('save failed: ' + res.status);
     state.version = (await res.json()).version;
-    setSynced();
+    pendingOps = [];
+    serverHasDoc = true; // the whole doc was just sent — any queued ops are now redundant
     if (changeSeq === seq) {
       dirty = false;
       setSaveUI('saved');
@@ -927,7 +933,8 @@ function adoptRemote(version, remoteDoc) {
   doc = sanitizeDocTexts(remoteDoc);
   state.version = version;
   rebuildParentMap();
-  setSynced();
+  serverHasDoc = true;
+  pendingOps = []; // adopting the server's whole doc supersedes any queued local ops (only happens when not dirty)
   if (!doc.nodes[state.zoom]) state.zoom = HOME;
   renderPage();
 }
@@ -948,9 +955,6 @@ bc?.addEventListener('message', async e => {
    trash is the remaining cutover step). Receiving the server's authoritative op
    broadcast is always on, and replaying it is safe because the PUT path broadcasts
    no `ops` — so a PUT-only peer just refetches as before. */
-let syncedDoc = null;                 // last state we know the server has (diff baseline)
-const setSynced = () => { try { syncedDoc = structuredClone(doc); } catch { syncedDoc = null; } };
-
 // Per-SESSION actor id (fresh per page load), NOT per device. It tags op ids, the HLC
 // tiebreak, and the broadcast origin. It must be unique per tab so the origin-skip only
 // ignores *this* tab's own echo — two tabs of one browser share localStorage, so a
@@ -966,56 +970,6 @@ const hlcClock = {
 let opSeq = 0;
 const OP_SKIP = new Set(['id', 'children', '$hlc']); // structural/metadata — never a field patch
 const deepEq = (a, b) => a === b || JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
-function posMap(d) {
-  const m = {};
-  for (const id in d.nodes) { const ch = d.nodes[id].children || []; for (let i = 0; i < ch.length; i++) m[ch[i]] = { parent: id, ord: i }; }
-  return m;
-}
-// minimal op set turning oldD into newD (id-stable: detects move vs insert/delete/restore)
-function diffDoc(oldD, newD) {
-  const ops = [];
-  const mk = (kind, node, extra) => ops.push({ id: `${DEVICE_ID}-${opSeq++}`, hlc: hlcClock.tick(), kind, node, ...extra });
-  const oldP = posMap(oldD), newP = posMap(newD);
-
-  // inserts in tree order (parents before children) so the server attaches each under an
-  // already-present parent — this also re-creates a restored subtree correctly
-  for (const queue = [ROOT]; queue.length;) {
-    const id = queue.shift();
-    for (const c of (newD.nodes[id] ? newD.nodes[id].children || [] : [])) {
-      if (!oldD.nodes[c]) { const { children, ...data } = newD.nodes[c]; const np = newP[c] || { parent: id, ord: 0 }; mk('insert', c, { parent: np.parent, ord: np.ord, data }); }
-      queue.push(c);
-    }
-  }
-  // moves + field updates for nodes present in both
-  for (const id in newD.nodes) {
-    if (id === ROOT || !oldD.nodes[id]) continue;
-    const on = oldD.nodes[id], nn = newD.nodes[id];
-    const np = newP[id] || {}, op = oldP[id] || {};
-    if (np.parent !== op.parent || np.ord !== op.ord) mk('move', id, { parent: np.parent, ord: np.ord });
-    const patch = {};
-    for (const k of new Set([...Object.keys(on), ...Object.keys(nn)])) { // any field, incl. calendar markers/custom
-      if (OP_SKIP.has(k)) continue;
-      if (!deepEq(on[k], nn[k])) patch[k] = nn[k] === undefined ? null : nn[k];
-    }
-    if (Object.keys(patch).length) mk('update', id, { patch });
-  }
-  // deletes: subtree roots whose parent survived; carry the trash ts so the server builds
-  // an identical trash entry
-  const trashTsByRoot = new Map((newD.trash || []).map(t => [t.root, t.ts]));
-  for (const id in oldD.nodes) {
-    if (id === ROOT || newD.nodes[id]) continue;
-    const par = (oldP[id] || {}).parent;
-    if (par && !newD.nodes[par]) continue; // covered by an ancestor's delete
-    const ts = trashTsByRoot.get(id);
-    mk('delete', id, ts != null ? { ts } : {});
-  }
-  // untrash: a trash entry that disappeared (restore-cleanup — nodes came back as inserts
-  // above — or a purge)
-  const liveTrash = new Set((newD.trash || []).map(t => t.ts));
-  for (const t of (oldD.trash || [])) if (!liveTrash.has(t.ts)) mk('untrash', t.root, { ts: t.ts });
-
-  return ops;
-}
 // apply the server's authoritative op stream to the local doc (server already merged)
 function applyRemoteOps(ops) {
   for (const o of ops) {
@@ -1100,6 +1054,14 @@ function opsFromJournal(txn) {
 }
 window.__opsFromJournal = () => undoTxn ? opsFromJournal(undoTxn) : []; // for the emission oracle
 
+// queue an operation's sync ops (Route B). No baseline is consulted — the ops come
+// straight from the journal, so the send path cannot drift.
+function queueOps(txn) {
+  if (!settings.opSync || SHARE_TOKEN) return;
+  const ops = opsFromJournal(txn);
+  if (ops.length) pendingOps.push(...ops);
+}
+
 document.addEventListener('visibilitychange', async () => {
   if (document.visibilityState !== 'visible' || dirty || !doc) return;
   try {
@@ -1154,7 +1116,6 @@ function connectSSE() {
           // contiguous authoritative op batch → replay locally (no whole-doc refetch)
           applyRemoteOps(data.ops);
           state.version = data.version;
-          setSynced();
           renderPage();
         } else {
           const full = await (await fetch('/api/doc')).json();
@@ -4024,13 +3985,13 @@ async function loadDoc() {
   if (data.doc && data.doc.nodes && data.doc.nodes[data.doc.root || ROOT]) {
     doc = data.doc;
     doc.root = doc.root || ROOT;
-    state.version = data.version || 0;
+    serverHasDoc = true;
+    state.version = data.version || 0; // = the server's op-log head (seq); ops apply contiguously from here
     sanitizeDocTexts(doc);
     rebuildParentMap();
-    setSynced(); // op-sync baseline = the server's state (before any offline restore below)
   } else {
-    // fresh install: the server has no doc yet, so leave syncedDoc null → the first save
-    // is a whole-doc PUT that seeds the welcome outline (op-diff has nothing to diff against)
+    // fresh install: the server has no doc yet → the first save is a whole-doc PUT that
+    // seeds the welcome outline (there are no ops to send for a doc the server lacks)
     welcomeDoc();
     rebuildParentMap();
     markDirty();

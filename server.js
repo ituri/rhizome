@@ -242,8 +242,20 @@ function commitDoc(doc, origin) {
 // commit after an op-batch: same version bump + persist, but broadcast the applied ops
 // (tagged with the originating device) so peers converge by replaying them — the origin
 // lets the sender ignore its own echo and avoid re-applying ops it already made locally
+// Route B op-log: the version IS the monotonic sequence number; the server is the sole
+// sequencer. `seenOps` makes application idempotent — a re-sent op (after a failed POST,
+// or a duplicate broadcast) is dropped by id, so nothing double-applies.
+const seenOps = new Set();
+const seenOrder = [];
+const SEEN_MAX = 20000;
+function markSeen(id) {
+  if (id == null || seenOps.has(id)) return;
+  seenOps.add(id); seenOrder.push(id);
+  if (seenOrder.length > SEEN_MAX) seenOps.delete(seenOrder.shift());
+}
 function commitOps(ops, origin) {
   store = { version: store.version + 1, doc: store.doc };
+  for (const op of ops) markSeen(op.id);
   persist();
   broadcast({ version: store.version, ops, origin });
   return store.version;
@@ -856,11 +868,13 @@ const server = http.createServer(async (req, res) => {
         const body = await readJson(req);
         if (!Array.isArray(body.ops)) return send(res, 400, { error: 'ops array required' });
         if (!store.doc) store.doc = { root: 'root', nodes: { root: { id: 'root', text: '', note: null, done: false, collapsed: false, children: [] } } };
-        for (const op of body.ops) { // sanitize incoming text/note server-side (same guarantee as the doc path)
-          if (op && op.data) { if (typeof op.data.text === 'string') op.data.text = sanitizeServerHtml(op.data.text); if (typeof op.data.note === 'string') op.data.note = sanitizeServerHtml(op.data.note); }
-          if (op && op.patch) { if (typeof op.patch.text === 'string') op.patch.text = sanitizeServerHtml(op.patch.text); if (typeof op.patch.note === 'string') op.patch.note = sanitizeServerHtml(op.patch.note); }
+        const fresh = body.ops.filter(op => op && (op.id == null || !seenOps.has(op.id))); // idempotent: drop re-sends
+        for (const op of fresh) { // sanitize incoming text/note server-side (same guarantee as the doc path)
+          if (op.data) { if (typeof op.data.text === 'string') op.data.text = sanitizeServerHtml(op.data.text); if (typeof op.data.note === 'string') op.data.note = sanitizeServerHtml(op.data.note); }
+          if (op.patch) { if (typeof op.patch.text === 'string') op.patch.text = sanitizeServerHtml(op.patch.text); if (typeof op.patch.note === 'string') op.patch.note = sanitizeServerHtml(op.patch.note); }
         }
-        const applied = applyOpsToDoc(store.doc, body.ops, trashSubtreeInDoc);
+        const applied = applyOpsToDoc(store.doc, fresh, trashSubtreeInDoc);
+        for (const op of fresh) markSeen(op.id); // record even no-op ops so they're never reprocessed
         const v = applied.length ? commitOps(applied, body.device) : store.version;
         return send(res, 200, { version: v, applied: applied.length });
       }

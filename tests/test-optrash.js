@@ -33,8 +33,9 @@ const trashSig = () => `(doc.trash || []).map(t => t.ts + ':' + t.root).sort().j
   const aT = await A.evaluate(trashSig()), bT = await B.evaluate(trashSig());
   assert(aT && aT === bT, `trash entry identical across clients (ts:root = ${aT})`);
 
-  // A restores it → B converges (item back + trash empty on both)
-  await A.evaluate(() => { const e = doc.trash[0]; restoreTrashEntry(e); const i = doc.trash.indexOf(e); if (i >= 0) doc.trash.splice(i, 1); rebuildParentMap(); markDirty(); });
+  // A restores it → B converges (item back + trash empty on both). Mirror the real UI
+  // restore handler: snapshot() + recTrash() so the journal emits the insert + untrash ops.
+  await A.evaluate(() => { snapshot(); recTrash(); const e = doc.trash[0]; restoreTrashEntry(e); const i = doc.trash.indexOf(e); if (i >= 0) doc.trash.splice(i, 1); rebuildParentMap(); markDirty(); });
   await sleep(1200);
   assert(await B.evaluate(has('trashme-node')), 'A restore → item back on B');
   assert(await A.evaluate(() => (doc.trash || []).length === 0) && await B.evaluate(() => (doc.trash || []).length === 0), 'trash empty on both after restore');
