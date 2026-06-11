@@ -1,22 +1,26 @@
 # End-to-end tests
 
-129 browser-level assertions driving the real app in headless Chrome.
+Browser-level suites driving the real app in headless Chrome (250+ assertions total).
 
 | Suite | Covers |
 |---|---|
-| `test.js` | Core outlining: typing, split/merge, indent, zoom, search, jump, selection, drag & drop, persistence (41) |
-| `test2.js` | v2 features: search operators, blocks, slash menu, dates, tags, stars, trash, mirrors, comments, capture, SSE, sharing, presentation, calendar (41) |
-| `test3.js` | Gap coverage: formatting shortcuts, link dialog, imports/exports, attachments, embeds, templates, appearance, share revoke, XSS sanitization (36) |
-| `test-board.js` | Kanban: render, edit, cross-column drag, column reorder, zoomed board view (11) |
-| `test4.js` | Parity additions: numbered lists, sort, board buttons, move/mirror-to, dates, embeds, markdown paste (19) |
-| `test-nav.js` | Caret memory across zoom/search + smooth View-Transition zoom + popover viewport-fit (17) |
-| `test-api.js` | Per-node REST API + live SSE pickup (run with `TENDRIL_AGENT_TOKEN=… TENDRIL_PASSWORD=pw`, port 3214) (21) |
-| `test-auth.js` | Password login flow (run the server with `TENDRIL_PASSWORD` set) |
+| `test.js` | Core outlining: typing, split/merge, indent, zoom, search, jump, selection, drag & drop, persistence |
+| `test2.js` | Search operators, blocks, slash menu, dates, tags, stars, trash, mirrors, comments, capture, SSE, sharing, presentation, calendar grid |
+| `test3.js` | Formatting shortcuts, link dialog, imports/exports, attachments, embeds, templates, appearance, share revoke, XSS sanitization, popover viewport-fit |
+| `test4.js` | Numbered lists, sort, board buttons, move/mirror-to, date stamps, date formats, rich tags, markdown paste, extra embeds |
+| `test5.js` | Natural-language dates + Tab, date ranges, `[[` inline linking, `link:` operator |
+| `test-board.js` | Kanban: render, edit, cross-column drag, column reorder, zoomed board view |
+| `test-nav.js` | Caret memory across zoom/search, smooth View-Transition zoom + its toggle |
+| `test-ui.js` | Animation gating, header-to-bullet nav, calendar button, explicit date hint, delete focus placement, quick-capture QoL |
+| `test-cal.js` | Calendar journal: Today button, Year/Month/Day hierarchy, date strip, dated-item surfacing |
+| `test-api.js` | Per-node REST API + live SSE pickup — run the server with `TENDRIL_AGENT_TOKEN=agent-secret-xyz TENDRIL_PASSWORD=pw PORT=3214` |
+| `test-auth.js` | Password login flow — run the server with `TENDRIL_PASSWORD=s3cret PORT=3212` |
 
 ## Running
 
 Requires Chrome and `puppeteer-core` (`npm i puppeteer-core` in this folder — the
-app itself stays zero-dependency). Each suite expects a **fresh** server on port 3211:
+app itself stays zero-dependency). Unless noted above, each suite expects a
+**fresh** server on port 3211:
 
 ```powershell
 # per suite: reset data, start server, run, stop
