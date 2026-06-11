@@ -228,10 +228,7 @@ function escHtml(s) {
 }
 
 function captureText(text) {
-  if (!store.doc || !store.doc.nodes || !store.doc.nodes.root) {
-    store.doc = { root: 'root', nodes: { root: { id: 'root', text: '', note: null, done: false, collapsed: false, children: [] } } };
-  }
-  const doc = store.doc;
+  const doc = ensureDoc();
   let inboxId = doc.nodes.root.children.find(id => {
     const t = (doc.nodes[id]?.text || '').replace(/<[^>]+>/g, '').trim().toLowerCase();
     return t === 'inbox';
@@ -311,16 +308,21 @@ function nodeInsert(parent, index, id) {
   if (!Number.isInteger(index) || index < 0 || index > a.length) index = a.length;
   a.splice(index, 0, id);
 }
+const TRASH_CAP = 200;
+// move a subtree into the trash (newest first, capped); returns its node ids
+function pushTrash(doc, id, parent, index) {
+  const ids = subtreeIds(doc, id);
+  const nodes = {};
+  for (const x of ids) nodes[x] = doc.nodes[x];
+  if (!doc.trash) doc.trash = [];
+  doc.trash.unshift({ ts: Date.now(), parent, index, root: id, nodes });
+  if (doc.trash.length > TRASH_CAP) doc.trash = doc.trash.slice(0, TRASH_CAP);
+  return ids;
+}
+
 function nodeDelete(id) {
   const parent = nodeParent(id);
-  const ids = subtreeIds(store.doc, id);
-  const nodes = {};
-  for (const x of ids) nodes[x] = store.doc.nodes[x];
-  if (!store.doc.trash) store.doc.trash = [];
-  store.doc.trash.unshift({
-    ts: Date.now(), parent, index: parent ? store.doc.nodes[parent].children.indexOf(id) : 0, root: id, nodes,
-  });
-  if (store.doc.trash.length > 200) store.doc.trash = store.doc.trash.slice(0, 200);
+  const ids = pushTrash(store.doc, id, parent, parent ? store.doc.nodes[parent].children.indexOf(id) : 0);
   nodeDetach(id);
   for (const x of ids) delete store.doc.nodes[x];
   return ids.length;
@@ -369,7 +371,7 @@ function apiAuthed(req, url) {
 }
 
 async function readJson(req) {
-  return JSON.parse((await readBody(req, 16 * 1024 * 1024)).toString('utf8') || '{}');
+  return JSON.parse((await readBody(req)).toString('utf8') || '{}');
 }
 
 async function handleV1(req, res, url) {
@@ -583,13 +585,8 @@ function mergeShareDoc(share, incoming) {
   for (const id of removed) {
     const p = nodeParent(id);
     if (p && removed.has(p)) continue; // covered by an ancestor's entry
-    const ids = subtreeIds(doc, id);
-    const nodes = {};
-    for (const x of ids) nodes[x] = doc.nodes[x];
-    if (!doc.trash) doc.trash = [];
-    doc.trash.unshift({ ts: Date.now(), parent: p, index: 0, root: id, nodes });
+    pushTrash(doc, id, p, 0);
   }
-  if (doc.trash && doc.trash.length > 200) doc.trash = doc.trash.slice(0, 200);
 
   for (const id of before) {
     if (id !== share.id) delete doc.nodes[id];
@@ -723,7 +720,7 @@ const server = http.createServer(async (req, res) => {
       }
       if (req.method === 'PUT' || req.method === 'POST') {
         if (share.mode !== 'edit') return send(res, 403, { error: 'this share is view-only' });
-        const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+        const body = await readJson(req);
         if (typeof body.baseVersion === 'number' && body.baseVersion !== store.version) {
           const doc = shareDocFor(share);
           return send(res, 409, { version: store.version, doc });
@@ -746,7 +743,7 @@ const server = http.createServer(async (req, res) => {
       }
       if (url === '/api/login' && req.method === 'POST') {
         if (throttled(ip)) return send(res, 429, { error: 'too many attempts — try again in 10 minutes' });
-        const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+        const body = await readJson(req);
         let ok = !!PASSWORD && timingSafeEq(body.password || '', PASSWORD);
         if (ok && TOTP_SECRET) ok = totpValid(TOTP_SECRET, body.code);
         recordAttempt(ip, ok);
@@ -778,7 +775,7 @@ const server = http.createServer(async (req, res) => {
       if (url === '/api/doc' && req.method === 'GET') return send(res, 200, store);
       if (url === '/api/version' && req.method === 'GET') return send(res, 200, { version: store.version });
       if (url === '/api/doc' && (req.method === 'PUT' || req.method === 'POST')) {
-        const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+        const body = await readJson(req);
         if (!body.doc || typeof body.doc !== 'object' || !body.doc.nodes) {
           return send(res, 400, { error: 'malformed document' });
         }
@@ -806,7 +803,7 @@ const server = http.createServer(async (req, res) => {
         return send(res, 200, Object.entries(shares).map(([token, s]) => ({ token, ...s })));
       }
       if (url === '/api/shares' && req.method === 'POST') {
-        const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+        const body = await readJson(req);
         if (!store.doc?.nodes?.[body.nodeId]) return send(res, 400, { error: 'unknown node' });
         const token = crypto.randomBytes(16).toString('hex');
         shares[token] = { id: body.nodeId, mode: body.mode === 'edit' ? 'edit' : 'view', created: Date.now() };
@@ -832,7 +829,7 @@ const server = http.createServer(async (req, res) => {
 
       if (url === '/api/ai' && req.method === 'POST') {
         if (!AI_KEY) return send(res, 400, { error: 'AI is not configured — set ANTHROPIC_API_KEY on the server' });
-        const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
+        const body = await readJson(req);
         if (!body.prompt) return send(res, 400, { error: 'missing prompt' });
         try {
           const text = await askClaude(String(body.prompt).slice(0, 4000), String(body.context || '').slice(0, 100000));

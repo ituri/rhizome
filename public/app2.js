@@ -190,24 +190,8 @@ function openCaretPop(type, ctx, start, extra = {}) {
 function positionCaretPop() {
   if (!caretPop) return;
   const rect = caretViewportRect();
-  if (!rect) return;
-  const margin = 8, gap = 6;
-  const el = caretPop.el;
-  el.style.maxHeight = '';
-  let pr = el.getBoundingClientRect();
-  const below = innerHeight - margin - (rect.bottom + gap);
-  const above = (rect.top - gap) - margin;
-  let placeAbove, maxH = innerHeight - 2 * margin;
-  if (pr.height <= below) placeAbove = false;
-  else if (pr.height <= above) placeAbove = true;
-  else { placeAbove = above > below; maxH = Math.max(below, above); }
-  el.style.maxHeight = Math.max(120, maxH) + 'px';
-  pr = el.getBoundingClientRect();
-  const left = clamp(rect.left, margin, Math.max(margin, innerWidth - pr.width - margin));
-  let top = placeAbove ? rect.top - gap - pr.height : rect.bottom + gap;
-  top = clamp(top, margin, Math.max(margin, innerHeight - pr.height - margin));
-  el.style.left = left + 'px';
-  el.style.top = top + 'px';
+  // positionPopover only reads anchor.getBoundingClientRect(), so a fixed caret rect serves as the anchor
+  if (rect) positionPopover(caretPop.el, { getBoundingClientRect: () => rect });
 }
 
 function renderCaretItems(items, onPick, emptyMsg) {
@@ -393,14 +377,7 @@ function pickLink(it) {
   a.setAttribute('href', '#/n/' + linkId);
   a.setAttribute('rel', 'noopener');
   a.textContent = label;
-  const space = document.createTextNode(' ');
-  r.insertNode(space);
-  r.insertNode(a);
-  const after = document.createRange();
-  after.setStartAfter(space);
-  after.collapse(true);
-  sel.removeAllRanges();
-  sel.addRange(after);
+  insertInlineAtCaret(sel, r, a);
   scheduleCommit(ctx.el);
   markDirty();
   if (it.create) {
@@ -511,11 +488,6 @@ window.caretPopKeydown = function caretPopKeydown(e) {
 
 /* ---------------- D. date picker ---------------- */
 
-const fmtDateLabel = iso => formatDate(iso); // honors the date-format setting
-
-function isoFromDate(d) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
 
 function openDatePop(ctx) {
   window.closeCaretPop();
@@ -535,12 +507,12 @@ function openDatePop(ctx) {
     const d = new Date(today);
     d.setDate(d.getDate() + days);
     b.addEventListener('mousedown', e => e.preventDefault());
-    b.addEventListener('click', () => insertDate(ctx, isoFromDate(d)));
+    b.addEventListener('click', () => insertDate(ctx, isoOf(d)));
     quick.append(b);
   }
   const input = document.createElement('input');
   input.type = 'date';
-  input.value = isoFromDate(today);
+  input.value = isoOf(today);
   input.addEventListener('change', () => { if (input.value) insertDate(ctx, input.value); });
   input.addEventListener('keydown', e => {
     if (e.key === 'Enter') { e.preventDefault(); if (input.value) insertDate(ctx, input.value); }
@@ -551,6 +523,26 @@ function openDatePop(ctx) {
   document.body.append(el);
   caretPop = { type: 'date', ctx, items: [], active: 0, el, onPick: null };
   positionCaretPop();
+}
+
+// insert an inline node at the collapsed range, add a trailing space, leave the caret after it
+function insertInlineAtCaret(sel, r, node) {
+  const space = document.createTextNode(' ');
+  r.insertNode(space);
+  r.insertNode(node);
+  const after = document.createRange();
+  after.setStartAfter(space);
+  after.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(after);
+}
+
+// a date pill element: single ISO, or a range when iso2 is given
+function makeTimePill(iso, iso2) {
+  const time = document.createElement('time');
+  time.setAttribute('datetime', iso2 ? `${iso}/${iso2}` : iso);
+  time.textContent = iso2 ? `${formatDate(iso)} – ${formatDate(iso2)}` : formatDate(iso);
+  return time;
 }
 
 function insertDate(ctx, iso) {
@@ -566,17 +558,7 @@ function insertDate(ctx, iso) {
   snapshot();
   const r = getSelection().getRangeAt(0);
   r.collapse(false);
-  const time = document.createElement('time');
-  time.setAttribute('datetime', iso);
-  time.textContent = fmtDateLabel(iso);
-  const space = document.createTextNode(' ');
-  r.insertNode(space);
-  r.insertNode(time);
-  const after = document.createRange();
-  after.setStartAfter(space);
-  after.collapse(true);
-  sel.removeAllRanges();
-  sel.addRange(after);
+  insertInlineAtCaret(sel, r, makeTimePill(iso));
   scheduleCommit(ctx.el);
 }
 
@@ -602,12 +584,7 @@ function openNodePicker(title, onPick, exclude) {
     active = 0;
     results.innerHTML = '';
     items.forEach((it, i) => {
-      const b = document.createElement('button');
-      b.className = 'jump-row' + (i === 0 ? ' active' : '');
-      b.innerHTML = `<div class="jr-text">${escHtml(it.plain.slice(0, 80))}</div>` +
-        (it.path ? `<div class="jr-path">${escHtml(it.path)}</div>` : '');
-      b.addEventListener('click', () => { close(); onPick(it.id); });
-      results.append(b);
+      results.append(jumpRow(it, i === 0, () => { close(); onPick(it.id); }));
     });
   };
   const close = () => overlay.remove();
@@ -674,7 +651,7 @@ function setItemDate(id, iso) {
 function dateOffset(days) {
   const d = new Date();
   d.setDate(d.getDate() + days);
-  return isoFromDate(d);
+  return isoOf(d);
 }
 
 const nodeAnchor = id => elById.get(id)?.querySelector(':scope > .row .content') || document.body;
@@ -844,22 +821,7 @@ window.applyDateSuggest = function applyDateSuggest() {
   const sel = getSelection();
   const r = sel.getRangeAt(0);
   r.deleteContents();                                 // remove it
-  const time = document.createElement('time');
-  if (sug.iso2) {
-    time.setAttribute('datetime', sug.iso + '/' + sug.iso2);
-    time.textContent = formatDate(sug.iso) + ' – ' + formatDate(sug.iso2);
-  } else {
-    time.setAttribute('datetime', sug.iso);
-    time.textContent = formatDate(sug.iso);
-  }
-  const space = document.createTextNode(' ');
-  r.insertNode(space);
-  r.insertNode(time);                                 // drop in the date pill
-  const after = document.createRange();
-  after.setStartAfter(space);
-  after.collapse(true);
-  sel.removeAllRanges();
-  sel.addRange(after);
+  insertInlineAtCaret(sel, r, makeTimePill(sug.iso, sug.iso2)); // drop in the date pill
   scheduleCommit(sug.el);
   return true;
 };
@@ -1040,12 +1002,7 @@ function renderLinkResults(q) {
     return;
   }
   linkItems.forEach((it, i) => {
-    const b = document.createElement('button');
-    b.className = 'jump-row' + (i === 0 ? ' active' : '');
-    b.innerHTML = `<div class="jr-text">${escHtml(it.plain.slice(0, 80))}</div>` +
-      (it.path ? `<div class="jr-path">${escHtml(it.path)}</div>` : '');
-    b.addEventListener('click', () => applyLink('#/n/' + it.id));
-    linkResults.append(b);
+    linkResults.append(jumpRow(it, i === 0, () => applyLink('#/n/' + it.id)));
   });
 }
 
@@ -1335,7 +1292,7 @@ function renderCalendar() {
     const d = new Date(y, mo, 1 - startOffset + i);
     // stop at a row boundary once we're past the month — never mid-row
     if (i >= 28 && i % 7 === 0 && d.getMonth() !== mo) break;
-    const iso = isoFromDate(d);
+    const iso = isoOf(d);
     const cell = document.createElement('div');
     cell.className = 'cal-day' + (d.getMonth() !== mo ? ' other' : '') + (iso === today ? ' today' : '');
     cell.innerHTML = `<div class="cal-num">${d.getDate()}</div>`;

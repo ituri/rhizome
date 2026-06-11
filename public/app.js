@@ -99,10 +99,7 @@ const stripTags = (() => {
 
 const plainOf = html => stripTags(html || '').replace(/ /g, ' ');
 
-const todayStr = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-};
+const todayStr = () => isoOf(new Date());
 
 const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const MONTHS_LONG = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -112,6 +109,8 @@ const DOW_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const NUM_WORDS = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12 };
 const WD = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
 const MON = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
+// markdown block markers typed at line start, e.g. "## " → h2, "> " → quote, "[] " → todo
+const BLOCK_MARKERS = { '#': 'h1', '##': 'h2', '###': 'h3', '>': 'quote', '[]': 'todo' };
 
 function isoOf(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -2060,9 +2059,15 @@ function setCollapseAll(collapsed) {
 
 /* ---------------- 13. zoom & routing ---------------- */
 
+// a target is only zoomable if it exists and (in a share) sits within the shared subtree
+function resolveZoomTarget(id) {
+  if (!id || !doc.nodes[id]) return HOME;
+  if (SHARE_TOKEN && id !== HOME && !isAncestor(HOME, id)) return HOME;
+  return id;
+}
+
 function zoomTo(id) {
-  if (!doc.nodes[id]) id = HOME;
-  if (SHARE_TOKEN && id !== HOME && !isAncestor(HOME, id)) id = HOME;
+  id = resolveZoomTarget(id);
   if (id === state.zoom) return;
   location.hash = id === HOME ? '#/' : '#/n/' + id;
 }
@@ -2095,8 +2100,7 @@ const rowContentOf = id => elById.get(id)?.querySelector(':scope > .row > .conte
 
 function applyHash() {
   const m = location.hash.match(/^#\/n\/([A-Za-z0-9]+)/);
-  let target = m && doc.nodes[m[1]] ? m[1] : HOME;
-  if (SHARE_TOKEN && target !== HOME && !isAncestor(HOME, target)) target = HOME;
+  const target = resolveZoomTarget(m ? m[1] : HOME);
   if (target === state.zoom) return;
 
   // remember the caret in the view we're leaving (before it's torn down)
@@ -2450,8 +2454,7 @@ function onKeydown(e) {
     if (sel.rangeCount && sel.getRangeAt(0).collapsed) {
       const off = caretOffsetIn(el);
       const before = (el.textContent || '').slice(0, off);
-      const map = { '#': 'h1', '##': 'h2', '###': 'h3', '>': 'quote', '[]': 'todo' };
-      let fmt = map[before];
+      let fmt = BLOCK_MARKERS[before];
       if (!fmt && /^\d+[.)]$/.test(before)) fmt = 'number';
       if (fmt && off === before.length) {
         e.preventDefault();
@@ -3371,6 +3374,16 @@ function searchNodes(q, limit = 14) {
   return out.slice(0, limit);
 }
 
+// one search-result row, shared by quick-jump, the node picker, and the link dialog
+function jumpRow(it, active, onClick, { showDone = false } = {}) {
+  const b = document.createElement('button');
+  b.className = 'jump-row' + (active ? ' active' : '');
+  b.innerHTML = `<div class="jr-text${showDone && it.done ? ' done' : ''}">${escHtml(it.plain.slice(0, 90))}</div>` +
+    (it.path ? `<div class="jr-path">${escHtml(it.path)}</div>` : '');
+  b.addEventListener('click', onClick);
+  return b;
+}
+
 function renderJump(q) {
   jumpItems = searchNodes(q);
   jumpActive = 0;
@@ -3380,12 +3393,7 @@ function renderJump(q) {
     return;
   }
   jumpItems.forEach((it, i) => {
-    const b = document.createElement('button');
-    b.className = 'jump-row' + (i === 0 ? ' active' : '');
-    b.innerHTML = `<div class="jr-text${it.done ? ' done' : ''}">${escHtml(it.plain.slice(0, 90))}</div>` +
-      (it.path ? `<div class="jr-path">${escHtml(it.path)}</div>` : '');
-    b.addEventListener('click', () => { hideJump(); zoomTo(it.id); });
-    jumpResults.append(b);
+    jumpResults.append(jumpRow(it, i === 0, () => { hideJump(); zoomTo(it.id); }, { showDone: true }));
   });
 }
 
