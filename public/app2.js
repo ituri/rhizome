@@ -467,27 +467,50 @@ window.editorInputHook = function editorInputHook(ctx) {
 
 window.caretPopKeydown = function caretPopKeydown(e) {
   if (!caretPop) return false;
-  if (e.key === 'Escape') { e.preventDefault(); window.closeCaretPop(); return true; }
-  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-    e.preventDefault();
-    if (!caretPop.items.length) return true;
-    caretPop.active = clamp(caretPop.active + (e.key === 'ArrowDown' ? 1 : -1), 0, caretPop.items.length - 1);
-    $$('.pop-item', caretPop.el).forEach((el, i) => el.classList.toggle('active', i === caretPop.active));
-    $$('.pop-item', caretPop.el)[caretPop.active]?.scrollIntoView({ block: 'nearest' });
-    return true;
-  }
-  if (e.key === 'Enter' || e.key === 'Tab') {
-    e.preventDefault();
+  const pick = () => {
     const it = caretPop.items[caretPop.active];
     if (it && caretPop.onPick) caretPop.onPick(it);
     else window.closeCaretPop();
-    return true;
-  }
-  return false;
+  };
+  if (e.key === 'Tab') { e.preventDefault(); pick(); return true; } // Tab confirms, like Enter
+  return listNavKey(e, {
+    rowSel: '.pop-item', container: caretPop.el,
+    count: () => caretPop.items.length,
+    getActive: () => caretPop.active, setActive: v => { caretPop.active = v; },
+    onEscape: () => window.closeCaretPop(),
+    onEnter: pick,
+  });
 };
 
 /* ---------------- D. date picker ---------------- */
 
+const DATE_QUICK_PICKS = [['Today', 0], ['Tomorrow', 1], ['Next week', 7], ['In 2 weeks', 14], ['Next month', 30]];
+
+// the quick-pick row + calendar input shared by both date pickers; calls onPick(iso)
+function buildDatePicker(onPick, onEscape) {
+  const frag = document.createDocumentFragment();
+  const quick = document.createElement('div');
+  quick.className = 'quick';
+  for (const [label, days] of DATE_QUICK_PICKS) {
+    const b = document.createElement('button');
+    b.textContent = label;
+    b.addEventListener('mousedown', e => e.preventDefault()); // keep the editor's selection
+    b.addEventListener('click', () => onPick(dateOffset(days)));
+    quick.append(b);
+  }
+  const input = document.createElement('input');
+  input.type = 'date';
+  input.value = dateOffset(0);
+  const apply = () => { if (input.value) onPick(input.value); };
+  input.addEventListener('change', apply);
+  input.addEventListener('keydown', e => {
+    e.stopPropagation();
+    if (e.key === 'Enter') { e.preventDefault(); apply(); }
+    else if (e.key === 'Escape' && onEscape) { e.preventDefault(); onEscape(); }
+  });
+  frag.append(quick, input);
+  return frag;
+}
 
 function openDatePop(ctx) {
   window.closeCaretPop();
@@ -495,31 +518,10 @@ function openDatePop(ctx) {
   savedDateRange = sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
   const el = document.createElement('div');
   el.className = 'popover caret-pop datepick';
-  const quick = document.createElement('div');
-  quick.className = 'quick';
-  const today = new Date();
-  const opts = [
-    ['Today', 0], ['Tomorrow', 1], ['Next week', 7], ['In 2 weeks', 14], ['Next month', 30],
-  ];
-  for (const [label, days] of opts) {
-    const b = document.createElement('button');
-    b.textContent = label;
-    const d = new Date(today);
-    d.setDate(d.getDate() + days);
-    b.addEventListener('mousedown', e => e.preventDefault());
-    b.addEventListener('click', () => insertDate(ctx, isoOf(d)));
-    quick.append(b);
-  }
-  const input = document.createElement('input');
-  input.type = 'date';
-  input.value = isoOf(today);
-  input.addEventListener('change', () => { if (input.value) insertDate(ctx, input.value); });
-  input.addEventListener('keydown', e => {
-    if (e.key === 'Enter') { e.preventDefault(); if (input.value) insertDate(ctx, input.value); }
-    if (e.key === 'Escape') { e.preventDefault(); window.closeCaretPop(); focusItem(ctx.id, ctx.field === 'title' ? 'title' : 'text', 'end'); }
-    e.stopPropagation();
-  });
-  el.append(quick, input);
+  el.append(buildDatePicker(
+    iso => insertDate(ctx, iso),
+    () => { window.closeCaretPop(); focusItem(ctx.id, ctx.field === 'title' ? 'title' : 'text', 'end'); },
+  ));
   document.body.append(el);
   caretPop = { type: 'date', ctx, items: [], active: 0, el, onPick: null };
   positionCaretPop();
@@ -591,16 +593,13 @@ function openNodePicker(title, onPick, exclude) {
   input.addEventListener('input', () => render(input.value));
   input.addEventListener('keydown', e => {
     e.stopPropagation();
-    if (e.key === 'Escape') { e.preventDefault(); close(); }
-    else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-      e.preventDefault();
-      active = clamp(active + (e.key === 'ArrowDown' ? 1 : -1), 0, items.length - 1);
-      $$('.jump-row', results).forEach((el, i) => el.classList.toggle('active', i === active));
-      $$('.jump-row', results)[active]?.scrollIntoView({ block: 'nearest' });
-    } else if (e.key === 'Enter') {
-      e.preventDefault();
-      if (items[active]) { close(); onPick(items[active].id); }
-    }
+    listNavKey(e, {
+      rowSel: '.jump-row', container: results,
+      count: () => items.length,
+      getActive: () => active, setActive: v => { active = v; },
+      onEscape: close,
+      onEnter: () => { if (items[active]) { close(); onPick(items[active].id); } },
+    });
   });
   overlay.addEventListener('mousedown', e => { if (e.target === overlay) close(); });
   render('');
@@ -686,22 +685,8 @@ function setSubtreeCollapsed(id, collapsed) {
 function pickDate(anchor, cb) {
   openPopover(anchor, pop => {
     pop.classList.add('datepick');
-    const quick = document.createElement('div');
-    quick.className = 'quick';
-    for (const [label, days] of [['Today', 0], ['Tomorrow', 1], ['Next week', 7], ['In 2 weeks', 14], ['Next month', 30]]) {
-      const b = document.createElement('button');
-      b.textContent = label;
-      b.addEventListener('click', () => { closeAllPopovers(); cb(dateOffset(days)); });
-      quick.append(b);
-    }
-    const input = document.createElement('input');
-    input.type = 'date';
-    input.value = dateOffset(0);
-    const apply = () => { if (input.value) { closeAllPopovers(); cb(input.value); } };
-    input.addEventListener('change', apply);
-    input.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter') { e.preventDefault(); apply(); } });
-    pop.append(quick, input);
-    setTimeout(() => input.focus(), 30);
+    pop.append(buildDatePicker(iso => { closeAllPopovers(); cb(iso); }));
+    setTimeout(() => pop.querySelector('input')?.focus(), 30);
   });
 }
 
@@ -1020,21 +1005,18 @@ function applyLink(href) {
 }
 
 window.linkDlgKeydown = function linkDlgKeydown(e) {
-  if (e.key === 'Escape') { e.preventDefault(); linkOverlay.hidden = true; return; }
-  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-    e.preventDefault();
-    if (!linkItems.length) return;
-    linkActive = clamp(linkActive + (e.key === 'ArrowDown' ? 1 : -1), 0, linkItems.length - 1);
-    $$('.jump-row', linkResults).forEach((el, i) => el.classList.toggle('active', i === linkActive));
-    return;
-  }
-  if (e.key === 'Enter') {
-    e.preventDefault();
-    const q = linkInput.value.trim();
-    if (/^https?:/i.test(q)) applyLink(q);
-    else if (/^www\./i.test(q)) applyLink('https://' + q);
-    else if (linkItems[linkActive]) applyLink('#/n/' + linkItems[linkActive].id);
-  }
+  listNavKey(e, {
+    rowSel: '.jump-row', container: linkResults, scroll: false,
+    count: () => linkItems.length,
+    getActive: () => linkActive, setActive: v => { linkActive = v; },
+    onEscape: () => { linkOverlay.hidden = true; },
+    onEnter: () => {
+      const q = linkInput.value.trim();
+      if (/^https?:/i.test(q)) applyLink(q);
+      else if (/^www\./i.test(q)) applyLink('https://' + q);
+      else if (linkItems[linkActive]) applyLink('#/n/' + linkItems[linkActive].id);
+    },
+  });
 };
 
 linkOverlay.addEventListener('mousedown', e => { if (e.target === linkOverlay) linkOverlay.hidden = true; });

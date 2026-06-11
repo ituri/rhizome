@@ -622,21 +622,16 @@ function setCaretAtX(el, x, edge) {
   }
 }
 
+// The focusable text stops, in document order. The only non-editable member of
+// navTargets() is the collapsed-column bar, so filtering it out yields exactly
+// the editable stops.
 function editables() {
-  const out = [];
-  if (state.zoom !== HOME && !zoomHeadEl.hidden && zoomHeadEl.style.display !== 'none') {
-    if (zoomTitleEl.isContentEditable) out.push(zoomTitleEl);
-    if (!zoomNoteEl.hidden && zoomNoteEl.isContentEditable) out.push(zoomNoteEl);
-  }
-  for (const el of treeEl.querySelectorAll('.content, .note')) {
-    if (el.offsetParent !== null && el.isContentEditable) out.push(el);
-  }
-  return out;
+  return navTargets().filter(el => el.isContentEditable);
 }
 
-// The ordered stops for arrow-key navigation. Same as editables(), but it also
-// includes collapsed board-column bars so a column can never become an
-// unreachable dead-end — the renderer decides the order, nav just walks it.
+// The ordered stops for arrow-key navigation: every editable, plus collapsed
+// board-column bars so a column can never become an unreachable dead-end —
+// the renderer decides the order, nav just walks it.
 function navTargets() {
   const out = [];
   if (state.zoom !== HOME && !zoomHeadEl.hidden && zoomHeadEl.style.display !== 'none') {
@@ -1694,6 +1689,33 @@ function visiblePrevNextContent(el, dir) {
   return null;
 }
 
+// absorb `goneId` into `keepId`: append its text/note, reparent its children
+// (preserving sibling order), delete it, and leave the caret at the join point
+function mergeInto(keepId, goneId) {
+  const keep = N(keepId), gone = N(goneId);
+  snapshot();
+  const joinAt = plainOf(keep.text).length;
+  keep.text = keep.text + gone.text;
+  if (gone.note) keep.note = keep.note ? keep.note + '\n' + gone.note : gone.note;
+  const kids = [...kidsOf(goneId)];
+  if (parentOf(goneId) === keepId) {
+    const arr = kidsOf(keepId);
+    arr.splice(arr.indexOf(goneId), 1, ...kids); // replace gone in place with its children
+    parentMap.delete(goneId);
+    for (const k of kids) parentMap.set(k, keepId);
+  } else {
+    detach(goneId);
+    for (const k of kids) { kidsOf(keepId).push(k); parentMap.set(k, keepId); }
+  }
+  N(goneId).children = [];
+  delete doc.nodes[goneId];
+  if (kids.length) keep.collapsed = false;
+  touch(keepId);
+  renderPage();
+  focusItem(keepId, 'text', joinAt);
+  markDirty();
+}
+
 function opMergeBack(ctx) {
   const { el, id } = ctx;
   const n = N(id);
@@ -1701,50 +1723,20 @@ function opMergeBack(ctx) {
   const prevEl = visiblePrevNextContent(el, -1);
   if (!prevEl) return;
   const prevCtx = editableCtx(prevEl);
-  const isEmpty = !plainOf(n.text).length && !hasKids(id) && (n.note === null || n.note === undefined || n.note === '');
+  const isEmpty = !plainOf(n.text).length && !hasKids(id) && (n.note == null || n.note === '');
 
-  if (prevCtx.field === 'title') {
-    if (isEmpty) {
-      snapshot();
-      deleteSubtree(id);
-      renderPage();
-      setCaretOffset(zoomTitleEl, 'end');
-      markDirty();
-    }
-    return;
-  }
-
-  const prev = N(prevCtx.id);
+  // an empty item just disappears into the previous line (or the page title)
   if (isEmpty) {
     snapshot();
     deleteSubtree(id);
     renderPage();
-    focusItem(prevCtx.id, 'text', 'end');
+    if (prevCtx.field === 'title') setCaretOffset(zoomTitleEl, 'end');
+    else focusItem(prevCtx.id, 'text', 'end');
     markDirty();
     return;
   }
-  snapshot();
-  const joinAt = plainOf(prev.text).length;
-  prev.text = prev.text + n.text;
-  if (n.note) prev.note = prev.note ? prev.note + '\n' + n.note : n.note;
-  const myKids = [...kidsOf(id)];
-  if (parentOf(id) === prevCtx.id) {
-    const arr = kidsOf(prevCtx.id);
-    const idx = arr.indexOf(id);
-    arr.splice(idx, 1, ...myKids);
-    parentMap.delete(id);
-    for (const k of myKids) parentMap.set(k, prevCtx.id);
-  } else {
-    detach(id);
-    for (const k of myKids) { kidsOf(prevCtx.id).push(k); parentMap.set(k, prevCtx.id); }
-  }
-  N(id).children = [];
-  delete doc.nodes[id];
-  if (myKids.length) prev.collapsed = false;
-  touch(prevCtx.id);
-  renderPage();
-  focusItem(prevCtx.id, 'text', joinAt);
-  markDirty();
+  if (prevCtx.field === 'title') return; // can't merge text up into the page title
+  mergeInto(prevCtx.id, id);
 }
 
 function opMergeForward(ctx) {
@@ -1755,30 +1747,7 @@ function opMergeForward(ctx) {
   if (!nextEl) return;
   const nextCtx = editableCtx(nextEl);
   if (!nextCtx || nextCtx.field === 'title') return;
-  const me = N(id);
-  const next = N(nextCtx.id);
-  snapshot();
-  const joinAt = plainOf(me.text).length;
-  me.text = me.text + next.text;
-  if (next.note) me.note = me.note ? me.note + '\n' + next.note : next.note;
-  const theirKids = [...kidsOf(nextCtx.id)];
-  if (parentOf(nextCtx.id) === id) {
-    const arr = kidsOf(id);
-    const idx = arr.indexOf(nextCtx.id);
-    arr.splice(idx, 1, ...theirKids);
-    parentMap.delete(nextCtx.id);
-    for (const k of theirKids) parentMap.set(k, id);
-  } else {
-    detach(nextCtx.id);
-    for (const k of theirKids) { kidsOf(id).push(k); parentMap.set(k, id); }
-  }
-  next.children = [];
-  delete doc.nodes[nextCtx.id];
-  if (theirKids.length) me.collapsed = false;
-  touch(id);
-  renderPage();
-  focusItem(id, 'text', joinAt);
-  markDirty();
+  mergeInto(id, nextCtx.id);
 }
 
 function opIndent(id, focus) {
@@ -2044,18 +2013,8 @@ function opSort(id, dir) {
   showToast(`Sorted ${dir > 0 ? 'A → Z' : 'Z → A'}`, { label: 'Undo', fn: undo });
 }
 
-function setCollapseAll(collapsed) {
-  commitActiveText();
-  snapshot();
-  const stack = [...kidsOf(state.zoom)];
-  while (stack.length) {
-    const id = stack.pop();
-    if (hasKids(id)) N(id).collapsed = collapsed;
-    stack.push(...kidsOf(id));
-  }
-  renderPage();
-  markDirty();
-}
+// expand/collapse every item on the current page (the whole-page case of setSubtreeCollapsed)
+const setCollapseAll = collapsed => setSubtreeCollapsed(state.zoom, collapsed);
 
 /* ---------------- 13. zoom & routing ---------------- */
 
@@ -3399,21 +3358,32 @@ function renderJump(q) {
 
 jumpInput.addEventListener('input', () => renderJump(jumpInput.value));
 
-function jumpKeydown(e) {
-  if (e.key === 'Escape') { e.preventDefault(); hideJump(); return; }
+// shared Esc/↑↓/Enter handling for the result lists (quick-jump, node picker,
+// link dialog, caret popovers). Returns true if it consumed the key.
+function listNavKey(e, { rowSel, container, count, getActive, setActive, onEnter, onEscape, scroll = true }) {
+  if (e.key === 'Escape') { e.preventDefault(); onEscape?.(); return true; }
   if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
     e.preventDefault();
-    if (!jumpItems.length) return;
-    jumpActive = clamp(jumpActive + (e.key === 'ArrowDown' ? 1 : -1), 0, jumpItems.length - 1);
-    $$('.jump-row', jumpResults).forEach((el, i) => el.classList.toggle('active', i === jumpActive));
-    $$('.jump-row', jumpResults)[jumpActive]?.scrollIntoView({ block: 'nearest' });
-    return;
+    if (!count()) return true;
+    const next = clamp(getActive() + (e.key === 'ArrowDown' ? 1 : -1), 0, count() - 1);
+    setActive(next);
+    const rows = $$(rowSel, container);
+    rows.forEach((el, i) => el.classList.toggle('active', i === next));
+    if (scroll) rows[next]?.scrollIntoView({ block: 'nearest' });
+    return true;
   }
-  if (e.key === 'Enter') {
-    e.preventDefault();
-    const it = jumpItems[jumpActive];
-    if (it) { hideJump(); zoomTo(it.id); }
-  }
+  if (e.key === 'Enter') { e.preventDefault(); onEnter?.(); return true; }
+  return false;
+}
+
+function jumpKeydown(e) {
+  listNavKey(e, {
+    rowSel: '.jump-row', container: jumpResults,
+    count: () => jumpItems.length,
+    getActive: () => jumpActive, setActive: v => { jumpActive = v; },
+    onEscape: hideJump,
+    onEnter: () => { const it = jumpItems[jumpActive]; if (it) { hideJump(); zoomTo(it.id); } },
+  });
 }
 
 jumpOverlay.addEventListener('mousedown', e => { if (e.target === jumpOverlay) hideJump(); });
