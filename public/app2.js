@@ -634,6 +634,7 @@ function setItemDate(id, iso) {
   commitActiveText();
   snapshot();
   const n = N(id);
+  recOld(id);
   // strip any existing date, then append the new one
   const tpl = document.createElement('template');
   tpl.innerHTML = n.text || '';
@@ -1080,6 +1081,7 @@ window.showComments = function showComments(anchor, id) {
         const t = ta.value.trim();
         if (!t) return;
         snapshot();
+        recOld(id);
         if (!N(id).comments) N(id).comments = [];
         N(id).comments.push({ t, ts: Date.now() });
         touch(id);
@@ -1126,6 +1128,7 @@ function getTemplates() {
 function saveAsTemplate(id) {
   if (plainOf(N(id).text).includes('#template')) { showToast('Already a template'); return; }
   snapshot();
+  recOld(id);
   N(id).text = sanitizeHtml(N(id).text + ' <span>#template</span>');
   touch(id);
   renderPage();
@@ -1701,6 +1704,7 @@ $('#attach-file').addEventListener('change', e => {
 window.uploadAttachments = async function uploadAttachments(id, files) {
   if (state.readOnly || SHARE_TOKEN) { showToast('Attachments are unavailable on shared links'); return; }
   snapshot();
+  recOld(id); // capture the node before the async upload mutates its files
   let added = 0;
   for (const file of files) {
     if (file.size > 32 * 1024 * 1024) { showToast(`"${file.name}" is over the 32 MB limit`); continue; }

@@ -1527,6 +1527,7 @@ function buildAttachments(n) {
 function removeAttachment(id, url) {
   snapshot();
   const n = N(id);
+  recOld(id);
   n.files = (n.files || []).filter(f => f.url !== url);
   if (!n.files.length) delete n.files;
   touch(id);
@@ -2149,6 +2150,7 @@ function opAddNote(ctx) {
   commitActiveText();
   if (n.note === null || n.note === undefined) {
     snapshot();
+    recOld(id);
     n.note = '';
     markDirty();
   }
@@ -2440,7 +2442,7 @@ function selKeydown(e) {
     e.preventDefault();
     snapshot();
     const allDone = ids.every(id => N(id).done);
-    for (const id of ids) { N(id).done = !allDone; touch(id); }
+    for (const id of ids) { recOld(id); N(id).done = !allDone; touch(id); }
     renderPage();
     state.sel = sel;
     selRender();
