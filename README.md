@@ -60,7 +60,9 @@ curl -X POST "https://your-host/api/capture?token=…" -d "call mom tomorrow"
 
 **Polish** — light/dark/auto themes, 4 accent colors, 4 font choices, cozy/compact density, reading/full-width pages, configurable date format & week-start, always-show-arrows, capitalize-first-word, rich (emoji) tags; smooth zoom & collapse animations (toggleable in the menu); **Print** (`Ctrl+P`); optional ✨ AI assistant (your own Anthropic key); password login with optional **TOTP MFA**; mobile toolbar.
 
-Press `Ctrl+/` in the app for the full keyboard reference.
+Press `Ctrl+/` in the app for the full keyboard reference. For the complete
+feature inventory — including what's deliberately not built — see
+[docs/FEATURES.md](docs/FEATURES.md).
 
 ## Node API (for scripts & AI agents)
 
