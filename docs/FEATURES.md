@@ -13,7 +13,7 @@ Status as of 2026-06-11. ✅ implemented (covered by the e2e suites in [`tests/`
 | | Complete (`Ctrl+Enter`), show/hide completed (`Ctrl+O`) | ✅ | |
 | | Drag & drop with depth control, touch long-press | ✅ | Board-aware |
 | | Split/merge at caret (Enter/Backspace/Delete at edges) | ✅ | Children reparent correctly |
-| | Multi-select (`Shift+↑↓` past the text edge; repeated `Ctrl+A` widens text → item → siblings → levels) + bulk ops | ✅ | Indent, move, complete, delete, copy; typing exits into the item |
+| | Multi-select (`Shift+↑↓` past the text edge; repeated `Ctrl+A` widens text → item → siblings → levels) + bulk ops | ✅ | Indent, move, complete, delete, copy; typing exits into the item; selecting a single item opens its ⋯ menu |
 | | Click-drag multi-select across bullets | ❌ | Workflowy also supports mouse-drag selection |
 | | Smart multi-line paste (indentation → hierarchy) | ✅ | |
 | | Trash with restore, 30-day retention | ✅ | Per-entry restore, delete-forever, empty |

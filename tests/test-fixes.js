@@ -433,6 +433,37 @@ const node = (id, text, children = [], extra = {}) =>
   const need = ['Insert template…', 'Count items', 'Export…', 'Mirror to Today', 'Move to Date…', 'Expand all'];
   assert(need.every(l => menuLabels.some(t => t.includes(l))), `item ⋯ menu exposes ${need.join(', ')}`);
 
+  /* B14. topbar pinned so topbar + full-height sidebar fill the viewport exactly
+     (the old 52px magic number vs ~54px real topbar left a sub-pixel scroll) */
+  const layout = await page.evaluate(() => {
+    const tb = document.querySelector('.topbar').offsetHeight;
+    const sb = document.querySelector('.sidebar').offsetHeight; // height: calc(100dvh - var(--topbar-h))
+    return { tb: Math.round(tb), stack: Math.round(tb + sb), vh: window.innerHeight };
+  });
+  assert(layout.tb === 52, `topbar pinned to --topbar-h (got ${layout.tb}px)`);
+  assert(Math.abs(layout.stack - layout.vh) <= 1, `topbar + sidebar fill the viewport with no overflow (stack ${layout.stack} vs vh ${layout.vh})`);
+
+  /* B15. Ctrl+A selecting a single item opens its menu; manipulating dismisses it */
+  await page.evaluate(() => {
+    closeAllPopovers();
+    const p = makeNode('menu on ctrl-a'); insertAt('root', kidsOf('root').length, p);
+    const s = makeNode('a sibling'); insertAt('root', kidsOf('root').length, s);
+    renderPage();
+    focusItem(p, 'text', 'end');
+  });
+  await sleep(80);
+  await page.keyboard.down('Control'); await page.keyboard.press('a'); await page.keyboard.up('Control');
+  await page.keyboard.down('Control'); await page.keyboard.press('a'); await page.keyboard.up('Control');
+  await sleep(120);
+  let sa = await page.evaluate(() => ({ menu: !!document.querySelector('.popover'), sel: state.sel && selIds().length }));
+  assert(sa.menu && sa.sel === 1, `Ctrl+A selects the item and opens its menu (menu=${sa.menu}, sel=${sa.sel})`);
+  await page.keyboard.down('Shift'); await page.keyboard.press('ArrowDown'); await page.keyboard.up('Shift');
+  await sleep(120);
+  sa = await page.evaluate(() => ({ menu: !!document.querySelector('.popover'), sel: selIds().length }));
+  assert(!sa.menu && sa.sel === 2, `extending the selection dismisses the menu and grows it (menu=${sa.menu}, sel=${sa.sel})`);
+  await page.keyboard.press('Escape');
+  await sleep(60);
+
   assert(pageErrors.length === 0, `no page errors across the suite (${pageErrors.join(' | ')})`);
   await browser.close();
   console.log(failures ? `\n${failures} FAILURE(S)` : '\nall good');

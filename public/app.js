@@ -2133,6 +2133,9 @@ function selKeydown(e) {
   const ids = selIds();
   if (!ids.length) { selClear(); return false; }
   const sel = state.sel;
+  // a menu auto-opened by Ctrl+A shouldn't block extending/acting on the selection
+  // (Escape is intercepted earlier while a popover is open, so it never reaches here)
+  if (currentPopover) closeAllPopovers();
 
   if (e.key === 'Escape') {
     e.preventDefault();
@@ -2557,7 +2560,7 @@ function onKeydown(e) {
     return;
   }
 
-  /* ----- select whole item ----- */
+  /* ----- select whole item (and surface its menu, like Workflowy) ----- */
   if (mod && (e.key === 'a' || e.key === 'A') && !isTitle && !isNote) {
     const sel = getSelection();
     const allSelected = sel.rangeCount &&
@@ -2566,6 +2569,9 @@ function onKeydown(e) {
     if (allSelected || textLen(el) === 0) {
       e.preventDefault();
       selEnter(id);
+      // open the item menu for quick action; any further selection move dismisses it
+      const it = elById.get(id);
+      window.showItemMenu?.(it?.querySelector(':scope > .row .bullet') || it?.querySelector(':scope > .row .content') || document.body, id);
     }
     return;
   }
@@ -3359,7 +3365,7 @@ const HELP = [
     ['Show / hide completed', 'Ctrl+O'],
   ]],
   ['Selection & misc', [
-    ['Select item', 'Ctrl+A twice'],
+    ['Select item + open menu', 'Ctrl+A twice'],
     ['Extend selection', 'Shift+↑ ↓'],
     ['Quick capture to Inbox', 'Ctrl+Shift+Space'],
     ['Undo / redo', 'Ctrl+Z / Ctrl+Shift+Z'],

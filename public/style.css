@@ -23,6 +23,7 @@
   --serif: "Newsreader", Georgia, serif;
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --indent: 26px;
+  --topbar-h: 52px;
   color-scheme: light;
 }
 
@@ -72,6 +73,7 @@ button { font-family: inherit; }
 .topbar {
   position: sticky;
   top: 0;
+  height: var(--topbar-h); /* pinned so the sidebar's calc(100dvh - var) matches exactly — no sub-pixel overflow */
   z-index: 40;
   view-transition-name: tendril-topbar;
   display: flex;
@@ -1022,8 +1024,8 @@ html.no-anim, html.no-anim *, html.no-anim *::before, html.no-anim *::after {
   width: 0;
   overflow: hidden;
   position: sticky;
-  top: 52px;
-  height: calc(100vh - 52px);
+  top: var(--topbar-h);
+  height: calc(100dvh - var(--topbar-h));
   transition: width 0.22s var(--ease-out);
 }
 body.sidebar-open .sidebar {
@@ -1182,7 +1184,7 @@ body:not(.sidebar-open) .side-today span { display: none; }
   body.sidebar-open .sidebar { width: 0; padding: 6px 0; border: none; }
   body.sidebar-open.sidebar-mobile .sidebar {
     position: fixed;
-    left: 0; top: 52px;
+    left: 0; top: var(--topbar-h);
     width: min(280px, 80vw);
     background: var(--bg);
     z-index: 50;
