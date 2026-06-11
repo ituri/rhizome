@@ -337,6 +337,27 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   }));
   assert(kc.onBoard && kc.expanded && kc.shown, `Ctrl+↓ expands a board and keeps the caret on it (${JSON.stringify(kc)})`);
 
+  // 16. ArrowDown from a zoomed board header reaches the cards even when columns are collapsed
+  await page.evaluate(() => {
+    location.hash = '#/n/' + window.__board;
+    kidsOf(window.__board).forEach(c => N(c).collapsed = true);
+    renderPage();
+  });
+  await sleep(350);
+  await page.evaluate(() => setCaretOffset(document.querySelector('#zoom-title'), 'end'));
+  await sleep(60);
+  await page.keyboard.press('ArrowDown');
+  await sleep(150);
+  const nav = await page.evaluate(() => {
+    const el = document.activeElement;
+    const firstCol = kidsOf(window.__board)[0];
+    return {
+      inFirstCol: el?.closest?.('.item')?.dataset.id === firstCol,
+      expanded: N(firstCol).collapsed === false,
+    };
+  });
+  assert(nav.inFirstCol && nav.expanded, `ArrowDown from a collapsed-board header opens the first column and enters it (${JSON.stringify(nav)})`);
+
   await browser.close();
   console.log(failures ? `\n${failures} FAILURE(S)` : '\nBOARD TESTS PASSED');
   process.exit(failures ? 1 : 0);

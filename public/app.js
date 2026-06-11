@@ -2659,6 +2659,16 @@ function onKeydown(e) {
         navGoalX = x;
         setCaretAtX(target, x, up ? 'last' : 'first');
         target.scrollIntoView({ block: 'nearest' });
+      } else if (!up && (isTitle || field === 'zoom-note') && fmtOf(state.zoom) === 'board' && kidsOf(state.zoom).length && !state.readOnly) {
+        // ArrowDown off a zoomed board header whose columns are all collapsed:
+        // open the first column and drop into it (otherwise there's nothing editable below)
+        e.preventDefault();
+        const firstCol = kidsOf(state.zoom)[0];
+        N(firstCol).collapsed = false;
+        touch(firstCol);
+        renderPage();
+        focusItem(firstCol, 'text', 0);
+        markDirty();
       } else if (!up && (isTitle || field === 'zoom-note') && !state.readOnly && !kidsOf(state.zoom).length) {
         // ArrowDown off the header of an empty page starts the first bullet
         e.preventDefault();
