@@ -255,20 +255,40 @@ function slashCommands(ctx) {
   }
   cmds.push({ label: 'Date…', icon: '📅', hint: '!!', fn: () => openDatePop(ctx) });
   if (ctx.field === 'text') {
+    // template inserts first, so typing "/template" ranks insertion above "Save as template"
+    for (const tpl of getTemplates().slice(0, 6)) {
+      cmds.push({ label: 'Template: ' + tpl.label, icon: '🧩', fn: () => insertTemplate(tpl.id, ctx) });
+    }
     cmds.push(
       { label: 'Add note', icon: '≡', hint: 'Shift+Enter', fn: () => opAddNote(ctx) },
       { label: 'Complete', icon: '✓', hint: 'Ctrl+Enter', fn: () => opToggleDone(id) },
       { label: 'Duplicate', icon: '⧉', hint: 'Ctrl+D', fn: () => opDuplicate(id) },
-      { label: 'Mirror', icon: '◇', hint: 'Alt+Shift+M', fn: () => opMirror(id) },
       { label: 'Attach file', icon: '📎', fn: () => attachTo(id) },
       { label: 'Comment', icon: '💬', fn: () => { const it = elById.get(id); window.showComments(it?.querySelector('.content') || document.body, id); } },
+      { label: 'Count items', icon: '#', fn: () => opCount(id) },
+      { label: 'Move to…', icon: '→', fn: () => openNodePicker('Move to…', t => moveItemTo(id, t), subtreeOf(id)) },
+      { label: 'Move to Today', icon: '▦', fn: () => setItemDate(id, dateOffset(0)) },
+      { label: 'Move to Tomorrow', icon: '▦', fn: () => setItemDate(id, dateOffset(1)) },
+      { label: 'Move to Next Week', icon: '▦', fn: () => setItemDate(id, dateOffset(7)) },
+      { label: 'Move to Date…', icon: '📅', fn: () => pickDate(nodeAnchor(id), iso => setItemDate(id, iso)) },
+      { label: 'Mirror', icon: '◇', hint: 'Alt+Shift+M', fn: () => opMirror(id) },
+      { label: 'Mirror to…', icon: '◇', fn: () => openNodePicker('Mirror to…', t => mirrorItemTo(id, t), subtreeOf(id)) },
+      { label: 'Mirror to Today', icon: '◇', fn: () => mirrorItemToDate(id, dateOffset(0)) },
+      { label: 'Mirror to Date…', icon: '◇', fn: () => pickDate(nodeAnchor(id), iso => mirrorItemToDate(id, iso)) },
+      { label: 'Sort A → Z', icon: '↓', fn: () => opSort(id, 1) },
+      { label: 'Sort Z → A', icon: '↑', fn: () => opSort(id, -1) },
+      { label: 'Expand all', icon: '▾', fn: () => setSubtreeCollapsed(id, false) },
+      { label: 'Collapse all', icon: '▸', fn: () => setSubtreeCollapsed(id, true) },
+      { label: 'Save as template', icon: '🧩', fn: () => saveAsTemplate(id) },
+      { label: 'Export…', icon: '⬇', fn: () => exportNodePop(nodeAnchor(id), id) },
+      { label: 'Copy link', icon: '🔗', hint: 'Alt+Shift+L', fn: () => { navigator.clipboard?.writeText(location.origin + location.pathname + '#/n/' + id); showToast('Link copied'); } },
     );
     if (state.aiEnabled && !SHARE_TOKEN) {
-      cmds.push({ label: 'Ask AI', icon: '✨', fn: () => askAI(id) });
+      cmds.push({ label: 'Ask AI…', icon: '✨', fn: () => askAI(id) });
+      for (const [label, instr] of AI_PRESETS) cmds.push({ label, icon: '✨', fn: () => aiRun(id, instr) });
     }
-    for (const tpl of getTemplates().slice(0, 6)) {
-      cmds.push({ label: 'Template: ' + tpl.label, icon: '🧩', fn: () => insertTemplate(tpl.id, ctx) });
-    }
+    if (!SHARE_TOKEN) cmds.push({ label: 'Share', icon: '🌐', fn: () => showSharePop(nodeAnchor(id), id) });
+    cmds.push({ label: 'Delete', icon: '✕', fn: () => opDelete(id) });
   }
   cmds.push({ label: 'Present', icon: '▶', fn: () => startPresent() });
   return cmds;
@@ -655,6 +675,97 @@ function dateOffset(days) {
   const d = new Date();
   d.setDate(d.getDate() + days);
   return isoFromDate(d);
+}
+
+const nodeAnchor = id => elById.get(id)?.querySelector(':scope > .row .content') || document.body;
+
+// mirror an item under a calendar-journal day (creating the day on demand)
+function mirrorItemToDate(id, iso) {
+  if (!doc.nodes[ROOT]) { showToast("The calendar isn't available in a shared view"); return; }
+  mirrorItemTo(id, ensureDay(iso));
+}
+
+// count of descendant items (and how many are complete)
+function opCount(id) {
+  let items = 0, done = 0;
+  const walk = x => { for (const c of kidsOf(x)) { items++; if (N(c).done) done++; walk(c); } };
+  walk(id);
+  showToast(items ? `${items} item${items === 1 ? '' : 's'} below this${done ? ` · ${done} complete` : ''}` : 'No items below this');
+}
+
+// expand or collapse every descendant of an item at once
+function setSubtreeCollapsed(id, collapsed) {
+  if (state.readOnly) return;
+  commitActiveText();
+  snapshot();
+  for (const x of subtreeOf(id)) if (hasKids(x)) N(x).collapsed = collapsed;
+  if (collapsed) N(id).collapsed = false; // keep the item itself open so the effect is visible
+  touch(id);
+  renderPage();
+  markDirty();
+}
+
+// a date chooser (quick picks + calendar input) that calls back with an ISO date
+function pickDate(anchor, cb) {
+  openPopover(anchor, pop => {
+    pop.classList.add('datepick');
+    const quick = document.createElement('div');
+    quick.className = 'quick';
+    for (const [label, days] of [['Today', 0], ['Tomorrow', 1], ['Next week', 7], ['In 2 weeks', 14], ['Next month', 30]]) {
+      const b = document.createElement('button');
+      b.textContent = label;
+      b.addEventListener('click', () => { closeAllPopovers(); cb(dateOffset(days)); });
+      quick.append(b);
+    }
+    const input = document.createElement('input');
+    input.type = 'date';
+    input.value = dateOffset(0);
+    const apply = () => { if (input.value) { closeAllPopovers(); cb(input.value); } };
+    input.addEventListener('change', apply);
+    input.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter') { e.preventDefault(); apply(); } });
+    pop.append(quick, input);
+    setTimeout(() => input.focus(), 30);
+  });
+}
+
+// export a single item's subtree (the doc-wide exporters' per-node sibling)
+function exportNode(id, format) {
+  const stamp = new Date().toISOString().slice(0, 10);
+  const base = (plainOf(N(id).text).trim().replace(/[^\w]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'item').toLowerCase();
+  const fn = `tendril-${base}-${stamp}`;
+  if (format === 'txt') download(`${fn}.txt`, 'text/plain', subtreeToText(id, 0));
+  else if (format === 'md') download(`${fn}.md`, 'text/plain', subtreeToMarkdown(id, 0));
+  else if (format === 'opml') download(`${fn}.opml`, 'text/xml',
+    `<?xml version="1.0" encoding="UTF-8"?>\n<opml version="2.0"><head><title>${escHtml(plainOf(N(id).text))}</title></head><body>\n${subtreeToOpml(id)}\n</body></opml>`);
+  else {
+    const nodes = {};
+    for (const x of subtreeOf(id)) nodes[x] = doc.nodes[x];
+    download(`${fn}.json`, 'application/json', JSON.stringify({ root: id, nodes }, null, 1));
+  }
+}
+
+function exportNodePop(anchor, id) {
+  openPopover(anchor, pop => {
+    const t = document.createElement('div');
+    t.className = 'pop-title';
+    t.textContent = 'Export this item & children';
+    pop.append(t);
+    for (const [label, fmt] of [['Plain text', 'txt'], ['Markdown', 'md'], ['OPML', 'opml'], ['JSON', 'json']]) {
+      pop.append(menuItem(label, '⬇', () => exportNode(id, fmt)));
+    }
+  });
+}
+
+function insertTemplatePop(anchor, ctx) {
+  const tpls = getTemplates();
+  if (!tpls.length) { showToast('No templates yet — use “Save as template” first'); return; }
+  openPopover(anchor, pop => {
+    const t = document.createElement('div');
+    t.className = 'pop-title';
+    t.textContent = 'Insert template';
+    pop.append(t);
+    for (const tpl of tpls) pop.append(menuItem(tpl.label, '🧩', () => insertTemplate(tpl.id, ctx)));
+  });
 }
 
 /* ---------------- D3. natural-language date suggestion (type "today" → Tab) ---------------- */
@@ -1673,6 +1784,40 @@ window.uploadAttachments = async function uploadAttachments(id, files) {
   }
 };
 
+// one-shot canned AI actions (preset prompts over the same proxy as free-form Ask AI)
+const AI_PRESETS = [
+  ['AI: Summarize', 'Summarize this item and its children into a few concise bullet points.'],
+  ['AI: Find tasks', "Extract the actionable tasks from this item and its children as a checklist; format each line as '- [ ] task'."],
+  ['AI: Draft an outline', 'Draft a structured, nested outline that expands on this item.'],
+  ['AI: Fix grammar & spelling', 'Rewrite this item and its children with corrected grammar and spelling, preserving the meaning and the nesting.'],
+  ['AI: Make shorter', 'Rewrite this item and its children to be more concise, preserving the structure.'],
+];
+
+// send a prompt + the item's subtree to the AI proxy and graft the reply in as sub-items
+async function aiRun(id, prompt) {
+  showToast('✨ Asking AI…');
+  try {
+    const res = await fetch('/api/ai', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt, context: subtreeToText(id, 0) }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'AI request failed');
+    const forest = parseIndentedText(data.text || '');
+    if (!forest.length) throw new Error('the AI returned nothing usable');
+    closeAllPopovers();
+    snapshot();
+    N(id).collapsed = false;
+    materializeForest(forest, id);
+    renderPage();
+    markDirty();
+    showToast('AI results added as sub-items', { label: 'Undo', fn: undo });
+  } catch (err) {
+    showToast(String(err.message || err));
+  }
+}
+
 function askAI(id) {
   const item = elById.get(id);
   const anchor = item?.querySelector('.content') || document.body;
@@ -1692,28 +1837,9 @@ function askAI(id) {
       if (!prompt) return;
       go.textContent = '…';
       go.disabled = true;
-      try {
-        const res = await fetch('/api/ai', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt, context: subtreeToText(id, 0) }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'AI request failed');
-        const forest = parseIndentedText(data.text || '');
-        if (!forest.length) throw new Error('the AI returned nothing usable');
-        closeAllPopovers();
-        snapshot();
-        N(id).collapsed = false;
-        materializeForest(forest, id);
-        renderPage();
-        markDirty();
-        showToast('AI results added as sub-items', { label: 'Undo', fn: undo });
-      } catch (err) {
-        showToast(String(err.message || err));
-        go.textContent = 'Go';
-        go.disabled = false;
-      }
+      await aiRun(id, prompt); // closes the popover on success; on error it stays and we re-enable
+      go.textContent = 'Go';
+      go.disabled = false;
     };
     go.addEventListener('click', run);
     ta.addEventListener('keydown', e => {
@@ -1771,10 +1897,13 @@ window.showItemMenu = function showItemMenu(anchor, id) {
         menuItem('Move to Today', '▦', () => setItemDate(id, dateOffset(0))),
         menuItem('Move to Tomorrow', '▦', () => setItemDate(id, dateOffset(1))),
         menuItem('Move to Next Week', '▦', () => setItemDate(id, dateOffset(7))),
+        menuItem('Move to Date…', '📅', () => pickDate(anchor, iso => setItemDate(id, iso))),
         document.createElement('hr'),
         menuItem('Move to…', '→', () => openNodePicker('Move to…', t => moveItemTo(id, t), subtreeOf(id)), { hint: 'Alt+Ctrl+M' }),
-        menuItem('Mirror to…', '◇', () => openNodePicker('Mirror to…', t => mirrorItemTo(id, t), subtreeOf(id))),
         menuItem('Mirror here', '◈', () => opMirror(id), { hint: 'Alt+Shift+M' }),
+        menuItem('Mirror to…', '◇', () => openNodePicker('Mirror to…', t => mirrorItemTo(id, t), subtreeOf(id))),
+        menuItem('Mirror to Today', '◇', () => mirrorItemToDate(id, dateOffset(0))),
+        menuItem('Mirror to Date…', '◇', () => pickDate(anchor, iso => mirrorItemToDate(id, iso))),
         menuItem('Duplicate', '⧉', () => opDuplicate(id), { hint: 'Ctrl+D' }),
         document.createElement('hr'),
         menuItem('Comments', '💬', () => {
@@ -1783,12 +1912,20 @@ window.showItemMenu = function showItemMenu(anchor, id) {
         }),
         menuItem('Attach file', '📎', () => attachTo(id)),
         menuItem('Save as template', '🧩', () => saveAsTemplate(id)),
+        menuItem('Insert template…', '🧩', () => insertTemplatePop(anchor, { id, field: 'text' })),
+        menuItem('Count items', '#', () => opCount(id)),
+        menuItem('Export…', '⬇', () => exportNodePop(anchor, id)),
       );
       if (hasKids(id)) pop.append(
         menuItem('Sort A → Z', '↓', () => opSort(id, 1)),
         menuItem('Sort Z → A', '↑', () => opSort(id, -1)),
+        menuItem('Expand all', '▾', () => setSubtreeCollapsed(id, false)),
+        menuItem('Collapse all', '▸', () => setSubtreeCollapsed(id, true)),
       );
-      if (state.aiEnabled) pop.append(menuItem('Ask AI', '✨', () => askAI(id)));
+      if (state.aiEnabled) {
+        pop.append(menuItem('Ask AI…', '✨', () => askAI(id)));
+        for (const [label, instr] of AI_PRESETS) pop.append(menuItem(label, '✨', () => aiRun(id, instr)));
+      }
     }
     pop.append(document.createElement('hr'));
     if (!SHARE_TOKEN && state.authRequired !== null) {

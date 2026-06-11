@@ -24,7 +24,7 @@ Status as of 2026-06-11. ✅ implemented (covered by the e2e suites in [`tests/`
 | | Numbered lists (auto-renumber) | ✅ | `1. ` shortcut, Enter continues |
 | | Kanban boards | ✅ | Inline + full-page when zoomed; +card/+column; drag across columns; column reorder |
 | | Markdown shortcuts (`# `, `## `, `### `, `> `, `[] `, `1. `, `---`, triple-backtick) | ✅ | |
-| | Slash command menu (`/`) | ✅ | Block types, dates, actions, templates |
+| | Slash command menu (`/`) | ✅ | Block types, dates, every item action (move/mirror/sort/export/count/share/AI), templates — kept in sync with the item ⋯ menu |
 | | Selection toolbar (B/I/U/S/code/link) | ✅ | Plus `Ctrl+B/I/U`, `Ctrl+Shift+X`, `Ctrl+E` |
 | | 8 text colors + 8 highlights | ✅ | |
 | | Link selection to URL or item (`Ctrl+K`) | ✅ | |
@@ -59,10 +59,12 @@ Status as of 2026-06-11. ✅ implemented (covered by the e2e suites in [`tests/`
 | | Backlinks ("Linked from") | ✅ | From any internal link (`[[ ]]`, Ctrl+K, pasted) and mirrors |
 | | `[[inline linking]]` with autocomplete + create-new | ✅ | |
 | | Starred-page switcher (`Ctrl+;`) | ❌ | Covered by sidebar + `Ctrl+K` |
-| **Reuse & review** | Mirrors (`Alt+Shift+M`, Mirror to…) | 🟡 | Live read-only views; click opens original. Workflowy's are editable in place |
-| | Move to… node picker | ✅ | |
-| | Move to Today / Tomorrow / Next Week | ✅ | Date stamps |
-| | Templates (save subtree, insert via `/`) | ✅ | |
+| | Mirrors (`Alt+Shift+M`, Mirror to…, Mirror to Today / Date…) | 🟡 | Live read-only views; click opens original. Workflowy's are editable in place |
+| | Move to… node picker; Move to Today / Tomorrow / Next Week / Date… | ✅ | Date stamps |
+| | Templates (save subtree, insert via `/` or item menu) | ✅ | |
+| | Per-item export (text / Markdown / OPML / JSON) | ✅ | Subtree scope; doc-wide export also available |
+| | Count items in a subtree | ✅ | |
+| | Expand / collapse a whole subtree | ✅ | |
 | | Comments on any item | 🟡 | Flat list; Workflowy's are infinitely threaded |
 | | Instant presentations | ✅ | Any node becomes slides |
 | | Duplicate with optional `#copy` tag | ✅ | |
@@ -96,7 +98,7 @@ Status as of 2026-06-11. ✅ implemented (covered by the e2e suites in [`tests/`
 | | Self-describing endpoint index (`GET /api/v1`) | ✅ | |
 | | OpenAPI spec + Swagger-style docs page | ❌ | Discussed; decided to keep as-is for now |
 | | MCP server | ❌ | Declined — REST API is sufficient |
-| | ✨ Ask AI (Anthropic key, server proxy) | ✅ | Results insert as sub-items |
+| | ✨ Ask AI (Anthropic key, server proxy) | ✅ | Free-form prompt + canned actions (Summarize, Find tasks, Draft outline, Fix grammar, Make shorter); results insert as sub-items |
 | **Out of scope** (Workflowy parity) | Tables, Side Pane, Dashboard (Workflowy Labs) | ❌ | Sizable features; Dashboard abandoned upstream |
 | | Daily email summaries / mention emails | ❌ | Needs SMTP; contradicts zero-dependency |
 | | Third-party integrations (Slack, Google Calendar…) | ❌ | Capture + REST API are the integration surface |

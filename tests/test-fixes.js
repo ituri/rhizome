@@ -377,6 +377,62 @@ const node = (id, text, children = [], extra = {}) =>
   assert(await page.evaluate(() => document.getElementById('search-dropdown').hidden),
     'blurring the search box closes the dropdown');
 
+  /* B13. new node commands + slash / item-menu parity */
+  const cmd = await page.evaluate(() => {
+    const p = makeNode('cmd parent'); insertAt('root', kidsOf('root').length, p);
+    const c1 = makeNode('cmd child 1'); insertAt(p, 0, c1);
+    const c2 = makeNode('cmd child 2'); insertAt(p, 1, c2);
+    const g = makeNode('cmd grandchild'); insertAt(c1, 0, g);
+    N(c1).done = true;
+    renderPage();
+    const wasAI = state.aiEnabled;
+    state.aiEnabled = true;
+    const slash = slashCommands({ id: p, field: 'text', el: nodeAnchor(p) }).map(c => c.label);
+    state.aiEnabled = wasAI;
+
+    opCount(p);
+    const countToast = [...document.querySelectorAll('.toast')].some(t => /3 items/.test(t.textContent));
+
+    let exported = null;
+    const realDl = window.download;
+    window.download = (name, _mime, content) => { exported = { name, content }; };
+    exportNode(p, 'md');
+    window.download = realDl;
+
+    mirrorItemToDate(p, todayStr());
+    const day = findDay(todayStr());
+    const mirroredUnderDay = !!day && kidsOf(day).some(k => isMirror(k) && mirrorTarget(k) === p);
+
+    setSubtreeCollapsed(p, true);
+    const collapsed = N(c1).collapsed === true && N(p).collapsed === false;
+
+    return {
+      slash: ['Count items', 'Export…', 'Mirror to Today', 'Move to Date…', 'Mirror to…', 'Sort A → Z'].every(l => slash.includes(l)),
+      slashAI: slash.includes('AI: Summarize'),
+      countToast,
+      exportedMd: !!exported && /cmd parent/.test(exported.content) && exported.name.endsWith('.md'),
+      mirroredUnderDay,
+      collapsed,
+    };
+  });
+  assert(cmd.slash, 'slash menu exposes the full item-action set');
+  assert(cmd.slashAI, 'slash menu includes canned AI actions when AI is enabled');
+  assert(cmd.countToast, 'Count items reports the descendant count');
+  assert(cmd.exportedMd, 'per-item Markdown export serializes the subtree');
+  assert(cmd.mirroredUnderDay, "Mirror to Today places a mirror under today's calendar day");
+  assert(cmd.collapsed, 'Collapse all folds descendants but keeps the item open');
+
+  const menuLabels = await page.evaluate(() => {
+    const p = kidsOf('root').find(id => plainOf(N(id).text).includes('cmd parent'));
+    closeAllPopovers();
+    window.showItemMenu(nodeAnchor(p), p);
+    const labels = [...document.querySelectorAll('.popover button')].map(b => b.textContent);
+    closeAllPopovers();
+    return labels;
+  });
+  const need = ['Insert template…', 'Count items', 'Export…', 'Mirror to Today', 'Move to Date…', 'Expand all'];
+  assert(need.every(l => menuLabels.some(t => t.includes(l))), `item ⋯ menu exposes ${need.join(', ')}`);
+
   assert(pageErrors.length === 0, `no page errors across the suite (${pageErrors.join(' | ')})`);
   await browser.close();
   console.log(failures ? `\n${failures} FAILURE(S)` : '\nall good');
