@@ -1972,6 +1972,141 @@ async function init() {
   }
 }
 
+/* ---------------- search quick-filter chips ---------------- */
+(function initSearchChips() {
+  const dropdown = document.getElementById('search-dropdown');
+  const chipsEl = document.getElementById('search-chips');
+  const panelEl = document.getElementById('search-panel');
+  if (!dropdown || !chipsEl || !panelEl) return;
+
+  const SVG = {
+    link: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="10" cy="10" r="7"/><ellipse cx="10" cy="10" rx="3.1" ry="7"/><line x1="3" y1="10" x2="17" y2="10"/></svg>',
+    date: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4.5" width="14" height="12.5" rx="2"/><line x1="3" y1="8" x2="17" y2="8"/><line x1="6.5" y1="2.8" x2="6.5" y2="5.5" stroke-linecap="round"/><line x1="13.5" y1="2.8" x2="13.5" y2="5.5" stroke-linecap="round"/></svg>',
+    time: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="10" cy="10" r="7"/><path d="M10 6v4.3L13 12" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    people: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7.5" cy="8" r="2.6"/><path d="M3.5 16c0-2.3 1.8-4 4-4s4 1.7 4 4"/><path d="M12.8 6.3a2.4 2.4 0 0 1 0 4.4M14.2 16c0-2-1-3.4-2.4-4.1" stroke-linecap="round"/></svg>',
+  };
+
+  const DATE_VALUES = ['today', 'tomorrow', 'yesterday', 'this week', 'next week', 'last week', 'this month', 'next month', 'last month'];
+  const DOW = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+  const TIME_VALUES = ['today', '1d', '3d', '7d', '2w', '1m'];
+
+  const val = (label, token) => ({ label, token, val: true });  // concrete value (ink)
+  const op = (label, token) => ({ label, token });              // operator token (accent)
+  const sub = (label, build) => ({ label, build });             // drills into a sub-list
+  const hint = text => ({ hint: text });
+
+  function tagOptions(sigil) {
+    const tags = (typeof collectTags === 'function' ? collectTags() : []).filter(t => t[0] === sigil);
+    if (!tags.length) return [hint(sigil === '#' ? 'No #tags yet — type # in an item to make one' : 'No @mentions yet — type @ in an item to make one')];
+    return tags.slice(0, 30).map(t => val(t, t));
+  }
+  const dateSpan = prefix => DATE_VALUES.map(v => val(v, `${prefix}:${v.replace(/ /g, '-')}`));
+
+  const CHIPS = [
+    { key: 'link', icon: SVG.link, title: 'Web links', build: () => [op('has:link', 'has:link')] },
+    { key: 'tag', icon: '#', title: 'Tags', build: () => tagOptions('#') },
+    { key: 'mention', icon: '@', title: 'Mentions', build: () => tagOptions('@') },
+    { key: 'date', icon: SVG.date, title: 'Dates', build: () => [
+      sub('date:', () => dateSpan('date')),
+      sub('date-before:', () => dateSpan('date-before')),
+      sub('date-after:', () => dateSpan('date-after')),
+      sub('day-of-week:', () => DOW.map(w => val(w, `day-of-week:${w}`))),
+      ...DATE_VALUES.map(v => val(v, `date:${v.replace(/ /g, '-')}`)),
+    ] },
+    { key: 'time', icon: SVG.time, title: 'Changed / created', build: () => [
+      sub('changed:', () => TIME_VALUES.map(v => val(v, `changed:${v}`))),
+      sub('created:', () => TIME_VALUES.map(v => val(v, `created:${v}`))),
+    ] },
+    { key: 'people', icon: SVG.people, title: 'People', build: () => [val('me', '-is:shared'), val('others', 'is:shared')] },
+    { key: 'more', icon: '…', title: 'More filters', build: () => [
+      sub('is:', () => ['complete', 'incomplete', 'todo', 'heading', 'mirror', 'shared'].map(v => val(v, `is:${v}`))),
+      sub('has:', () => ['note', 'date', 'file', 'link', 'comment', 'tag'].map(v => val(v, `has:${v}`))),
+      op('in:note:', 'in:note:'),
+      sub('text:', () => ['bold', 'italic', 'underline', 'strike', 'code', 'color'].map(v => val(v, `text:${v}`))),
+      op('link:', 'link:'),
+      sub('highlight:', () => ['any', ...(typeof COLOR_NAMES !== 'undefined' ? COLOR_NAMES : [])].map(v => val(v, `highlight:${v}`))),
+    ] },
+  ];
+
+  let activeKey = null;
+  let drill = null; // { label, build }
+
+  for (const c of CHIPS) {
+    const b = document.createElement('button');
+    b.className = 'search-chip';
+    b.type = 'button';
+    b.dataset.key = c.key;
+    b.title = c.title;
+    b.innerHTML = c.icon;
+    b.addEventListener('click', () => {
+      drill = null;
+      activeKey = activeKey === c.key ? null : c.key; // click again to close the panel
+      render();
+    });
+    chipsEl.append(b);
+  }
+
+  function renderList(list) {
+    panelEl.innerHTML = '';
+    if (drill) {
+      const back = document.createElement('button');
+      back.type = 'button';
+      back.className = 'search-opt back';
+      back.textContent = `‹ ${drill.label}`;
+      back.addEventListener('click', () => { drill = null; render(); });
+      panelEl.append(back);
+    }
+    for (const o of list) {
+      if (o.hint) {
+        const s = document.createElement('span');
+        s.className = 'search-hint';
+        s.textContent = o.hint;
+        panelEl.append(s);
+        continue;
+      }
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'search-opt' + (o.val ? ' val' : '');
+      b.textContent = o.label;
+      b.addEventListener('click', () => {
+        if (o.build) { drill = { label: o.label, build: o.build }; render(); }
+        else insert(o.token);
+      });
+      panelEl.append(b);
+    }
+  }
+
+  function render() {
+    for (const el of chipsEl.children) el.classList.toggle('active', el.dataset.key === activeKey);
+    if (drill) return renderList(drill.build());
+    if (activeKey) return renderList(CHIPS.find(c => c.key === activeKey).build());
+    panelEl.innerHTML = '<span class="search-hint">For the jump-to menu, hit Enter now — or Ctrl+K from anywhere.</span>';
+  }
+
+  function insert(token) {
+    const cur = searchEl.value.trim();
+    setSearch(cur ? `${cur} ${token}` : token);
+    searchEl.focus();
+    drill = null; // back to the chip's top level so filters can be stacked
+    render();
+  }
+
+  searchEl.addEventListener('focus', () => { if (dropdown.hidden) { dropdown.hidden = false; render(); } });
+  // clicks inside the dropdown must not pull focus off the input (keeps it open)
+  dropdown.addEventListener('mousedown', e => e.preventDefault());
+  searchBoxEl.addEventListener('focusout', e => {
+    if (!searchBoxEl.contains(e.relatedTarget)) { dropdown.hidden = true; activeKey = null; drill = null; }
+  });
+
+  // Escape/Enter on the search input are routed here from the global keydown handler
+  window.searchPanelBack = () => {
+    if (drill) { drill = null; render(); return true; }
+    if (activeKey) { activeKey = null; render(); return true; }
+    return false;
+  };
+  window.closeSearchPanel = () => { dropdown.hidden = true; activeKey = null; drill = null; };
+})();
+
 window.addEventListener('resize', () => {
   document.body.classList.toggle('sidebar-mobile', innerWidth < 900);
 });

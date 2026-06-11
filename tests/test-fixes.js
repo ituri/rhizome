@@ -319,6 +319,64 @@ const node = (id, text, children = [], extra = {}) =>
   await page.keyboard.press('Escape');
   await sleep(60);
 
+  /* B11. new date/created search operators */
+  const dops = await page.evaluate(() => {
+    const iso = todayStr();
+    const future = (() => { const d = new Date(); d.setDate(d.getDate() + 10); return isoOf(d); })();
+    const a = makeNode(`alpha <time datetime="${iso}">today</time>`); insertAt('root', kidsOf('root').length, a);
+    const b = makeNode(`beta <time datetime="${future}">soon</time>`); insertAt('root', kidsOf('root').length, b);
+    renderPage();
+    const has = (q, id) => { setSearch(q); return !!(state.matchSet && state.matchSet.has(id)); };
+    const dowNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+    const [y, m, d] = iso.split('-').map(Number);
+    const r = {
+      today: has('date:today', a),
+      todayNotFuture: has('date:today', b) === false,
+      after: has('date-after:today', b),
+      afterNotToday: has('date-after:today', a) === false,
+      before: has('date-before:next-month', a),
+      dow: has('day-of-week:' + dowNames[new Date(y, m - 1, d).getDay()], a),
+      created: (setSearch('created:today'), state.matchCount >= 2),
+    };
+    setSearch('');
+    return r;
+  });
+  assert(dops.today && dops.todayNotFuture, 'date:today matches a today-dated item only');
+  assert(dops.after && dops.afterNotToday, 'date-after:today matches the future-dated item only');
+  assert(dops.before, 'date-before:next-month matches an earlier-dated item');
+  assert(dops.dow, 'day-of-week:<today> matches the today-dated item');
+  assert(dops.created, 'created:today matches newly created items');
+
+  /* B12. quick-filter chip row: open, drill, insert, stack, close */
+  await page.evaluate(() => { setSearch(''); searchEl.blur(); });
+  await page.focus('#search');
+  await sleep(80);
+  assert(await page.evaluate(() => !document.getElementById('search-dropdown').hidden),
+    'focusing the search box opens the quick-filter dropdown');
+  const clickOpt = label => page.evaluate(l => {
+    const b = [...document.querySelectorAll('#search-panel .search-opt')].find(x => x.textContent === l);
+    if (b) b.click();
+    return !!b;
+  }, label);
+  await page.evaluate(() => document.querySelector('.search-chip[data-key="date"]').click());
+  await sleep(50);
+  let opts = await page.evaluate(() => [...document.querySelectorAll('#search-panel .search-opt')].map(b => b.textContent));
+  assert(opts.includes('date:') && opts.includes('today'), 'date chip shows operator prefixes and quick values');
+  await clickOpt('date:');
+  await sleep(50);
+  opts = await page.evaluate(() => [...document.querySelectorAll('#search-panel .search-opt')].map(b => b.textContent));
+  assert(opts.some(t => t.startsWith('‹')) && opts.includes('this week'), 'drilling date: shows a back button and span values');
+  await clickOpt('today');
+  await sleep(60);
+  assert(await page.evaluate(() => searchEl.value) === 'date:today', 'clicking a value inserts the complete token');
+  await page.evaluate(() => document.querySelector('.search-chip[data-key="more"]').click());
+  await sleep(40); await clickOpt('has:'); await sleep(40); await clickOpt('note'); await sleep(60);
+  assert(await page.evaluate(() => searchEl.value) === 'date:today has:note', 'filters stack with a separating space');
+  await page.evaluate(() => { setSearch(''); searchEl.blur(); });
+  await sleep(60);
+  assert(await page.evaluate(() => document.getElementById('search-dropdown').hidden),
+    'blurring the search box closes the dropdown');
+
   assert(pageErrors.length === 0, `no page errors across the suite (${pageErrors.join(' | ')})`);
   await browser.close();
   console.log(failures ? `\n${failures} FAILURE(S)` : '\nall good');

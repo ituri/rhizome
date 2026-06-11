@@ -974,7 +974,8 @@ function parseQuery(q) {
     }
     let cond = null;
     if (!tok.quoted) {
-      const op = text.match(/^(is|has|text|highlight|changed|in|on|link):(.*)$/i);
+      // longest operator names first so e.g. `date-before:` wins over `date:`
+      const op = text.match(/^(is|has|text|highlight|changed|created|in|on|link|date-before|date-after|day-of-week|date):(.*)$/i);
       // 'text:' gets its own kind so it can't collide with plain search terms
       if (op) cond = { neg, kind: op[1].toLowerCase() === 'text' ? 'textfmt' : op[1].toLowerCase(), value: op[2].toLowerCase() };
     }
@@ -982,6 +983,47 @@ function parseQuery(q) {
     if (cond.value !== '' || cond.kind !== 'text') pushCond(cond);
   }
   return { segments: segments.map(s => s.filter(c => c.or.length)), raw: q };
+}
+
+// every ISO date in an item's <time> pills, including both ends of a range
+function pillDates(html) {
+  const out = [];
+  for (const m of (html || '').matchAll(/datetime="(\d{4}-\d{2}-\d{2})(?:\/(\d{4}-\d{2}-\d{2}))?/g)) {
+    out.push(m[1]);
+    if (m[2]) out.push(m[2]);
+  }
+  return out;
+}
+
+// resolve a date-filter value (ISO, natural-language, or a named span) to an
+// inclusive {from, to} ISO range; null if it can't be parsed
+function resolveDateRange(value) {
+  const raw = (value || '').trim().toLowerCase();
+  if (!raw) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return { from: raw, to: raw };
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const span = (a, b) => ({ from: isoOf(a), to: isoOf(b) });
+  const shift = days => { const d = new Date(today); d.setDate(d.getDate() + days); return d; };
+  const weekStart = settings.weekStart === 'sun' ? 0 : 1;
+  const weekOf = base => {
+    const s = new Date(base); s.setDate(s.getDate() - ((s.getDay() - weekStart + 7) % 7));
+    const e = new Date(s); e.setDate(s.getDate() + 6);
+    return span(s, e);
+  };
+  const monthOf = (y, m) => span(new Date(y, m, 1), new Date(y, m + 1, 0));
+  switch (raw.replace(/[-_]/g, ' ')) {
+    case 'today': return span(today, today);
+    case 'tomorrow': return span(shift(1), shift(1));
+    case 'yesterday': return span(shift(-1), shift(-1));
+    case 'this week': return weekOf(today);
+    case 'next week': return weekOf(shift(7));
+    case 'last week': return weekOf(shift(-7));
+    case 'this month': return monthOf(today.getFullYear(), today.getMonth());
+    case 'next month': return monthOf(today.getFullYear(), today.getMonth() + 1);
+    case 'last month': return monthOf(today.getFullYear(), today.getMonth() - 1);
+  }
+  const hit = nlDate(raw); // "next friday", "oct 7", "jun 12 - jun 15", …
+  return hit ? { from: hit.iso, to: hit.iso2 || hit.iso } : null;
 }
 
 function nodeMeetsCond(n, cond, hay, html) {
@@ -1011,16 +1053,41 @@ function nodeMeetsCond(n, cond, hay, html) {
         ? /class="[^"]*hl-/.test(html)
         : html.includes(`hl-${cond.value}`);
       break;
-    case 'changed': {
-      const m = n.m || 0;
+    case 'changed':
+    case 'created': {
+      const ts = cond.kind === 'created' ? (n.c || n.m || 0) : (n.m || 0);
       const now = Date.now();
       let ms = null;
       if (cond.value === 'today') ms = now - new Date(new Date().setHours(0, 0, 0, 0)).getTime();
       else {
-        const dm = cond.value.match(/^(\d+)([dhw])$/);
-        if (dm) ms = parseInt(dm[1], 10) * (dm[2] === 'h' ? 3600e3 : dm[2] === 'w' ? 604800e3 : 86400e3);
+        const dm = cond.value.match(/^(\d+)([dhwm])$/);
+        if (dm) ms = parseInt(dm[1], 10) *
+          (dm[2] === 'h' ? 3600e3 : dm[2] === 'w' ? 604800e3 : dm[2] === 'm' ? 2592000e3 : 86400e3);
       }
-      hit = ms !== null && now - m <= ms;
+      hit = ms !== null && now - ts <= ms;
+      break;
+    }
+    case 'date': {
+      const r = resolveDateRange(cond.value);
+      hit = !!r && pillDates(html).some(p => p >= r.from && p <= r.to);
+      break;
+    }
+    case 'date-before': {
+      const r = resolveDateRange(cond.value);
+      hit = !!r && pillDates(html).some(p => p < r.from);
+      break;
+    }
+    case 'date-after': {
+      const r = resolveDateRange(cond.value);
+      hit = !!r && pillDates(html).some(p => p > r.to);
+      break;
+    }
+    case 'day-of-week': {
+      const wd = { sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6 }[cond.value];
+      hit = wd != null && pillDates(html).some(p => {
+        const [y, m, d] = p.split('-').map(Number);
+        return new Date(y, m - 1, d).getDay() === wd;
+      });
       break;
     }
     case 'in':
@@ -2259,12 +2326,17 @@ function onKeydown(e) {
   if (e.target === searchEl) {
     if (e.key === 'Escape') {
       e.preventDefault();
+      if (window.searchPanelBack?.()) return; // pop a drilled level / active chip first
       setSearch('');
       searchEl.blur();
       const first = editables()[0];
       if (first) setCaretOffset(first, 'end');
     }
-    if (e.key === 'Enter') searchEl.blur();
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (searchEl.value.trim()) { searchEl.blur(); }
+      else { window.closeSearchPanel?.(); showJump(); } // empty query → jump-to menu
+    }
     return;
   }
 
@@ -3292,7 +3364,8 @@ const HELP = [
     ['Quick capture to Inbox', 'Ctrl+Shift+Space'],
     ['Undo / redo', 'Ctrl+Z / Ctrl+Shift+Z'],
     ['Filter by tag', 'click · Shift+click adds'],
-    ['Search operators', '"…" -x OR is: has: changed:'],
+    ['Search operators', '"…" -x OR is: has: date: changed:'],
+    ['Quick filters', 'focus search → chip row'],
     ['This panel', 'Ctrl+/'],
   ]],
 ];

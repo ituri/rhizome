@@ -48,9 +48,11 @@ Status as of 2026-06-11. ✅ implemented (covered by the e2e suites in [`tests/`
 | | Content indicator (dot) on populated strip days | ❌ | Cheap add if wanted |
 | **Search** | Live search scoped to zoom, highlights, ancestor context | ✅ | |
 | | `"phrase"`, `-not`, `OR` | ✅ | |
-| | `is:` `has:` `text:` `highlight:` `changed:` `on:` `link:` `in:note:` | ✅ | |
+| | `is:` `has:` `text:` `highlight:` `changed:` `created:` `on:` `link:` `in:note:` | ✅ | |
+| | `date:` `date-before:` `date-after:` `day-of-week:` (ISO, NL, or named spans like `this-week`) | ✅ | Match against `<time>` pills |
+| | Quick-filter chip row (🌐 # @ 📅 🕘 👥 …) under the search box | ✅ | Two-level panels insert operators/values; `me`/`others` map to share state (single-owner) |
 | | Nested search (`ancestor > term`) | ✅ | |
-| | Quick jump (`Ctrl+K`) | ✅ | |
+| | Quick jump (`Ctrl+K`, or Enter on an empty search) | ✅ | |
 | **Navigation** | Sidebar with outline tree + starred section | ✅ | |
 | | Starring pages and searches (`Ctrl+Shift+8`) | ✅ | |
 | | `Ctrl+'` home | ✅ | |
