@@ -1,0 +1,17 @@
+{
+  "//": "Type-CHECK only (noEmit). The app ships as plain JS; this never transpiles.",
+  "compilerOptions": {
+    "checkJs": true,
+    "allowJs": true,
+    "noEmit": true,
+    "target": "ES2022",
+    "module": "node16",
+    "moduleResolution": "node16",
+    "lib": ["ES2023"],
+    "types": ["node"],
+    "noImplicitAny": false,
+    "strict": false,
+    "skipLibCheck": true
+  },
+  "include": ["server.js"]
+}

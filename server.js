@@ -136,6 +136,32 @@ function authToken() {
   return crypto.createHmac('sha256', SECRET).update('auth:' + PASSWORD + ':' + TOTP_SECRET).digest('hex');
 }
 
+/**
+ * The outline's data model — one flat node map; the tree lives in the children id-arrays.
+ * @typedef {Object} Node
+ * @property {string} id
+ * @property {string} text
+ * @property {string|null} [note]
+ * @property {boolean} [done]
+ * @property {boolean} [collapsed]
+ * @property {string[]} children
+ * @property {string} [format]
+ * @property {string} [mirror]
+ * @property {Array<{url:string,name?:string,type?:string}>} [files]
+ * @property {Array<object>} [comments]
+ * @property {number} [c]
+ * @property {number} [m]
+ *
+ * @typedef {Object} Doc
+ * @property {string} root
+ * @property {Record<string, Node>} nodes
+ * @property {Array<{ts:number,parent:string|null,index:number,root:string,nodes:Record<string,Node>}>} [trash]
+ * @property {{stars?:string[], calendar?:string}} [meta]
+ *
+ * @typedef {{ version:number, doc:Doc|null }} Store
+ */
+
+/** @type {Store} */
 let store = { version: 0, doc: null };
 try {
   store = JSON.parse(fs.readFileSync(DOC_FILE, 'utf8'));
@@ -204,10 +230,12 @@ function commitDoc(doc) {
 
 const uid = () => Date.now().toString(36).slice(-6) + crypto.randomBytes(4).toString('hex').slice(0, 6);
 
+/** @param {string} text @returns {Node} */
 function makeNode(text) {
   return { id: uid(), text, note: null, done: false, collapsed: false, children: [], m: Date.now() };
 }
 
+/** @param {Doc} doc @param {string} rootId @returns {string[]} */
 function subtreeIds(doc, rootId) {
   const out = [];
   const seen = new Set();
@@ -260,6 +288,7 @@ function captureText(text) {
 
 /* ---------- per-node API (v1) ---------- */
 
+/** @returns {Doc} */
 function ensureDoc() {
   if (!store.doc || !store.doc.nodes || !store.doc.nodes.root) {
     store.doc = { root: 'root', nodes: { root: { id: 'root', text: '', note: null, done: false, collapsed: false, children: [] } } };
@@ -327,6 +356,9 @@ function nodeDelete(id) {
   for (const x of ids) delete store.doc.nodes[x];
   return ids.length;
 }
+// `children` is polymorphic by design: child *ids* in the flat view, nested node
+// objects under ?tree=1 (filled in by nodeTree). Hence the any[] in the contract.
+/** @param {string} id @returns {{id:string,text:string,plain:string,note:string|null,done:boolean,collapsed:boolean,format:string,children:any[],created:number|null,modified:number|null,parent:string|null}} */
 function nodeView(id) {
   const n = store.doc.nodes[id];
   return {

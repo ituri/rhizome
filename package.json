@@ -5,10 +5,21 @@
   "type": "commonjs",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "lint": "eslint server.js public/app.js public/app2.js bench",
+    "typecheck": "tsc --noEmit",
+    "bench:curve": "node --expose-gc bench/curve.js",
+    "bench:profile": "node bench/profile.js",
+    "bench:load": "node bench/load.js"
   },
   "engines": {
     "node": ">=18"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^25.9.3",
+    "eslint": "^10.4.1",
+    "globals": "^17.6.0",
+    "typescript": "^6.0.3"
+  }
 }
