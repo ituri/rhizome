@@ -1027,7 +1027,7 @@ function applyRemoteOps(ops) {
       const p = doc.nodes[o.parent] || doc.nodes[ROOT];
       if (p) p.children.splice(Math.min(o.ord | 0, p.children.length), 0, o.node);
     } else if (o.kind === 'update') {
-      if (n) for (const k in o.patch) n[k] = o.patch[k];
+      if (n) { for (const k in o.patch) n[k] = o.patch[k]; if (o.unset) for (const k of o.unset) delete n[k]; }
     } else if (o.kind === 'move') {
       if (n && doc.nodes[o.parent] && !isAncestor(o.node, o.parent)) {
         detach(o.node); const p = doc.nodes[o.parent]; p.children.splice(Math.min(o.ord | 0, p.children.length), 0, o.node);
@@ -1044,6 +1044,61 @@ function applyRemoteOps(ops) {
   rebuildParentMap();
 }
 window.__applyRemoteOps = applyRemoteOps;  // for the convergence e2e test
+
+// Route B: derive the structured ops for ONE operation straight from the undo journal's
+// touched-set (O(change)). There is no baseline doc to diff against, so nothing can drift
+// — the journal already knows exactly which nodes changed and their prior state.
+function opsFromJournal(txn) {
+  const ops = [];
+  const mk = (kind, node, extra) => ops.push({ id: `${DEVICE_ID}-${opSeq++}`, hlc: hlcClock.tick(), kind, node, ...extra });
+
+  // prior parent/ord, reconstructed from the old children arrays of touched nodes
+  const oldParent = new Map(), oldOrd = new Map();
+  for (const [pid, old] of txn.nodes) if (old) (old.children || []).forEach((c, i) => { oldParent.set(c, pid); oldOrd.set(c, i); });
+
+  const handled = new Set();
+  // inserts in tree order (parents before children), then moves/reorders — walk the NEW
+  // children of every touched node, breadth-first from the touched roots
+  const queue = [...txn.nodes.keys()];
+  while (queue.length) {
+    const pid = queue.shift();
+    const pn = doc.nodes[pid];
+    if (!pn) continue;
+    (pn.children || []).forEach((c, ord) => {
+      if (handled.has(c)) return;
+      const isNew = txn.nodes.has(c) && txn.nodes.get(c) === null;
+      if (isNew) { handled.add(c); const { children, ...data } = doc.nodes[c]; mk('insert', c, { parent: pid, ord, data }); queue.push(c); }
+      else {
+        handled.add(c);
+        const op_ = oldParent.has(c) ? oldParent.get(c) : pid;     // parent unchanged if it never left a touched parent
+        const oo = oldOrd.has(c) ? oldOrd.get(c) : ord;
+        if (op_ !== pid || oo !== ord) mk('move', c, { parent: pid, ord });
+      }
+    });
+  }
+  // deletes: was a child of a touched node, now gone from the doc (carry the trash ts)
+  for (const [c] of oldParent) if (!doc.nodes[c] && !handled.has(c)) {
+    handled.add(c);
+    const ts = (doc.trash || []).find(t => t.root === c)?.ts;
+    mk('delete', c, ts != null ? { ts } : {});
+  }
+  for (const [id, old] of txn.nodes) if (old && !doc.nodes[id] && !handled.has(id)) { handled.add(id); mk('delete', id, {}); }
+  // field updates for surviving touched nodes (incl. the root's own fields). `unset`
+  // distinguishes a removed key (delete n.format) from a key set to null (note = null).
+  for (const [id, old] of txn.nodes) {
+    if (!old || !doc.nodes[id]) continue;
+    const nn = doc.nodes[id], patch = {}, unset = [];
+    for (const k of new Set([...Object.keys(old), ...Object.keys(nn)])) {
+      if (OP_SKIP.has(k)) continue;
+      if (!deepEq(old[k], nn[k])) { if (nn[k] === undefined) unset.push(k); else patch[k] = nn[k]; }
+    }
+    if (Object.keys(patch).length || unset.length) mk('update', id, unset.length ? { patch, unset } : { patch });
+  }
+  // untrash: a trash entry that disappeared this op (restore-cleanup / purge)
+  if (txn.trash !== ABSENT) { const live = new Set((doc.trash || []).map(t => t.ts)); for (const t of txn.trash) if (!live.has(t.ts)) mk('untrash', t.root, { ts: t.ts }); }
+  return ops;
+}
+window.__opsFromJournal = () => undoTxn ? opsFromJournal(undoTxn) : []; // for the emission oracle
 
 document.addEventListener('visibilitychange', async () => {
   if (document.visibilityState !== 'visible' || dirty || !doc) return;

@@ -47,15 +47,15 @@ function applyOpsToDoc(doc, ops, trashFn) {
       }
       case 'update': {
         if (!n) break;
-        // Compare every field against its group's HLC as it was BEFORE this op. Otherwise
-        // the first field in a group bumps the group HLC and the rest (same op, same group,
-        // e.g. done+format both in 'flags') fail the > check and get silently dropped.
+        // Compare every field against its group's HLC as it was BEFORE this op (so multiple
+        // fields in one group all apply). `unset` removes a key (delete n.format); `patch`
+        // sets one (note = null is a real value, kept distinct from removal).
+        const keys = [...Object.keys(op.patch || {}), ...(op.unset || [])];
         const base = {};
-        for (const k in (op.patch || {})) { const g = GROUP[k] || 'meta'; if (!(g in base)) base[g] = hlcOf(n, g); }
+        for (const k of keys) { const g = GROUP[k] || 'meta'; if (!(g in base)) base[g] = hlcOf(n, g); }
         let changed = false;
-        for (const k in (op.patch || {})) {
-          if (op.hlc > base[GROUP[k] || 'meta']) { n[k] = op.patch[k]; changed = true; }
-        }
+        for (const k in (op.patch || {})) if (op.hlc > base[GROUP[k] || 'meta']) { n[k] = op.patch[k]; changed = true; }
+        for (const k of (op.unset || [])) if (op.hlc > base[GROUP[k] || 'meta']) { delete n[k]; changed = true; }
         if (changed) { for (const g in base) if (op.hlc > base[g]) setHlc(n, g, op.hlc); out.push(op); }
         break;
       }
