@@ -1824,7 +1824,14 @@ function opToggleCollapse(id, collapse) {
   n.collapsed = want;
   markDirty();
   const item = elById.get(id);
-  if (!item || fmtOf(id) === 'board') { renderPage(); return; }
+  if (!item || fmtOf(id) === 'board') {
+    // boards re-render in full (no children-anim wrap to animate); keep the caret
+    // where it was so you can keep toggling from the keyboard
+    const f = captureFocus();
+    renderPage();
+    if (f && doc.nodes[f.id]) restoreFocus(f);
+    return;
+  }
   const wrap = item.querySelector(':scope > .children-anim');
   if (want) {
     item.classList.add('collapsed');

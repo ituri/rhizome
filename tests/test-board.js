@@ -315,6 +315,28 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   });
   assert(ok, 'collapsing the board node hides its columns');
 
+  // 15. collapsing/expanding a board keeps the caret on it (so you can keep toggling)
+  await page.evaluate(() => { location.hash = '#/'; });
+  await sleep(300);
+  await page.evaluate(() => focusItem(window.__board, 'text', 'end'));
+  await sleep(60);
+  await page.keyboard.down('Control'); await page.keyboard.press('ArrowUp'); await page.keyboard.up('Control');
+  await sleep(150);
+  let kc = await page.evaluate(() => ({
+    onBoard: document.activeElement?.closest?.('.item')?.dataset.id === window.__board,
+    collapsed: N(window.__board).collapsed === true,
+    hidden: !document.querySelector(`.item[data-id="${window.__board}"] .board`),
+  }));
+  assert(kc.onBoard && kc.collapsed && kc.hidden, `Ctrl+↑ collapses a board and keeps the caret on it (${JSON.stringify(kc)})`);
+  await page.keyboard.down('Control'); await page.keyboard.press('ArrowDown'); await page.keyboard.up('Control');
+  await sleep(150);
+  kc = await page.evaluate(() => ({
+    onBoard: document.activeElement?.closest?.('.item')?.dataset.id === window.__board,
+    expanded: N(window.__board).collapsed === false,
+    shown: !!document.querySelector(`.item[data-id="${window.__board}"] .board`),
+  }));
+  assert(kc.onBoard && kc.expanded && kc.shown, `Ctrl+↓ expands a board and keeps the caret on it (${JSON.stringify(kc)})`);
+
   await browser.close();
   console.log(failures ? `\n${failures} FAILURE(S)` : '\nBOARD TESTS PASSED');
   process.exit(failures ? 1 : 0);
