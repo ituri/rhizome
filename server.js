@@ -24,12 +24,14 @@ const fs = require('fs');
 const fsp = fs.promises;
 const path = require('path');
 const crypto = require('crypto');
+const { Store } = require('./db');
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const HOST = process.env.HOST || '0.0.0.0';
 const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(__dirname, 'data'));
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const DOC_FILE = path.join(DATA_DIR, 'outline.json');
+const DB_FILE = path.join(DATA_DIR, 'outline.db');
 const SHARES_FILE = path.join(DATA_DIR, 'shares.json');
 const SECRET_FILE = path.join(DATA_DIR, '.secret');
 const BACKUP_DIR = path.join(DATA_DIR, 'backups');
@@ -158,15 +160,30 @@ function authToken() {
  * @property {Array<{ts:number,parent:string|null,index:number,root:string,nodes:Record<string,Node>}>} [trash]
  * @property {{stars?:string[], calendar?:string}} [meta]
  *
- * @typedef {{ version:number, doc:Doc|null }} Store
+ * @typedef {{ version:number, doc:Doc|null }} DocStore
  */
 
-/** @type {Store} */
-let store = { version: 0, doc: null };
-try {
-  store = JSON.parse(fs.readFileSync(DOC_FILE, 'utf8'));
-  if (typeof store.version !== 'number') store.version = 0;
-} catch { /* fresh install */ }
+// Per-node SQLite store backs persistence (Phase 1). The in-memory `store.doc`
+// stays the authoritative working model; `persist()` writes only changed rows.
+const db = new Store(DB_FILE);
+/** @type {DocStore} */
+let store;
+if (!db.isEmpty()) {
+  store = /** @type {DocStore} */ (db.loadDoc());
+} else {
+  // first run on SQLite: migrate an existing outline.json if present…
+  let seed = null;
+  try { seed = JSON.parse(fs.readFileSync(DOC_FILE, 'utf8')); } catch { /* none */ }
+  if (seed && seed.doc && seed.doc.nodes) {
+    db.importDoc(seed.doc, typeof seed.version === 'number' ? seed.version : 0);
+    try { fs.renameSync(DOC_FILE, DOC_FILE + '.migrated'); } catch { /* ignore */ }
+    store = /** @type {DocStore} */ (db.loadDoc());
+  } else {
+    // …otherwise leave the doc null so the client seeds the welcome outline,
+    // which the first save then writes into the (empty) database.
+    store = { version: 0, doc: null };
+  }
+}
 
 let shares = {};
 try { shares = JSON.parse(fs.readFileSync(SHARES_FILE, 'utf8')); } catch { /* none */ }
@@ -177,29 +194,24 @@ function persistShares() {
 
 let lastBackupAt = 0;
 try {
-  const entries = fs.readdirSync(BACKUP_DIR).filter(f => f.endsWith('.json')).sort();
+  const entries = fs.readdirSync(BACKUP_DIR).filter(f => f.endsWith('.db')).sort();
   if (entries.length) lastBackupAt = fs.statSync(path.join(BACKUP_DIR, entries[entries.length - 1])).mtimeMs;
 } catch { /* ignore */ }
 
-let writeChain = Promise.resolve();
 function persist() {
-  const snapshot = JSON.stringify(store);
-  writeChain = writeChain.then(async () => {
-    const tmp = DOC_FILE + '.tmp';
-    await fsp.writeFile(tmp, snapshot, 'utf8');
-    await fsp.rename(tmp, DOC_FILE);
+  try {
+    db.sync(store.doc, store.version);           // incremental: only changed rows
     const now = Date.now();
     if (now - lastBackupAt > BACKUP_EVERY_MS) {
       lastBackupAt = now;
       const stamp = new Date(now).toISOString().replace(/[:.]/g, '-');
-      await fsp.writeFile(path.join(BACKUP_DIR, `outline-${stamp}.json`), snapshot, 'utf8');
-      const all = (await fsp.readdir(BACKUP_DIR)).filter(f => f.endsWith('.json')).sort();
+      db.backup(path.join(BACKUP_DIR, `outline-${stamp}.db`));
+      const all = fs.readdirSync(BACKUP_DIR).filter(f => f.endsWith('.db')).sort();
       for (const stale of all.slice(0, Math.max(0, all.length - BACKUP_KEEP))) {
-        await fsp.unlink(path.join(BACKUP_DIR, stale)).catch(() => {});
+        try { fs.unlinkSync(path.join(BACKUP_DIR, stale)); } catch { /* ignore */ }
       }
     }
-  }).catch(err => console.error('persist failed:', err));
-  return writeChain;
+  } catch (err) { console.error('persist failed:', err); }
 }
 
 /* ---------- live sync (SSE) ---------- */
@@ -806,6 +818,10 @@ const server = http.createServer(async (req, res) => {
 
       if (url === '/api/doc' && req.method === 'GET') return send(res, 200, store);
       if (url === '/api/version' && req.method === 'GET') return send(res, 200, { version: store.version });
+      if (url.startsWith('/api/search') && req.method === 'GET') {
+        const q = new URL(url, 'http://x').searchParams.get('q') || '';
+        return send(res, 200, { ids: db.search(q, 500) });   // FTS5-backed; Phase 3 wires the client
+      }
       if (url === '/api/doc' && (req.method === 'PUT' || req.method === 'POST')) {
         const body = await readJson(req);
         if (!body.doc || typeof body.doc !== 'object' || !body.doc.nodes) {

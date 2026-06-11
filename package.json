@@ -6,8 +6,9 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "lint": "eslint server.js public/app.js public/app2.js bench",
+    "lint": "eslint server.js db.js public/app.js public/app2.js bench",
     "typecheck": "tsc --noEmit",
+    "test:db": "node tests/test-db.js",
     "bench:curve": "node --expose-gc bench/curve.js",
     "bench:profile": "node bench/profile.js",
     "bench:load": "node bench/load.js"

@@ -5,7 +5,7 @@ const sharedClientGlobals = require('./eslint.globals.cjs');
 // Correctness-focused rules only — this is a bug net, not a style police.
 const rules = {
   'no-undef': 'error',
-  'no-unused-vars': ['warn', { vars: 'local', args: 'none', caughtErrors: 'none' }],
+  'no-unused-vars': ['warn', { vars: 'local', args: 'none', caughtErrors: 'none', ignoreRestSiblings: true }],
   'no-fallthrough': 'error',
   'no-unreachable': 'error',
   'no-dupe-keys': 'error',
@@ -25,7 +25,7 @@ module.exports = [
 
   // Node side: the server, the benchmarks (CommonJS, Node globals)
   {
-    files: ['server.js', 'bench/**/*.js'],
+    files: ['server.js', 'db.js', 'bench/**/*.js'],
     languageOptions: { ecmaVersion: 2023, sourceType: 'commonjs', globals: { ...globals.node, structuredClone: 'readonly' } },
     rules,
   },
