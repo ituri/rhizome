@@ -277,6 +277,48 @@ const node = (id, text, children = [], extra = {}) =>
   });
   assert(dupe, 'duplicate copies comments');
 
+  /* B10. selection ladder: Shift+arrows escalate at the text edge, Ctrl+A widens */
+  const lids = await page.evaluate(() => {
+    const p = makeNode('ladder parent'); insertAt('root', kidsOf('root').length, p);
+    const c1 = makeNode('child one'); insertAt(p, 0, c1);
+    const c2 = makeNode('child two'); insertAt(p, 1, c2);
+    const s = makeNode('ladder sibling'); insertAt('root', kidsOf('root').length, s);
+    renderPage();
+    return { p, c1, c2, s };
+  });
+  const shiftPress = async key => {
+    await page.keyboard.down('Shift'); await page.keyboard.press(key); await page.keyboard.up('Shift');
+    await sleep(60);
+  };
+  await page.evaluate(ids => focusItem(ids.c1, 'text', 0), lids);
+  await shiftPress('ArrowDown');
+  let lad = await page.evaluate(() => ({ sel: !!state.sel, native: getSelection().toString() }));
+  assert(!lad.sel && lad.native === 'child one', 'Shift+Down mid-text extends the text selection first');
+  await shiftPress('ArrowDown');
+  lad = await page.evaluate(() => state.sel && selIds());
+  assert(lad && lad.length === 1 && lad[0] === lids.c1, 'Shift+Down at the text edge selects the bullet');
+  await shiftPress('ArrowDown');
+  lad = await page.evaluate(() => selIds());
+  assert(lad.length === 2 && lad[1] === lids.c2, 'another Shift+Down extends the range to the next bullet');
+  await page.keyboard.down('Control'); await page.keyboard.press('a'); await page.keyboard.up('Control');
+  await sleep(60);
+  lad = await page.evaluate(() => ({ ids: selIds(), parent: state.sel && state.sel.parent }));
+  assert(lad.parent === 'root' && lad.ids.includes(lids.p) && lad.ids.includes(lids.s),
+    'Ctrl+A on a full sibling range escalates to the level above');
+  await page.evaluate(ids => { state.sel = { parent: ids.p, anchor: ids.c2, focus: ids.c2 }; selRender(); }, lids);
+  await page.keyboard.type('!');
+  await sleep(700);
+  await page.evaluate(() => commitActiveText());
+  lad = await page.evaluate(ids => ({ sel: !!state.sel, text: plainOf(doc.nodes[ids.c2].text) }), lids);
+  assert(!lad.sel && lad.text === 'child two!',
+    `typing in selection mode exits and the character lands (got "${lad.text}")`);
+  await page.evaluate(ids => focusItem(ids.c2, 'text', 0), lids);
+  await shiftPress('ArrowUp');
+  lad = await page.evaluate(() => state.sel && selIds());
+  assert(lad && lad.length === 1, 'Shift+Up at offset 0 selects the bullet');
+  await page.keyboard.press('Escape');
+  await sleep(60);
+
   assert(pageErrors.length === 0, `no page errors across the suite (${pageErrors.join(' | ')})`);
   await browser.close();
   console.log(failures ? `\n${failures} FAILURE(S)` : '\nall good');

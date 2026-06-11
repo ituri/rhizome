@@ -517,6 +517,17 @@ function caretOffsetIn(el) {
   return pre.toString().length;
 }
 
+// plain-text offset of the selection FOCUS (the moving end of a shift-selection),
+// unlike caretOffsetIn which reports the range start
+function selFocusOffsetIn(el) {
+  const sel = getSelection();
+  if (!sel.focusNode || !el.contains(sel.focusNode)) return null;
+  const pre = document.createRange();
+  pre.selectNodeContents(el);
+  try { pre.setEnd(sel.focusNode, sel.focusOffset); } catch { return null; }
+  return pre.toString().length;
+}
+
 function setCaretOffset(el, offset) {
   el.focus({ preventScroll: false });
   const sel = getSelection();
@@ -2138,11 +2149,31 @@ function selKeydown(e) {
     markDirty();
     return true;
   }
+  if (mod && (e.key === 'a' || e.key === 'A')) {
+    // Ctrl+A ladder, continued: all siblings at this level, then one level up
+    // each press, stopping at the zoom page's top level
+    e.preventDefault();
+    const arr = kidsOf(sel.parent);
+    if (ids.length < arr.length) {
+      sel.anchor = arr[0];
+      sel.focus = arr[arr.length - 1];
+    } else if (sel.parent !== state.zoom) {
+      const gp = parentOf(sel.parent);
+      if (gp) {
+        const up = kidsOf(gp);
+        state.sel = { parent: gp, anchor: up[0], focus: up[up.length - 1] };
+      }
+    }
+    selRender();
+    elById.get(state.sel.focus)?.scrollIntoView({ block: 'nearest' });
+    return true;
+  }
   if (mod && (e.key === 'c' || e.key === 'C')) return true;
   if (mod && (e.key === 'd' || e.key === 'D')) { e.preventDefault(); return true; }
   if (mod && (e.key === 'z' || e.key === 'Z' || e.key === 'y')) return false;
   if (e.key.length === 1 && !mod && !e.altKey) {
-    e.preventDefault();
+    // exit selection mode; no preventDefault, so the typed character still
+    // lands in the freshly focused item instead of being swallowed
     const f = sel.focus;
     selClear();
     focusItem(f, 'text', 'end');
@@ -2481,6 +2512,17 @@ function onKeydown(e) {
     }
     el.blur();
     return;
+  }
+
+  /* ----- shift+vertical at the text edge → escalate to item selection ----- */
+  if (e.shiftKey && !mod && !e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && !isTitle && !isNote) {
+    const off = selFocusOffsetIn(el);
+    const atEdge = e.key === 'ArrowDown' ? off === textLen(el) : off === 0;
+    if (off !== null && atEdge) {
+      e.preventDefault();
+      selEnter(id);
+    }
+    return; // not at the edge: native selection keeps extending inside the bullet
   }
 
   /* ----- vertical navigation ----- */
