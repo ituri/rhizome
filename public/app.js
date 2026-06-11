@@ -911,7 +911,7 @@ async function doSave() {
       dirty = false;
       setSaveUI('saved');
       localStorage.removeItem('tendril-offline');
-      bc?.postMessage({ version: state.version, doc });
+      bc?.postMessage({ version: state.version }); // just a nudge — peers refetch (no whole-doc clone)
     }
   } catch {
     setSaveUI('offline');
@@ -932,8 +932,13 @@ function adoptRemote(version, remoteDoc) {
   renderPage();
 }
 
-bc?.addEventListener('message', e => {
-  if (!dirty && e.data.version > state.version) adoptRemote(e.data.version, e.data.doc);
+bc?.addEventListener('message', async e => {
+  // another tab saved — refetch the whole doc instead of receiving it cloned over the channel
+  if (dirty || !e.data || e.data.version <= state.version) return;
+  try {
+    const full = await (await fetch('/api/doc')).json();
+    if (!dirty && full.version > state.version) adoptRemote(full.version, full.doc);
+  } catch { /* offline */ }
 });
 
 /* ---------------- 8b. op sync (Phase 2/4) ----------------
