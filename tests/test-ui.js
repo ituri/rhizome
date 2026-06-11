@@ -192,6 +192,48 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   await page.evaluate(() => { location.hash = '#/'; });
   await sleep(300);
 
+  /* ---- 7c. quick capture: Tab indents, dates convert, todo markdown survives ---- */
+  await page.keyboard.down('Control'); await page.keyboard.down('Shift');
+  await page.keyboard.press('Space');
+  await page.keyboard.up('Shift'); await page.keyboard.up('Control');
+  await sleep(250);
+  await page.type('#capture-input', 'plan trip tomorrow\nbook hotel');
+  // Tab on the second line should indent it, not leave the textarea
+  await page.keyboard.press('Tab');
+  await sleep(120);
+  let cap = await page.evaluate(() => ({
+    stillFocused: document.activeElement === document.querySelector('#capture-input'),
+    value: document.querySelector('#capture-input').value,
+  }));
+  assert(cap.stillFocused, 'Tab in capture keeps focus in the box');
+  assert(cap.value.includes('\n  book hotel'), 'Tab indents the current line by two spaces');
+  await page.keyboard.down('Shift'); await page.keyboard.press('Tab'); await page.keyboard.up('Shift');
+  await sleep(120);
+  cap = await page.evaluate(() => document.querySelector('#capture-input').value);
+  assert(cap.includes('\nbook hotel'), 'Shift+Tab dedents the line again');
+  // add a markdown todo line, then save
+  await page.keyboard.press('Tab'); // re-indent "book hotel" under the trip
+  await page.evaluate(() => {
+    const ta = document.querySelector('#capture-input');
+    ta.value += '\n- [ ] pack bags';
+  });
+  await page.keyboard.down('Control'); await page.keyboard.press('Enter'); await page.keyboard.up('Control');
+  await sleep(400);
+  const captured = await page.evaluate(() => {
+    const inbox = kidsOf('root').find(id => plainOf(doc.nodes[id].text).trim() === 'Inbox');
+    const kids = kidsOf(inbox).map(id => doc.nodes[id]);
+    const trip = kids.find(n => plainOf(n.text).includes('plan trip'));
+    const todo = kids.find(n => plainOf(n.text).includes('pack bags'));
+    return {
+      tripHasDate: trip && /<time datetime="/.test(trip.text) && !/tomorrow/i.test(trip.text),
+      nested: trip && kidsOf(trip.id).some(id => plainOf(doc.nodes[id].text).includes('book hotel')),
+      todoFmt: todo && todo.format === 'todo',
+    };
+  });
+  assert(captured.tripHasDate, 'capture converts a trailing "tomorrow" into a date pill');
+  assert(captured.nested, 'Tab-indented capture line nests under the line above');
+  assert(captured.todoFmt, 'markdown "- [ ]" in capture keeps the todo format');
+
   /* ---- 8. empty focused bullet shows a discoverability placeholder ---- */
   await page.evaluate(() => { const id = opNewAt('root', 0); document.querySelector(`.item[data-id="${id}"] .content`).focus(); });
   await sleep(150);

@@ -1499,14 +1499,31 @@ function findOrCreateInbox() {
   return inbox;
 }
 
+// capture-time enhancement: a natural-language date at the end of a line
+// becomes a real date pill (so "call mom tomorrow" doesn't rot into the wrong
+// day next week), and the capitalize setting applies like it does in the editor
+function enhanceCaptureSpec(spec) {
+  const plain = plainOf(spec.text);
+  const hit = nlDate(plain);
+  if (hit && hit.start + hit.phrase.length === plain.length && spec.text.endsWith(escHtml(hit.phrase))) {
+    const dt = hit.iso2 ? `${hit.iso}/${hit.iso2}` : hit.iso;
+    const label = hit.iso2 ? `${formatDate(hit.iso)} – ${formatDate(hit.iso2)}` : formatDate(hit.iso);
+    spec.text = spec.text.slice(0, spec.text.length - escHtml(hit.phrase).length).replace(/\s+$/, ' ')
+      + `<time datetime="${dt}">${escHtml(label)}</time>`;
+  }
+  if (settings.capitalize) spec.text = applyCapitalize(spec.text);
+  spec.children.forEach(enhanceCaptureSpec);
+}
+
 function doCapture() {
   const text = captureInput.value;
   const forest = parseIndentedText(text);
   if (!forest.length) { captureOverlay.hidden = true; return; }
+  forest.forEach(enhanceCaptureSpec);
   snapshot();
   const inbox = findOrCreateInbox();
   const materialize = (spec, parent) => {
-    const id = makeNode(spec.text);
+    const id = makeNode(spec.text, specOpts(spec));
     insertAt(parent, kidsOf(parent).length, id);
     spec.children.forEach(c => materialize(c, id));
   };
@@ -1519,7 +1536,26 @@ function doCapture() {
 
 window.captureKeydown = function captureKeydown(e) {
   if (e.key === 'Escape') { e.preventDefault(); captureOverlay.hidden = true; return; }
-  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); doCapture(); }
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); doCapture(); return; }
+  // Tab indents the current line (the box's nesting model) instead of leaving the field
+  if (e.key === 'Tab' && e.target === captureInput) {
+    e.preventDefault();
+    const ta = captureInput;
+    const s = ta.selectionStart, end = ta.selectionEnd, v = ta.value;
+    const lineStart = v.lastIndexOf('\n', s - 1) + 1;
+    if (e.shiftKey) {
+      const remove = v.startsWith('  ', lineStart) ? 2 : v.startsWith(' ', lineStart) ? 1 : 0;
+      if (remove) {
+        ta.value = v.slice(0, lineStart) + v.slice(lineStart + remove);
+        ta.selectionStart = Math.max(lineStart, s - remove);
+        ta.selectionEnd = Math.max(lineStart, end - remove);
+      }
+    } else {
+      ta.value = v.slice(0, lineStart) + '  ' + v.slice(lineStart);
+      ta.selectionStart = s + 2;
+      ta.selectionEnd = end + 2;
+    }
+  }
 };
 
 $('#capture-save').addEventListener('click', doCapture);
