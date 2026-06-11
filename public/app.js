@@ -897,7 +897,7 @@ const hlcClock = {
     if (p === this.p && p === +rp) this.c = Math.max(this.c, +rc) + 1; else if (p === this.p) this.c++; else if (p === +rp) this.c = +rc + 1; else this.c = 0; this.p = p; },
 };
 let opSeq = 0;
-const OP_FIELDS = ['text', 'note', 'done', 'collapsed', 'format', 'mirror', 'files', 'comments'];
+const OP_SKIP = new Set(['id', 'children', '$hlc']); // structural/metadata — never a field patch
 const deepEq = (a, b) => a === b || JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 function posMap(d) {
   const m = {};
@@ -917,7 +917,10 @@ function diffDoc(oldD, newD) {
     const op = oldP[id] || {};
     if (np.parent !== op.parent || np.ord !== op.ord) mk('move', id, { parent: np.parent, ord: np.ord });
     const patch = {};
-    for (const k of OP_FIELDS) if (!deepEq(on[k], nn[k])) patch[k] = nn[k] === undefined ? null : nn[k];
+    for (const k of new Set([...Object.keys(on), ...Object.keys(nn)])) { // any field, incl. calendar markers/custom
+      if (OP_SKIP.has(k)) continue;
+      if (!deepEq(on[k], nn[k])) patch[k] = nn[k] === undefined ? null : nn[k];
+    }
     if (Object.keys(patch).length) mk('update', id, { patch });
   }
   for (const id in oldD.nodes) { // deletes: subtree roots only (parent still present)
@@ -3449,8 +3452,39 @@ function jumpRow(it, active, onClick, { showDone = false } = {}) {
   return b;
 }
 
+// ancestor breadcrumb for a node (used when results come from the FTS index, which
+// returns ids without the path the local walk computes inline)
+function jumpPath(id) {
+  const parts = []; let p = parentOf(id);
+  while (p && p !== HOME) { parts.unshift(plainOf(N(p).text).trim() || 'Untitled'); p = parentOf(p); }
+  return parts.join(' › ');
+}
+
+let jumpSeq = 0;
+let jumpFtsThreshold = 4000; // below this the local walk is instant; above, use the server FTS index
+
 function renderJump(q) {
-  jumpItems = searchNodes(q);
+  const seq = ++jumpSeq;
+  // large docs: let SQLite FTS5 do the scan (O(matches)) instead of walking every node per keystroke
+  if (!SHARE_TOKEN && q.trim() && Object.keys(doc.nodes).length > jumpFtsThreshold) {
+    fetch('/api/search?q=' + encodeURIComponent(q))
+      .then(r => r.json())
+      .then(({ ids }) => {
+        if (seq !== jumpSeq) return; // a newer keystroke superseded this response
+        const items = (ids || [])
+          .filter(id => doc.nodes[id] && !N(id).mirror && plainOf(N(id).text).trim())
+          .slice(0, 14)
+          .map(id => ({ id, plain: plainOf(N(id).text).trim(), path: jumpPath(id), done: N(id).done }));
+        paintJump(items);
+      })
+      .catch(() => { if (seq === jumpSeq) paintJump(searchNodes(q)); }); // offline → local fallback
+    return;
+  }
+  paintJump(searchNodes(q));
+}
+
+function paintJump(items) {
+  jumpItems = items;
   jumpActive = 0;
   jumpResults.innerHTML = '';
   if (!jumpItems.length) {
