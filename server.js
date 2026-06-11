@@ -210,11 +210,13 @@ function makeNode(text) {
 
 function subtreeIds(doc, rootId) {
   const out = [];
+  const seen = new Set();
   const stack = [rootId];
   while (stack.length) {
     const id = stack.pop();
     const n = doc.nodes[id];
-    if (!n) continue;
+    if (!n || seen.has(id)) continue;
+    seen.add(id);
     out.push(id);
     stack.push(...(n.children || []));
   }
@@ -276,6 +278,19 @@ function sanitizeServerHtml(s) {
     .replace(/<\/?(?:script|style|iframe|object|embed|link|meta|svg|img)\b[^>]*>/gi, '')
     .replace(/\son\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '')
     .replace(/(href|src)\s*=\s*(?:"javascript:[^"]*"|'javascript:[^']*'|javascript:[^\s>]+)/gi, '$1="#"');
+}
+
+const safeFileUrl = u => typeof u === 'string' && /^(\/files\/|https?:)/i.test(u.trim());
+
+function sanitizeDocNodes(doc) {
+  if (!doc || !doc.nodes) return doc;
+  for (const n of Object.values(doc.nodes)) {
+    if (!n || typeof n !== 'object') continue;
+    if (typeof n.text === 'string') n.text = sanitizeServerHtml(n.text);
+    if (!Array.isArray(n.children)) n.children = [];
+    if (n.files) n.files = (Array.isArray(n.files) ? n.files : []).filter(f => f && safeFileUrl(f.url));
+  }
+  return doc;
 }
 
 const serverPlain = html => String(html || '').replace(/<[^>]+>/g, '')
@@ -526,6 +541,14 @@ function recordAttempt(ip, ok) {
 
 /* ---------- share helpers ---------- */
 
+function fileIsShared(urlPath) {
+  const doc = store.doc;
+  if (!doc) return false;
+  return Object.values(shares).some(share =>
+    doc.nodes[share.id] && subtreeIds(doc, share.id).some(id =>
+      (doc.nodes[id].files || []).some(f => f && f.url === urlPath)));
+}
+
 function shareDocFor(share) {
   const doc = store.doc;
   if (!doc || !doc.nodes[share.id]) return null;
@@ -534,23 +557,65 @@ function shareDocFor(share) {
   return { root: share.id, nodes };
 }
 
+function cleanIncomingNode(n) {
+  return {
+    text: sanitizeServerHtml(n.text),
+    note: typeof n.note === 'string' ? sanitizeServerHtml(n.note) : null,
+    done: !!n.done,
+    collapsed: !!n.collapsed,
+    children: Array.isArray(n.children) ? n.children.filter(c => typeof c === 'string') : [],
+    format: typeof n.format === 'string' ? n.format : undefined,
+    files: Array.isArray(n.files) ? n.files.filter(f => f && safeFileUrl(f.url)) : undefined,
+    comments: Array.isArray(n.comments) ? n.comments : undefined,
+    m: Date.now(),
+  };
+}
+
 function mergeShareDoc(share, incoming) {
   const doc = store.doc;
   if (!doc || !doc.nodes[share.id] || !incoming.nodes || !incoming.nodes[share.id]) return false;
-  // remove the old subtree (keep the root node's slot in its parent)
-  for (const id of subtreeIds(doc, share.id)) {
+  // a guest may only touch ids reachable from the share root in its own doc
+  const allowed = new Set(subtreeIds(incoming, share.id));
+  const before = subtreeIds(doc, share.id);
+
+  // nodes the guest dropped go to the trash, not the void (one entry per detached subtree)
+  const removed = new Set(before.filter(id => id !== share.id && !allowed.has(id)));
+  for (const id of removed) {
+    const p = nodeParent(id);
+    if (p && removed.has(p)) continue; // covered by an ancestor's entry
+    const ids = subtreeIds(doc, id);
+    const nodes = {};
+    for (const x of ids) nodes[x] = doc.nodes[x];
+    if (!doc.trash) doc.trash = [];
+    doc.trash.unshift({ ts: Date.now(), parent: p, index: 0, root: id, nodes });
+  }
+  if (doc.trash && doc.trash.length > 200) doc.trash = doc.trash.slice(0, 200);
+
+  for (const id of before) {
     if (id !== share.id) delete doc.nodes[id];
   }
-  for (const [id, n] of Object.entries(incoming.nodes)) {
+  const written = new Set([share.id]);
+  for (const id of allowed) {
+    const n = incoming.nodes[id];
+    if (!n || typeof n !== 'object') continue;
     if (id === share.id) {
-      const mine = doc.nodes[share.id];
-      mine.text = n.text; mine.note = n.note; mine.done = n.done;
-      mine.collapsed = n.collapsed; mine.children = n.children || [];
-      mine.format = n.format; mine.files = n.files; mine.comments = n.comments;
-      mine.m = Date.now();
-    } else {
-      doc.nodes[id] = n;
+      Object.assign(doc.nodes[share.id], cleanIncomingNode(n));
+    } else if (!doc.nodes[id]) { // never clobber a node that lives outside the share
+      doc.nodes[id] = { id, ...cleanIncomingNode(n) };
+      written.add(id);
     }
+  }
+  // children may only point at nodes written in this merge (blocks smuggling an
+  // outside id, e.g. the doc root, in as a child), and each node gets at most one
+  // parent (claim-once ⇒ no cycles, so traversals and renders always terminate)
+  const claimed = new Set();
+  for (const id of written) {
+    const n = doc.nodes[id];
+    n.children = n.children.filter(c => {
+      if (!written.has(c) || c === share.id || claimed.has(c)) return false;
+      claimed.add(c);
+      return true;
+    });
   }
   commitDoc(doc);
   return true;
@@ -606,7 +671,7 @@ async function serveStatic(req, res, urlPath) {
   let p = decodeURIComponent(urlPath.split('?')[0]);
   if (p === '/' || /^\/s\/[a-f0-9]+\/?$/.test(p)) p = '/index.html';
   const file = path.normalize(path.join(PUBLIC_DIR, p));
-  if (!file.startsWith(PUBLIC_DIR)) return send(res, 403, { error: 'forbidden' });
+  if (file !== PUBLIC_DIR && !file.startsWith(PUBLIC_DIR + path.sep)) return send(res, 403, { error: 'forbidden' });
   let data;
   try {
     data = await fsp.readFile(file);
@@ -659,7 +724,7 @@ const server = http.createServer(async (req, res) => {
       if (req.method === 'PUT' || req.method === 'POST') {
         if (share.mode !== 'edit') return send(res, 403, { error: 'this share is view-only' });
         const body = JSON.parse((await readBody(req)).toString('utf8') || '{}');
-        if (typeof body.baseVersion === 'number' && body.baseVersion !== store.version && !body.force) {
+        if (typeof body.baseVersion === 'number' && body.baseVersion !== store.version) {
           const doc = shareDocFor(share);
           return send(res, 409, { version: store.version, doc });
         }
@@ -717,10 +782,10 @@ const server = http.createServer(async (req, res) => {
         if (!body.doc || typeof body.doc !== 'object' || !body.doc.nodes) {
           return send(res, 400, { error: 'malformed document' });
         }
-        if (typeof body.baseVersion === 'number' && body.baseVersion !== store.version && !body.force) {
+        if (typeof body.baseVersion === 'number' && body.baseVersion !== store.version) {
           return send(res, 409, store);
         }
-        const v = commitDoc(body.doc);
+        const v = commitDoc(sanitizeDocNodes(body.doc));
         return send(res, 200, { version: v });
       }
 
@@ -781,8 +846,10 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (url.startsWith('/files/')) {
-      // attachments are private unless the doc is shared; require auth or any valid share token cookie-free ref
-      if (!isAuthed(req) && !Object.keys(shares).length) return send(res, 401, { error: 'unauthorized' });
+      // attachments are private unless they sit inside a shared subtree
+      if (!isAuthed(req) && !fileIsShared(decodeURIComponent(url.split('?')[0]))) {
+        return send(res, 401, { error: 'unauthorized' });
+      }
       return serveUserFile(req, res, url);
     }
 

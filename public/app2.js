@@ -281,8 +281,9 @@ function refreshCaretPop(query) {
     const items = slashCommands(caretPop.ctx).filter(c => c.label.toLowerCase().includes(q));
     renderCaretItems(items.slice(0, 12), it => runSlashCommand(it), 'No matching commands');
   } else if (caretPop.type === 'tag') {
-    const prefix = caretPop.prefix;
-    const all = collectTags().filter(t => t.toLowerCase().startsWith((prefix + q).toLowerCase()) && t.toLowerCase() !== (prefix + q).toLowerCase());
+    // q is everything typed after the # / @ sigil, regardless of the prefix length at open
+    const needle = (caretPop.prefix[0] + q).toLowerCase();
+    const all = collectTags().filter(t => t.toLowerCase().startsWith(needle) && t.toLowerCase() !== needle);
     renderCaretItems(all.slice(0, 8).map(t => ({ label: t, icon: t[0] === '@' ? '@' : '#', tag: t })),
       it => pickTag(it.tag), '');
     if (!all.length) window.closeCaretPop();
@@ -382,6 +383,13 @@ function pickLink(it) {
   sel.addRange(after);
   scheduleCommit(ctx.el);
   markDirty();
+  if (it.create) {
+    // make the freshly created item visible (page + sidebar) without losing the caret
+    const off = caretOffsetIn(ctx.el);
+    commitActiveText();
+    renderPage();
+    if (off !== null) focusItem(ctx.id, ctx.field, off);
+  }
 }
 
 window.slashWillOpen = function slashWillOpen(ctx, offset) {
@@ -429,13 +437,14 @@ window.editorInputHook = function editorInputHook(ctx) {
 
   // ``` → code block
   if (ctx.field === 'text' && before === '```' && fmtOf(ctx.id) !== 'codeblock') {
+    ctx.el.textContent = ''; // opSetFormat re-serializes this element via commitActiveText
     N(ctx.id).text = '';
     opSetFormat(ctx.id, 'codeblock');
     return;
   }
 
   // '!!' → date picker
-  if (before.endsWith('!!') && ctx.field === 'text') {
+  if (before.endsWith('!!') && ctx.field === 'text' && fmtOf(ctx.id) !== 'codeblock') {
     deletePlainRange(ctx.el, off - 2, off);
     scheduleCommit(ctx.el);
     openDatePop(ctx);
@@ -449,7 +458,7 @@ window.editorInputHook = function editorInputHook(ctx) {
     const prefix = tm[2];
     if (collectTags().some(t => t.toLowerCase().startsWith(prefix.toLowerCase()) && t.length > prefix.length)) {
       openCaretPop('tag', ctx, start, { prefix });
-      refreshCaretPop('');
+      refreshCaretPop(prefix.slice(1));
       clearDateSuggest();
       return;
     }
@@ -482,12 +491,7 @@ window.caretPopKeydown = function caretPopKeydown(e) {
 
 /* ---------------- D. date picker ---------------- */
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-function fmtDateLabel(iso) {
-  const [y, m, d] = iso.split('-').map(Number);
-  return `${MONTHS[m - 1]} ${d}, ${y}`;
-}
+const fmtDateLabel = iso => formatDate(iso); // honors the date-format setting
 
 function isoFromDate(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -1218,6 +1222,8 @@ function renderCalendar() {
   const today = todayStr();
   for (let i = 0; i < 42; i++) {
     const d = new Date(y, mo, 1 - startOffset + i);
+    // stop at a row boundary once we're past the month — never mid-row
+    if (i >= 28 && i % 7 === 0 && d.getMonth() !== mo) break;
     const iso = isoFromDate(d);
     const cell = document.createElement('div');
     cell.className = 'cal-day' + (d.getMonth() !== mo ? ' other' : '') + (iso === today ? ' today' : '');
@@ -1231,7 +1237,6 @@ function renderCalendar() {
       cell.append(a);
     }
     grid.append(cell);
-    if (i >= 34 && d.getMonth() !== mo && d.getDate() >= 7) break;
   }
 }
 
@@ -1301,6 +1306,7 @@ function gotoDate(iso) {
   if (state.readOnly) return;
   const existing = findDay(iso);
   if (existing) { zoomTo(existing); return; }
+  if (!doc.nodes[ROOT]) { showToast("The calendar isn't available in a shared view"); return; }
   commitActiveText();
   snapshot();
   const day = ensureDay(iso);
@@ -1316,7 +1322,8 @@ const calStripEl = $('#cal-strip');
 window.renderCalStrip = function renderCalStrip() {
   const el = calStripEl;
   const n = doc.nodes[state.zoom];
-  if (!n || !n.cal || n.cal === 'root') { el.hidden = true; el.innerHTML = ''; return; }
+  // share docs have no home root, so the journal hierarchy can't be navigated/created
+  if (!n || !n.cal || n.cal === 'root' || !doc.nodes[ROOT]) { el.hidden = true; el.innerHTML = ''; return; }
   el.hidden = false;
   el.innerHTML = '';
 
@@ -1384,7 +1391,7 @@ function navArrows(n) {
   const mk = (label, fn, title) => { const b = document.createElement('button'); b.textContent = label; b.title = title; b.addEventListener('click', fn); return b; };
   const step = dir => {
     if (n.cal === 'day') { const d = new Date(n.cd + 'T00:00:00'); d.setDate(d.getDate() + dir); gotoDate(isoOf(d)); }
-    else if (n.cal === 'month') { commitActiveText(); snapshot(); const id = ensureMonth(n.cy, n.cm + dir < 0 ? 11 : n.cm + dir > 11 ? 0 : n.cm + dir); markDirty(); zoomTo(id); }
+    else if (n.cal === 'month') { commitActiveText(); snapshot(); const d = new Date(n.cy, n.cm + dir, 1); const id = ensureMonth(d.getFullYear(), d.getMonth()); markDirty(); zoomTo(id); }
     else { commitActiveText(); snapshot(); const id = ensureYear(n.cy + dir); markDirty(); zoomTo(id); }
   };
   wrap.append(
@@ -1486,7 +1493,7 @@ const captureInput = $('#capture-input');
 window.showCapture = function showCapture() {
   commitActiveText();
   captureOverlay.hidden = false;
-  captureInput.value = '';
+  // keep any draft: a stray Esc / outside click shouldn't lose a half-written capture
   captureInput.focus();
 };
 
@@ -1522,12 +1529,8 @@ function doCapture() {
   forest.forEach(enhanceCaptureSpec);
   snapshot();
   const inbox = findOrCreateInbox();
-  const materialize = (spec, parent) => {
-    const id = makeNode(spec.text, specOpts(spec));
-    insertAt(parent, kidsOf(parent).length, id);
-    spec.children.forEach(c => materialize(c, id));
-  };
-  forest.forEach(s => materialize(s, inbox));
+  materializeForest(forest, inbox);
+  captureInput.value = '';
   captureOverlay.hidden = true;
   renderPage();
   markDirty();
@@ -1702,12 +1705,7 @@ function askAI(id) {
         closeAllPopovers();
         snapshot();
         N(id).collapsed = false;
-        const materialize = (spec, parent) => {
-          const nid = makeNode(spec.text);
-          insertAt(parent, kidsOf(parent).length, nid);
-          spec.children.forEach(c => materialize(c, nid));
-        };
-        forest.forEach(s => materialize(s, id));
+        materializeForest(forest, id);
         renderPage();
         markDirty();
         showToast('AI results added as sub-items', { label: 'Undo', fn: undo });

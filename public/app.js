@@ -219,6 +219,13 @@ function safeHref(href) {
   return null;
 }
 
+// like safeHref but also admits our own site-relative upload paths
+function fileHref(href) {
+  if (typeof href !== 'string') return null;
+  const h = href.trim();
+  return /^(\/files\/|https?:)/i.test(h) ? h : null;
+}
+
 function serializeChildren(node) {
   let out = '';
   for (const child of node.childNodes) {
@@ -443,6 +450,7 @@ function cloneSubtree(id) {
     note: src.note, done: src.done, collapsed: src.collapsed,
     format: src.format, mirror: src.mirror,
     files: src.files ? structuredClone(src.files) : undefined,
+    comments: src.comments ? structuredClone(src.comments) : undefined,
   });
   for (const c of src.children) {
     const cc = cloneSubtree(c);
@@ -659,6 +667,7 @@ function snapshot() {
 }
 
 function applyHistory(entry) {
+  burst = { key: '', at: 0 }; // typing right after undo/redo must snapshot afresh
   doc = entry.doc;
   rebuildParentMap();
   if (!doc.nodes[state.zoom]) state.zoom = HOME;
@@ -826,8 +835,11 @@ document.addEventListener('visibilitychange', async () => {
 window.addEventListener('beforeunload', () => {
   commitActiveText();
   if (dirty && doc && !state.readOnly) {
+    // stash first: if the beacon loses a version race the server rejects it,
+    // and the next load merges the stash via graftMissing instead
+    stashOffline();
     navigator.sendBeacon?.(SAVE_URL, new Blob(
-      [JSON.stringify({ baseVersion: state.version, doc, force: true })],
+      [JSON.stringify({ baseVersion: state.version, doc })],
       { type: 'application/json' }
     ));
   }
@@ -913,7 +925,7 @@ function commitActiveText(redecorateOk = false) {
 
 function syncMirrorRows(targetId) {
   for (const el of treeEl.querySelectorAll(`.item[data-mirror="${targetId}"] > .row .content`)) {
-    el.innerHTML = decorate(N(targetId).text);
+    el.innerHTML = decorate(N(targetId).text) + '<span class="mirror-badge">mirror</span>';
   }
 }
 
@@ -1172,13 +1184,14 @@ function buildAttachments(n) {
   const wrap = document.createElement('div');
   wrap.className = 'attachments';
   for (const f of n.files) {
+    const url = fileHref(f.url); // null for javascript: and other unsafe schemes
     if ((f.type || '').startsWith('image/')) {
       const img = document.createElement('img');
       img.className = 'att-img';
-      img.src = f.url;
+      img.src = url || '';
       img.alt = f.name;
       img.loading = 'lazy';
-      img.addEventListener('click', () => window.open(f.url, '_blank', 'noopener'));
+      img.addEventListener('click', () => { if (url) window.open(url, '_blank', 'noopener'); });
       wrap.append(img);
       if (!state.readOnly) {
         const rm = document.createElement('button');
@@ -1191,7 +1204,7 @@ function buildAttachments(n) {
     } else {
       const chip = document.createElement('a');
       chip.className = 'att-chip';
-      chip.href = f.url;
+      chip.href = url || '#';
       chip.target = '_blank';
       chip.rel = 'noopener';
       chip.innerHTML = `<span>📎</span><span class="att-name">${escHtml(f.name || 'file')}</span>`;
@@ -1339,7 +1352,7 @@ function mountItem(id, underMatch = false) {
   const embed = !mirror && buildEmbed(n);
   if (embed) item.append(embed);
 
-  const um = underMatch || (searchActive() && state.matchSet.has(id));
+  const um = underMatch || (searchActive() && state.matchSet?.has(id));
 
   if (fmt === 'board') {
     item.append(buildBoardEl(id, false));
@@ -2058,11 +2071,11 @@ function selKeydown(e) {
   if (state.readOnly) return true;
   if (e.key === 'Tab') {
     e.preventDefault();
-    commitActiveText();
-    snapshot();
     if (e.shiftKey) {
       const p = sel.parent;
-      if (p === state.zoom || !parentOf(p)) return true;
+      if (p === state.zoom || !parentOf(p)) return true; // impossible move — no undo entry
+      commitActiveText();
+      snapshot();
       const gp = parentOf(p);
       let at = kidsOf(gp).indexOf(p) + 1;
       for (const id of ids) { moveNode(id, gp, at); at = kidsOf(gp).indexOf(id) + 1; }
@@ -2070,7 +2083,9 @@ function selKeydown(e) {
     } else {
       const arr = kidsOf(sel.parent);
       const first = arr.indexOf(ids[0]);
-      if (first <= 0) return true;
+      if (first <= 0) return true; // impossible move — no undo entry
+      commitActiveText();
+      snapshot();
       const np = arr[first - 1];
       N(np).collapsed = false;
       for (const id of ids) moveNode(id, np, kidsOf(np).length);
@@ -2272,6 +2287,7 @@ function onKeydown(e) {
       if (!fmt && /^\d+[.)]$/.test(before)) fmt = 'number';
       if (fmt && off === before.length) {
         e.preventDefault();
+        el.textContent = ''; // opSetFormat re-serializes this element via commitActiveText
         N(id).text = '';
         opSetFormat(id, fmt);
         return;
@@ -2290,6 +2306,7 @@ function onKeydown(e) {
     // '---' + Enter → divider
     if ((el.textContent || '') === '---') {
       e.preventDefault();
+      el.textContent = ''; // opSetFormat re-serializes this element via commitActiveText
       N(id).text = '';
       opSetFormat(id, 'divider', { focus: false });
       const nid = makeNode('');
@@ -2381,6 +2398,11 @@ function onKeydown(e) {
   if (e.altKey && e.shiftKey && (e.key === 'm' || e.key === 'M') && !isTitle && !isNote) {
     e.preventDefault();
     opMirror(id);
+    return;
+  }
+  if (e.altKey && mod && (e.key === 'm' || e.key === 'M') && !isTitle && !isNote && !state.readOnly) {
+    e.preventDefault();
+    openNodePicker('Move to…', t => moveItemTo(id, t), subtreeOf(id));
     return;
   }
   if (e.altKey && e.shiftKey && (e.key === 'l' || e.key === 'L')) {
@@ -2737,28 +2759,34 @@ function specOpts(spec) {
   return o;
 }
 
-function insertForest(ctx, forest) {
-  const materialize = (spec, parent, index) => {
+// the one place a parsed forest (paste, import, capture, AI) becomes real nodes —
+// goes through specOpts so format/done survive
+function materializeForest(forest, parent, index = kidsOf(parent).length) {
+  const make = (spec, p, i) => {
     const id = makeNode(spec.text, specOpts(spec));
-    insertAt(parent, index, id);
-    spec.children.forEach((c, i) => materialize(c, id, i));
+    insertAt(p, i, id);
+    spec.children.forEach((c, j) => make(c, id, j));
     return id;
   };
+  let last = null;
+  forest.forEach((spec, i) => { last = make(spec, parent, index + i); });
+  return last;
+}
+
+function insertForest(ctx, forest) {
   let lastId = null;
   if (ctx.field === 'title') {
-    forest.forEach((spec, i) => { lastId = materialize(spec, state.zoom, i); });
+    lastId = materializeForest(forest, state.zoom, 0);
   } else {
     const id = ctx.id;
     const n = N(id);
+    const p = parentOf(id);
     if (!plainOf(n.text).length && !hasKids(id)) {
-      const p = parentOf(id);
-      let at = kidsOf(p).indexOf(id);
+      const at = kidsOf(p).indexOf(id);
       deleteSubtree(id);
-      forest.forEach(spec => { lastId = materialize(spec, p, at); at = kidsOf(p).indexOf(lastId) + 1; });
+      lastId = materializeForest(forest, p, at);
     } else {
-      const p = parentOf(id);
-      let at = kidsOf(p).indexOf(id) + 1;
-      forest.forEach(spec => { lastId = materialize(spec, p, at); at = kidsOf(p).indexOf(lastId) + 1; });
+      lastId = materializeForest(forest, p, kidsOf(p).indexOf(id) + 1);
     }
   }
   renderPage();
@@ -3190,6 +3218,7 @@ const HELP = [
     ['Move item up / down', 'Alt+Shift+↑ ↓'],
     ['Duplicate item', 'Ctrl+D'],
     ['Mirror item', 'Alt+Shift+M'],
+    ['Move item to…', 'Alt+Ctrl+M'],
     ['Delete item + children', 'Ctrl+Shift+⌫'],
     ['Copy link to item', 'Alt+Shift+L'],
   ]],
@@ -3324,9 +3353,12 @@ $('#import-file').addEventListener('change', async e => {
       if (!incoming.nodes || !incoming.nodes[incoming.root || ROOT]) throw new Error('not a Tendril document');
       if (!confirm('Replace the entire outline with this file? Your current outline will be overwritten (undo is available).')) return;
       snapshot();
-      doc = incoming;
-      doc.root = doc.root || ROOT;
-      for (const id of Object.keys(doc.nodes)) doc.nodes[id].text = sanitizeHtml(doc.nodes[id].text || '');
+      if (!incoming.nodes[ROOT]) {
+        // a share-guest export is rooted at the shared node — wrap it in a fresh home
+        incoming.nodes[ROOT] = { id: ROOT, text: '', note: null, done: false, collapsed: false, children: [incoming.root] };
+      }
+      incoming.root = ROOT;
+      doc = sanitizeDocTexts(incoming); // also normalizes missing children arrays
       rebuildParentMap();
       state.zoom = HOME;
       renderPage();
@@ -3354,12 +3386,7 @@ $('#import-file').addEventListener('change', async e => {
       const forest = parseIndentedText(text);
       if (!forest.length) throw new Error('no items found');
       snapshot();
-      const materialize = (spec, parent) => {
-        const id = makeNode(spec.text);
-        insertAt(parent, kidsOf(parent).length, id);
-        spec.children.forEach(c => materialize(c, id));
-      };
-      forest.forEach(s => materialize(s, state.zoom));
+      materializeForest(forest, state.zoom);
       renderPage();
       markDirty();
       showToast('Text outline imported');
@@ -3530,8 +3557,10 @@ async function loadDoc() {
   // restore changes that were stranded offline
   try {
     const stash = JSON.parse(localStorage.getItem('tendril-offline') || 'null');
-    if (stash && stash.doc && stash.baseVersion >= state.version) {
+    if (stash && stash.doc) {
+      const server = stash.baseVersion < state.version ? doc : null;
       doc = stash.doc;
+      if (server) graftMissing(server); // keep offline edits, graft newer server nodes in
       rebuildParentMap();
       markDirty();
       showToast('Restored unsaved offline changes');

@@ -1,0 +1,8 @@
+{
+  "name": "tendril-tests",
+  "private": true,
+  "description": "E2E test harness deps only — the app itself stays zero-dependency.",
+  "devDependencies": {
+    "puppeteer-core": "^25.1.0"
+  }
+}

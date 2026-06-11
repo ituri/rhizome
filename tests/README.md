@@ -15,12 +15,13 @@ Browser-level suites driving the real app in headless Chrome (250+ assertions to
 | `test-cal.js` | Calendar journal: Today button, Year/Month/Day hierarchy, date strip, dated-item surfacing |
 | `test-api.js` | Per-node REST API + live SSE pickup — run the server with `TENDRIL_AGENT_TOKEN=agent-secret-xyz TENDRIL_PASSWORD=pw PORT=3214` |
 | `test-auth.js` | Password login flow — run the server with `TENDRIL_PASSWORD=s3cret PORT=3212` |
+| `test-fixes.js` | Regressions from the 2026-06 review: share-merge subtree scoping (+cycle/trash), files gate, server-side sync sanitization, static-path guard (spawns its own server on 3215), markdown-shortcut marker text, undo burst, operator-only search, calendar year carry, month-grid rows, import format fidelity |
 
 ## Running
 
-Requires Chrome and `puppeteer-core` (`npm i puppeteer-core` in this folder — the
-app itself stays zero-dependency). Unless noted above, each suite expects a
-**fresh** server on port 3211:
+Requires Chrome and `puppeteer-core` (`npm i` in this folder — it has its own
+`package.json` so the app itself stays zero-dependency). Unless noted above,
+each suite expects a **fresh** server on port 3211:
 
 ```powershell
 # per suite: reset data, start server, run, stop
