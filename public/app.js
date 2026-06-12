@@ -386,6 +386,7 @@ function rebuildParentMap() {
   for (const id of Object.keys(doc.nodes)) {
     for (const c of doc.nodes[id].children) parentMap.set(c, id);
   }
+  mirrorsDirty = true; // full-doc swaps (load, adopt, import, undo/redo) may change mirror topology
 }
 
 function ancestorsOf(id) {
@@ -406,6 +407,7 @@ function makeNode(text = '', extra = {}) {
   const now = Date.now();
   recOld(id); // new node → recorded as "didn't exist" so undo removes it
   doc.nodes[id] = { id, text, note: null, done: false, collapsed: false, children: [], c: now, m: now, ...extra };
+  if (extra.mirror) mirrorsDirty = true;
   return id;
 }
 
@@ -446,6 +448,7 @@ function deleteSubtree(id) {
     const cur = stack.pop();
     stack.push(...kidsOf(cur));
     recOld(cur); // record each removed node so undo restores the whole subtree
+    if (doc.nodes[cur].mirror || mirrorCounts.has(cur)) mirrorsDirty = true; // an instance or a target left the doc
     delete doc.nodes[cur];
     parentMap.delete(cur);
   }
@@ -514,13 +517,24 @@ const mirrorTarget = id => {
 const contentIdOf = id => { const t = N(id)?.mirror; return t && doc.nodes[t] ? t : id; };
 // targets that currently have at least one live mirror instance → they render the diamond
 // bullet too, and revert to a circle automatically once the last mirror is gone.
-// Rebuilt per render: one flat O(n) property pass, negligible next to the render itself.
-let mirrorCounts = new Map();
+// The full scan costs ~15ms at 100k nodes, so it only runs when mirror topology may have
+// changed (mirrorsDirty — set conservatively at every mutation that can touch a `mirror`
+// field or remove nodes; over-flagging is harmless, a stale skip is not).
+let mirrorCounts = new Map();      // target id → number of live instances
+let mirrorInstances = new Map();   // target id → [mirror node ids] (search expands matches with these)
+let mirrorsDirty = true;
 function rebuildMirrorCounts() {
+  if (!mirrorsDirty) return;
+  mirrorsDirty = false;
   mirrorCounts = new Map();
+  mirrorInstances = new Map();
   for (const id in doc.nodes) {
     const t = doc.nodes[id].mirror;
-    if (t && doc.nodes[t]) mirrorCounts.set(t, (mirrorCounts.get(t) || 0) + 1);
+    if (t && doc.nodes[t]) {
+      mirrorCounts.set(t, (mirrorCounts.get(t) || 0) + 1);
+      if (!mirrorInstances.has(t)) mirrorInstances.set(t, []);
+      mirrorInstances.get(t).push(id);
+    }
   }
 }
 const editableNode = id => fmtOf(id) !== 'divider' && (!isMirror(id) || !!mirrorTarget(id));
@@ -716,13 +730,19 @@ function editableCtx(el) {
   return { el, id: item.dataset.id, field: el.classList.contains('note') ? 'note' : 'text' };
 }
 
-function focusItem(id, field = 'text', offset = 'end') {
+// the mirror instance an element renders inside, if any — focus restoration uses it to
+// land the caret in the SAME transcluded copy the user was editing, not the primary one
+const mirrorHostOf = el => el?.closest?.('.item.is-mirror')?.dataset.id || null;
+
+function focusItem(id, field = 'text', offset = 'end', host = null) {
   if (id === state.zoom) {
     const el = field === 'note' || field === 'zoom-note' ? zoomNoteEl : zoomTitleEl;
     if (!el.hidden) setCaretOffset(el, offset);
     return;
   }
-  const item = elById.get(id);
+  let item = null;
+  if (host && host !== id) item = elById.get(host)?.querySelector(`.item[data-id="${id}"]`) || null;
+  if (!item) item = elById.get(id);
   if (!item) return;
   const el = field === 'note' ? item.querySelector(':scope > .note') : item.querySelector(':scope > .row .content');
   if (el && el.isContentEditable) setCaretOffset(el, offset);
@@ -731,12 +751,12 @@ function focusItem(id, field = 'text', offset = 'end') {
 function captureFocus() {
   const ctx = editableCtx(document.activeElement);
   if (!ctx) return null;
-  return { id: ctx.id, field: ctx.field, offset: caretOffsetIn(ctx.el) ?? 0 };
+  return { id: ctx.id, field: ctx.field, offset: caretOffsetIn(ctx.el) ?? 0, host: mirrorHostOf(ctx.el) };
 }
 
 function restoreFocus(f) {
   if (!f || !doc.nodes[f.id]) return;
-  focusItem(f.id, f.field, f.offset);
+  focusItem(f.id, f.field, f.offset, f.host);
 }
 
 /* ---------------- 7. undo / redo ---------------- */
@@ -1403,7 +1423,7 @@ function nodeMeetsTextFormat(n, cond, html) {
 }
 
 function nodeMatchesSegment(id, seg) {
-  const n = N(id);
+  const n = N(contentIdOf(id)); // a mirror matches when its target's content matches
   const html = (n.text || '') + ' ' + (n.note || '');
   const hay = (plainOf(n.text) + ' ' + (n.note || '')).toLowerCase();
   for (const clause of seg) {
@@ -1477,6 +1497,12 @@ function computeSearch() {
     if (cache.pending) return;                   // in flight → leave the prior results up
     if (cache.ok) candidates = cache.ids;        // got them → evaluate over candidates
     // cache.ok === false (offline / error) → candidates stays null → full-walk fallback
+    // mirror instances of a matching node match too (FTS only indexes the real node)
+    if (candidates && mirrorInstances.size) {
+      const extra = [];
+      for (const c of candidates) { const ms = mirrorInstances.get(c); if (ms) extra.push(...ms); }
+      if (extra.length) candidates = candidates.concat(extra);
+    }
   }
 
   const matches = new Set();
@@ -1744,6 +1770,7 @@ function mountItem(id, underMatch = false) {
   content.spellcheck = false;
   if (mirror && !target) {
     content.innerHTML = looped ? '↻ (mirror loop)' : '(original was deleted)';
+    if (looped) content.title = 'This mirror sits inside the subtree it mirrors — rendering stops here to avoid an infinite loop';
   } else if (cfmt !== 'divider') {
     content.innerHTML = displayHtml(cn);
   }
@@ -1762,7 +1789,7 @@ function mountItem(id, underMatch = false) {
   if (cn.note !== null && cn.note !== undefined) {
     item.append(buildNoteEl(cn.note));
   }
-  const atts = buildAttachments(n); // attachments keep instance-local handlers → real node only
+  const atts = buildAttachments(cn); // attachments are content — shown at every instance (handlers close over cn.id)
   if (atts) item.append(atts);
   const embed = buildEmbed(cn);
   if (embed) item.append(embed);
@@ -1938,6 +1965,7 @@ function opNewAt(parent, index, text = '', focusOffset = 0) {
 function opSplit(ctx) {
   const { el, id } = ctx;
   const n = N(contentIdOf(id)); // splitting a mirror row splits the shared content
+  const host = mirrorHostOf(el); // keep the caret in the same transcluded copy after render
   const sel = getSelection();
   if (!sel.rangeCount) return;
   commitActiveText();
@@ -1952,7 +1980,7 @@ function opSplit(ctx) {
     else insertAt(parentOf(id), kidsOf(parentOf(id)).indexOf(id), nid);
     renderPage();
     elById.get(nid)?.classList.add('entering');
-    focusItem(id, 'text', 0);
+    focusItem(id, 'text', 0, host);
     markDirty();
     return;
   }
@@ -1991,7 +2019,7 @@ function opSplit(ctx) {
   }
   renderPage();
   elById.get(nid)?.classList.add('entering');
-  focusItem(nid, 'text', 0);
+  focusItem(nid, 'text', 0, host);
   markDirty();
 }
 
@@ -2079,7 +2107,15 @@ function opIndent(id, focus) {
   const arr = kidsOf(p);
   const i = arr.indexOf(id);
   if (i <= 0) return;
-  const newParent = arr[i - 1];
+  let newParent = arr[i - 1];
+  if (isMirror(newParent)) {
+    // a mirror node's own children never render — indenting under a mirror row means
+    // indenting into the shared subtree it shows
+    const t = mirrorTarget(newParent);
+    if (!t) return; // a broken mirror can't hold children
+    newParent = t;
+  }
+  if (newParent === id || isAncestor(id, newParent)) return; // mirror of own subtree → would cycle
   commitActiveText();
   snapshot();
   recOld(newParent);
@@ -2149,6 +2185,8 @@ function opToggleCollapse(id, collapse) {
   const want = collapse === undefined ? !n.collapsed : collapse;
   if (want === n.collapsed) return;
   commitActiveText();
+  snapshot();
+  recOld(id); // journal it — Route B emits ops from the journal, so an un-recorded collapse never syncs or persists
   n.collapsed = want;
   markDirty();
   const item = elById.get(id);
@@ -2216,17 +2254,16 @@ function applyNeighborFocus(nf) {
   focusItem(nf.id, nf.field, nf.offset);
 }
 
-// All instances are equivalent (Workflowy): deleting the node that happens to hold the
-// content must not kill the other instances — the oldest mirror inherits the content,
-// the subtree, and the remaining mirrors. Runs inside the caller's snapshot/journal, so
-// undo and op-sync emission cover it like any other compound edit.
-function promoteHeir(id) {
-  // a mirror inside the deleted subtree dies with it — it can't inherit (would also cycle)
-  const inside = new Set(subtreeOf(id));
-  const heirs = Object.keys(doc.nodes).filter(k => N(k).mirror === id && !inside.has(k));
-  if (!heirs.length) return false;
+// All instances are equivalent (Workflowy): deleting whatever subtree happens to hold a
+// mirrored node's content must not kill its other instances. Every doomed node with a
+// surviving outside mirror hands content + children to its oldest mirror, the remaining
+// mirrors repoint, and the doomed node itself BECOMES a mirror of the heir — so the trash
+// entry it is about to enter restores as a live instance (not a content duplicate), and
+// the server, replaying the same emitted ops, builds an identical trash entry. Runs inside
+// the caller's snapshot/journal, so undo and op-sync cover it like any compound edit.
+function promoteOne(id, heirs) {
   const hid = heirs[0], h = N(hid), o = N(id);
-  recOld(hid);
+  recOld(hid); recOld(id);
   for (const k of ['text', 'note', 'done', 'format', 'files', 'comments', 'cal', 'c', 'm']) {
     if (o[k] !== undefined) h[k] = o[k];
     else delete h[k];
@@ -2234,18 +2271,43 @@ function promoteHeir(id) {
   delete h.mirror;
   for (const c of [...kidsOf(id)]) { detach(c); insertAt(hid, kidsOf(hid).length, c); }
   for (const m of heirs.slice(1)) { recOld(m); N(m).mirror = hid; touch(m); }
-  touch(hid);
-  return true;
+  o.text = ''; o.note = null; o.done = false;
+  delete o.format; delete o.files; delete o.comments; delete o.cal;
+  o.mirror = hid;
+  touch(hid); touch(id);
+  mirrorsDirty = true;
+}
+
+// promote every node in the doomed subtree that still has mirrors outside it; promoting a
+// parent moves its children OUT of the subtree, which can rescue mirrored descendants, so
+// recompute after each promotion until nothing doomed is mirrored anymore
+function promoteDoomed(rootId) {
+  let promoted = false;
+  for (let guard = 0; guard < 1000; guard++) {
+    const doomed = new Set(subtreeOf(rootId));
+    const heirsOf = new Map();
+    for (const k in doc.nodes) {
+      const t = doc.nodes[k].mirror;
+      if (t && doomed.has(t) && !doomed.has(k) && !N(t).mirror) {
+        if (!heirsOf.has(t)) heirsOf.set(t, []);
+        heirsOf.get(t).push(k);
+      }
+    }
+    if (!heirsOf.size) return promoted;
+    const [t, heirs] = heirsOf.entries().next().value;
+    promoteOne(t, heirs);
+    promoted = true;
+  }
+  return promoted;
 }
 
 function opDelete(id, { toast = true } = {}) {
   if (state.readOnly) return;
   commitActiveText();
   snapshot();
-  if (!isMirror(id)) promoteHeir(id); // mirrors survive: content moves to the oldest one
-  const n = N(id);
-  const label = plainOf(n.text).trim() || 'item';
-  const count = countDescendants(id);
+  const label = plainOf(N(contentIdOf(id)).text).trim() || 'item'; // before promotion clears it
+  const promoted = promoteDoomed(id);
+  const count = countDescendants(id); // after promotion: counts what actually disappears
   const item = elById.get(id);
   const nf = neighborFocus(item);
 
@@ -2273,8 +2335,10 @@ function opDelete(id, { toast = true } = {}) {
   applyNeighborFocus(nf);
   markDirty();
   if (toast) {
-    showToast(`Deleted “${label.slice(0, 40)}”${count ? ` and ${count} sub-item${count === 1 ? '' : 's'}` : ''}`,
-      { label: 'Undo', fn: undo });
+    showToast(promoted
+      ? `Deleted “${label.slice(0, 40)}” — its content lives on in a mirror`
+      : `Deleted “${label.slice(0, 40)}”${count ? ` and ${count} sub-item${count === 1 ? '' : 's'}` : ''}`,
+    { label: 'Undo', fn: undo });
   }
 }
 
@@ -2354,7 +2418,7 @@ function opMirror(id) {
   commitActiveText();
   snapshot();
   const target = isMirror(id) ? (mirrorTarget(id) || id) : id;
-  const mid = makeNode('', { mirror: target });
+  const mid = makeNode('', { mirror: target, collapsed: true }); // start folded: no subtree wall
   insertAt(parentOf(id), kidsOf(parentOf(id)).indexOf(id) + 1, mid);
   renderPage();
   elById.get(mid)?.classList.add('entering');
@@ -2487,7 +2551,10 @@ function selIds() {
 
 function selRender() {
   $$('.item.selected', treeEl).forEach(el => el.classList.remove('selected'));
-  for (const id of selIds()) elById.get(id)?.classList.add('selected');
+  // a node may render in several places (transcluded under mirrors) — highlight them all
+  for (const id of selIds()) {
+    for (const el of treeEl.querySelectorAll(`.item[data-id="${id}"]`)) el.classList.add('selected');
+  }
 }
 
 function selEnter(id) {
@@ -2588,7 +2655,7 @@ function selKeydown(e) {
     snapshot();
     const count = ids.length;
     const nf = neighborFocus(ids.map(x => elById.get(x)));
-    for (const id of ids) { if (!isMirror(id)) promoteHeir(id); deleteSubtree(id); }
+    for (const id of ids) { promoteDoomed(id); deleteSubtree(id); }
     selClear(false);
     renderPage();
     applyNeighborFocus(nf);
@@ -2840,7 +2907,7 @@ function onKeydown(e) {
   if (e.key === 'Tab') {
     e.preventDefault();
     if (isTitle || field === 'zoom-note') return;
-    const focus = { id, field, offset: caretOffsetIn(el) ?? 0 };
+    const focus = { id, field, offset: caretOffsetIn(el) ?? 0, host: mirrorHostOf(el) };
     if (e.shiftKey) opOutdent(id, focus);
     else opIndent(id, focus);
     return;
@@ -2914,13 +2981,13 @@ function onKeydown(e) {
   /* ----- move item ----- */
   if ((mod || e.altKey) && e.shiftKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && !isTitle && field !== 'zoom-note') {
     e.preventDefault();
-    const focus = { id, field, offset: caretOffsetIn(el) ?? 0 };
+    const focus = { id, field, offset: caretOffsetIn(el) ?? 0, host: mirrorHostOf(el) };
     opMoveVert(id, e.key === 'ArrowDown' ? 1 : -1, focus);
     return;
   }
   if (e.altKey && e.shiftKey && (e.key === '9' || e.key === '0') && !isTitle) {
     e.preventDefault();
-    const focus = { id, field, offset: caretOffsetIn(el) ?? 0 };
+    const focus = { id, field, offset: caretOffsetIn(el) ?? 0, host: mirrorHostOf(el) };
     opMoveVert(id, e.key === '0' ? 1 : -1, focus);
     return;
   }
@@ -2928,7 +2995,7 @@ function onKeydown(e) {
   /* ----- indent aliases ----- */
   if (e.altKey && e.shiftKey && (e.key === 'ArrowRight' || e.key === 'ArrowLeft') && !isTitle && field !== 'zoom-note') {
     e.preventDefault();
-    const focus = { id, field, offset: caretOffsetIn(el) ?? 0 };
+    const focus = { id, field, offset: caretOffsetIn(el) ?? 0, host: mirrorHostOf(el) };
     if (e.key === 'ArrowRight') opIndent(id, focus);
     else opOutdent(id, focus);
     return;
@@ -3107,7 +3174,11 @@ pageEl.addEventListener('focusout', e => {
       n.note = null;
       markDirty();
       if (ctx.field === 'zoom-note') { zoomNoteEl.hidden = true; }
-      else ctx.el.remove();
+      else { // the note may render under several instances — clear them all
+        for (const it of treeEl.querySelectorAll(`.item[data-id="${n.id}"], .item[data-mirror="${n.id}"]`)) {
+          it.querySelector(':scope > .note')?.remove();
+        }
+      }
     }
   }
 });
@@ -3310,7 +3381,9 @@ function insertForest(ctx, forest) {
     const id = ctx.id;
     const n = N(id);
     const p = parentOf(id);
-    if (!plainOf(n.text).length && !hasKids(id)) {
+    // a mirror row's OWN text is empty but it displays its target's — never treat it as
+    // a disposable empty bullet (pasting would silently delete the instance)
+    if (!plainOf(n.text).length && !hasKids(id) && !isMirror(id)) {
       const at = kidsOf(p).indexOf(id);
       deleteSubtree(id);
       lastId = materializeForest(forest, p, at);
@@ -3978,6 +4051,12 @@ $('#import-file').addEventListener('change', async e => {
         incoming.nodes[ROOT] = { id: ROOT, text: '', note: null, done: false, collapsed: false, children: [incoming.root] };
       }
       incoming.root = ROOT;
+      // strip mirror pointers whose targets aren't in the file (e.g. an old subtree
+      // export) — a dangling pointer would render as a broken mirror forever
+      for (const k of Object.keys(incoming.nodes)) {
+        const nn = incoming.nodes[k];
+        if (nn && nn.mirror && !incoming.nodes[nn.mirror]) delete nn.mirror;
+      }
       doc = sanitizeDocTexts(incoming); // also normalizes missing children arrays
       rebuildParentMap();
       state.zoom = HOME;

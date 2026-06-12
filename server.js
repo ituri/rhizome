@@ -383,6 +383,46 @@ function sanitizeDocNodes(doc) {
 const serverPlain = html => String(html || '').replace(/<[^>]+>/g, '')
   .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&nbsp;/g, ' ').trim();
 
+// mirrors are interactive instances: content reads/writes route to the node that owns
+// the content; structural ops act on the instance (same rule as the client)
+function contentIdInDoc(id) {
+  const t = store.doc.nodes[id]?.mirror;
+  return t && store.doc.nodes[t] ? t : id;
+}
+
+// deleting a node that has surviving mirrors hands its content + children to the oldest
+// one and converts the node into a mirror of the heir (mirrors stay alive — client parity)
+function promoteDoomedInDoc(doc, rootId) {
+  for (let guard = 0; guard < 1000; guard++) {
+    const doomed = new Set(subtreeIds(doc, rootId));
+    const heirsOf = new Map();
+    for (const k of Object.keys(doc.nodes)) {
+      const t = doc.nodes[k].mirror;
+      if (t && doomed.has(t) && !doomed.has(k) && !doc.nodes[t].mirror) {
+        if (!heirsOf.has(t)) heirsOf.set(t, []);
+        heirsOf.get(t).push(k);
+      }
+    }
+    if (!heirsOf.size) return;
+    const [t, heirs] = heirsOf.entries().next().value;
+    const hid = heirs[0], h = doc.nodes[hid], o = doc.nodes[t];
+    for (const k of ['text', 'note', 'done', 'format', 'files', 'comments', 'cal', 'c', 'm']) {
+      if (o[k] !== undefined) h[k] = o[k]; else delete h[k];
+    }
+    delete h.mirror;
+    for (const c of [...(o.children || [])]) {
+      const i = o.children.indexOf(c);
+      if (i >= 0) o.children.splice(i, 1);
+      h.children.push(c);
+    }
+    for (const m of heirs.slice(1)) doc.nodes[m].mirror = hid;
+    o.text = ''; o.note = null; o.done = false;
+    delete o.format; delete o.files; delete o.comments; delete o.cal;
+    o.mirror = hid;
+    h.m = Date.now();
+  }
+}
+
 function nodeParent(id) {
   for (const pid of Object.keys(store.doc.nodes)) {
     if ((store.doc.nodes[pid].children || []).includes(id)) return pid;
@@ -419,12 +459,14 @@ function nodeDelete(id) {
 }
 // `children` is polymorphic by design: child *ids* in the flat view, nested node
 // objects under ?tree=1 (filled in by nodeTree). Hence the any[] in the contract.
-/** @param {string} id @returns {{id:string,text:string,plain:string,note:string|null,done:boolean,collapsed:boolean,format:string,children:any[],created:number|null,modified:number|null,parent:string|null}} */
+/** @param {string} id @returns {{id:string,mirror:string|null,text:string,plain:string,note:string|null,done:boolean,collapsed:boolean,format:string,children:any[],created:number|null,modified:number|null,parent:string|null}} */
 function nodeView(id) {
-  const n = store.doc.nodes[id];
+  const inst = store.doc.nodes[id];
+  const n = store.doc.nodes[contentIdInDoc(id)]; // a mirror presents its target's content
   return {
-    id, text: n.text || '', plain: serverPlain(n.text), note: n.note ?? null,
-    done: !!n.done, collapsed: !!n.collapsed, format: n.format || 'bullet',
+    id, mirror: inst.mirror || null,
+    text: n.text || '', plain: serverPlain(n.text), note: n.note ?? null,
+    done: !!n.done, collapsed: !!inst.collapsed, format: n.format || 'bullet',
     children: n.children || [], created: n.c ?? null, modified: n.m ?? null,
     parent: nodeParent(id),
   };
@@ -532,11 +574,11 @@ async function handleV1(req, res, url) {
     }
     if (!sub && method === 'PATCH') {
       const body = await readJson(req);
-      const n = store.doc.nodes[id];
+      const n = store.doc.nodes[contentIdInDoc(id)]; // content writes hit the owner
       if ('text' in body) n.text = sanitizeServerHtml(String(body.text));
       if ('note' in body) n.note = body.note == null ? null : String(body.note);
       if ('done' in body) n.done = !!body.done;
-      if ('collapsed' in body) n.collapsed = !!body.collapsed;
+      if ('collapsed' in body) store.doc.nodes[id].collapsed = !!body.collapsed; // expansion is per-instance
       if ('format' in body) { if (body.format) n.format = String(body.format); else delete n.format; }
       n.m = Date.now();
       commitDoc(store.doc);
@@ -544,8 +586,9 @@ async function handleV1(req, res, url) {
     }
     if (sub === '/complete' && method === 'POST') {
       const body = await readJson(req);
-      store.doc.nodes[id].done = body.done === undefined ? true : !!body.done;
-      store.doc.nodes[id].m = Date.now();
+      const n = store.doc.nodes[contentIdInDoc(id)]; // completing a mirror completes every instance
+      n.done = body.done === undefined ? true : !!body.done;
+      n.m = Date.now();
       commitDoc(store.doc);
       return send(res, 200, nodeView(id));
     }
@@ -564,6 +607,7 @@ async function handleV1(req, res, url) {
     }
     if (!sub && method === 'DELETE') {
       if (id === 'root') return send(res, 400, { error: 'cannot delete the root' });
+      promoteDoomedInDoc(store.doc, id); // mirrors of anything inside survive (client parity)
       const count = nodeDelete(id);
       commitDoc(store.doc);
       return send(res, 200, { ok: true, deleted: count });
@@ -660,6 +704,7 @@ function cleanIncomingNode(n) {
     collapsed: !!n.collapsed,
     children: Array.isArray(n.children) ? n.children.filter(c => typeof c === 'string') : [],
     format: typeof n.format === 'string' ? n.format : undefined,
+    mirror: typeof n.mirror === 'string' ? n.mirror : undefined, // mirrors survive a guest edit round-trip
     files: Array.isArray(n.files) ? n.files.filter(f => f && safeFileUrl(f.url)) : undefined,
     comments: Array.isArray(n.comments) ? n.comments : undefined,
     m: Date.now(),

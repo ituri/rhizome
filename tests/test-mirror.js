@@ -71,12 +71,19 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   }, tgt);
   assert(!side.hasPlaceholder && side.hasTargetText, "sidebar lists a mirror by its target's text, not a placeholder");
 
-  // 3. the subtree is transcluded: the child renders under the mirror too (same data-id, twice)
+  // 3. a new mirror starts COLLAPSED (no subtree wall); expanding transcludes the subtree
+  const startState = await page.evaluate(mid => ({
+    collapsed: !!N(mid).collapsed,
+    noCopiesYet: !document.querySelector(`.item[data-id="${mid}"] .item`),
+  }), mid);
+  assert(startState.collapsed && startState.noCopiesYet, 'a freshly created mirror starts collapsed');
+  await page.evaluate(mid => opToggleCollapse(mid, false), mid); // journaled → also syncs/persists (regression: collapse ops were never emitted)
+  await sleep(150);
   const trans = await page.evaluate(({ mid, child }) => ({
     copies: document.querySelectorAll(`.item[data-id="${child}"]`).length,
     underMirror: !!document.querySelector(`.item[data-id="${mid}"] .item[data-id="${child}"]`),
   }), { mid, child });
-  assert(trans.copies === 2 && trans.underMirror, `subtree transcluded under the mirror (${trans.copies} DOM instances of the child)`);
+  assert(trans.copies === 2 && trans.underMirror, `expanded mirror transcludes the subtree (${trans.copies} DOM instances of the child)`);
 
   // 4. editing the TRANSCLUDED copy edits the real child (and its original row follows)
   await page.evaluate(({ mid, child }) => {
@@ -205,6 +212,132 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
     return { named: !!toast && toast.textContent.includes('Target project'), hasShow: !!toast && !!toast.querySelector('button') };
   }, tgt);
   assert(probe.named && probe.hasShow, 'offscreen destination → toast names it and offers Show');
+
+  // ── deep-review regression fixes ──
+  await page.evaluate(() => { location.hash = '#/'; }); // section 12 zoomed away — come home
+  await sleep(350);
+
+  // 13. Tab-indent below a mirror row goes into the SHARED subtree (never buried invisibly)
+  const ind = await page.evaluate(() => {
+    const orig = makeNode('ind-orig'); insertAt(HOME, 0, orig);
+    const m = makeNode('', { mirror: orig, collapsed: false }); insertAt(HOME, 1, m);
+    const b = makeNode('ind-victim'); insertAt(HOME, 2, b);
+    renderPage();
+    opIndent(b, { id: b, field: 'text', offset: 0 });
+    return {
+      parent: parentOf(b), expectTarget: orig,
+      rendered: document.querySelectorAll(`.item[data-id="${b}"]`).length, // under original AND mirror
+      ids: { orig, m, b },
+    };
+  });
+  assert(ind.parent === ind.expectTarget, 'Tab under a mirror row indents into the shared subtree');
+  assert(ind.rendered === 2, `…and the row stays visible at every instance (${ind.rendered} copies)`);
+
+  // 14. multi-line paste onto a mirror row inserts BELOW it — the instance survives
+  const pasted = await page.evaluate(ids => {
+    const { m } = ids;
+    const el = document.querySelector(`.item[data-id="${m}"] > .row .content`);
+    el.focus();
+    snapshot();
+    insertForest({ id: m, field: 'text', el }, parseIndentedText('paste-a\npaste-b'));
+    return { mirrorSurvives: !!doc.nodes[m], inserted: Object.values(doc.nodes).some(n => plainOf(n.text) === 'paste-a') };
+  }, ind.ids);
+  assert(pasted.mirrorSurvives && pasted.inserted, 'multi-line paste onto a mirror inserts as siblings, never deletes the instance');
+
+  // 15. deleting an ANCESTOR of a mirrored original promotes the mirror (+ honest toast)
+  const anc = await page.evaluate(() => {
+    const folder = makeNode('Folder'); insertAt(HOME, 0, folder);
+    const orig = makeNode('deep-original'); insertAt(folder, 0, orig);
+    const okid = makeNode('deep-kid'); insertAt(orig, 0, okid);
+    const m = makeNode('', { mirror: orig }); insertAt(HOME, 1, m);
+    renderPage();
+    document.querySelectorAll('.toast').forEach(t => t.remove());
+    opDelete(folder);
+    const toast = document.querySelector('.toast .toast-text');
+    return {
+      promoted: !!N(m) && !N(m).mirror && plainOf(N(m).text) === 'deep-original',
+      keptKid: !!N(m) && kidsOf(m).includes(okid),
+      toastHonest: !!toast && toast.textContent.includes('lives on'),
+      mid: m,
+    };
+  });
+  assert(anc.promoted && anc.keptKid, 'deleting an ancestor of the original promotes the outside mirror (content + subtree)');
+  assert(anc.toastHonest, 'the delete toast says the content lives on');
+
+  // 16. restoring the trashed original after promotion yields a live MIRROR, not a duplicate
+  const dup = await page.evaluate(() => {
+    const orig = makeNode('resto-orig'); insertAt(HOME, 0, orig);
+    const m = makeNode('', { mirror: orig }); insertAt(HOME, 1, m);
+    renderPage();
+    opDelete(orig, { toast: false });                        // promotes m; trash entry = mirror-of-m
+    const entry = (doc.trash || []).find(t => t.root === orig);
+    snapshot(); recTrash(); restoreTrashEntry(entry); renderPage();
+    const copies = Object.values(doc.nodes).filter(n => plainOf(n.text) === 'resto-orig');
+    return { restoredIsMirror: N(orig)?.mirror === m, contentCopies: copies.length };
+  });
+  assert(dup.restoredIsMirror && dup.contentCopies === 1,
+    `restore-after-promotion gives a live mirror, not a duplicate (${dup.contentCopies} content copy)`);
+
+  // 17. a trashed mirror heals its pointer through the promotion chain on restore
+  const heal = await page.evaluate(() => {
+    const orig = makeNode('heal-orig'); insertAt(HOME, 0, orig);
+    const m1 = makeNode('', { mirror: orig }); insertAt(HOME, 1, m1);
+    const m2 = makeNode('', { mirror: orig }); insertAt(HOME, 2, m2);
+    renderPage();
+    opDelete(m2, { toast: false });                          // m2 → trash (points at orig)
+    opDelete(orig, { toast: false });                        // m1 promoted; orig → trash as mirror-of-m1
+    const entry = (doc.trash || []).find(t => t.root === m2);
+    snapshot(); recTrash(); restoreTrashEntry(entry); renderPage();
+    return { pointer: N(m2)?.mirror, live: !!doc.nodes[N(m2)?.mirror], expected: m1 };
+  });
+  assert(heal.pointer === heal.expected && heal.live, 'a restored mirror re-points through the promotion chain to the live heir');
+
+  // 18. search matches mirror INSTANCES too (target text matches → instance shows)
+  await page.evaluate(() => {
+    const orig = makeNode('searchable-zebra'); insertAt(HOME, 0, orig);
+    const m = makeNode('', { mirror: orig }); insertAt(HOME, 1, m);
+    window.__searchIds = { orig, m };
+    renderPage();
+    setSearch('searchable-zebra');
+  });
+  await sleep(300);
+  const srch = await page.evaluate(() => ({
+    origShown: !!document.querySelector(`.item[data-id="${window.__searchIds.orig}"]`),
+    mirrorShown: !!document.querySelector(`.item[data-id="${window.__searchIds.m}"]`),
+    bothMatched: state.matchSet?.has(window.__searchIds.orig) && state.matchSet?.has(window.__searchIds.m),
+  }));
+  assert(srch.origShown && srch.mirrorShown && srch.bothMatched, 'search shows the original AND its mirror instances');
+  await page.evaluate(() => setSearch(''));
+  await sleep(200);
+
+  // 19. selection highlights the transcluded copy you actually selected (all instances)
+  const selv = await page.evaluate(() => {
+    const orig = makeNode('sel-orig'); insertAt(HOME, 0, orig);
+    const k = makeNode('sel-kid'); insertAt(orig, 0, k);
+    const m = makeNode('', { mirror: orig, collapsed: false }); insertAt(HOME, 1, m);
+    renderPage();
+    selEnter(k);
+    const sel = [...document.querySelectorAll('.item.selected')];
+    return {
+      highlighted: sel.length,
+      includesCopyUnderMirror: sel.some(e => e.closest(`.item[data-id="${m}"]`) && e.dataset.id === k),
+      ids: { orig, k, m },
+    };
+  });
+  assert(selv.highlighted === 2 && selv.includesCopyUnderMirror, `selecting a duplicated row highlights every instance (${selv.highlighted})`);
+  await page.evaluate(() => selClear());
+
+  // 20. Enter inside a transcluded copy keeps the caret under the mirror
+  await page.evaluate(ids => {
+    document.querySelector(`.item[data-id="${ids.m}"] .item[data-id="${ids.k}"] > .row .content`).focus();
+    setCaretOffset(document.activeElement, 'end');
+  }, selv.ids);
+  await page.keyboard.press('Enter');
+  await sleep(250);
+  const caret = await page.evaluate(ids => ({
+    underMirror: !!document.activeElement?.closest?.(`.item[data-id="${ids.m}"]`),
+  }), selv.ids);
+  assert(caret.underMirror, 'Enter inside a transcluded copy keeps the caret in that copy');
 
   await browser.close();
   console.log(failures ? `\n${failures} FAILURE(S)` : '\nMIRROR TESTS PASSED');

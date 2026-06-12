@@ -623,7 +623,7 @@ function mirrorItemTo(id, targetParent) {
   if (targetParent === id || isAncestor(id, targetParent)) { showToast("Can't mirror into itself"); return; }
   snapshot();
   const target = isMirror(id) ? (mirrorTarget(id) || id) : id;
-  const mid = makeNode('', { mirror: target });
+  const mid = makeNode('', { mirror: target, collapsed: true }); // start folded: no subtree wall
   N(targetParent).collapsed = false;
   insertAt(targetParent, kidsOf(targetParent).length, mid);
   renderPage();
@@ -654,9 +654,11 @@ function mirrorHere(id) {
       recOld(id);
       n.text = '';
       n.mirror = target;
+      n.collapsed = true; // start folded: no subtree wall
       touch(id);
+      mirrorsDirty = true;
     } else {
-      mid = makeNode('', { mirror: target });
+      mid = makeNode('', { mirror: target, collapsed: true });
       insertAt(parentOf(id), kidsOf(parentOf(id)).indexOf(id) + 1, mid);
     }
     renderPage();
@@ -714,8 +716,8 @@ function setSubtreeCollapsed(id, collapsed) {
   if (state.readOnly) return;
   commitActiveText();
   snapshot();
-  for (const x of subtreeOf(contentIdOf(id))) if (hasKids(x)) N(x).collapsed = collapsed;
-  if (collapsed) N(id).collapsed = false; // keep the item itself open so the effect is visible
+  for (const x of subtreeOf(contentIdOf(id))) if (hasKids(x)) { recOld(x); N(x).collapsed = collapsed; }
+  if (collapsed) { recOld(id); N(id).collapsed = false; } // keep the item itself open so the effect is visible
   touch(id);
   renderPage();
   markDirty();
@@ -740,8 +742,21 @@ function exportNode(id, format) {
   else if (format === 'opml') download(`${fn}.opml`, 'text/xml',
     `<?xml version="1.0" encoding="UTF-8"?>\n<opml version="2.0"><head><title>${escHtml(plainOf(N(id).text))}</title></head><body>\n${subtreeToOpml(id)}\n</body></opml>`);
   else {
+    const ids = subtreeOf(id);
+    const inSet = new Set(ids);
     const nodes = {};
-    for (const x of subtreeOf(id)) nodes[x] = doc.nodes[x];
+    for (const x of ids) {
+      const n = doc.nodes[x];
+      if (n.mirror && !inSet.has(n.mirror)) {
+        // the target stays behind — materialize the mirror's content so the export
+        // never carries a dangling pointer
+        const t = doc.nodes[n.mirror];
+        const copy = { ...n, text: t ? t.text : '', note: t ? t.note ?? null : null, done: t ? !!t.done : false };
+        delete copy.mirror;
+        if (t && t.format) copy.format = t.format;
+        nodes[x] = copy;
+      } else nodes[x] = n;
+    }
     download(`${fn}.json`, 'application/json', JSON.stringify({ root: id, nodes }, null, 1));
   }
 }
@@ -1563,6 +1578,19 @@ function restoreTrashEntry(entry) {
     const cloned = structuredClone(node);
     cloned.id = idMap.get(oldId);
     cloned.children = (node.children || []).map(c => idMap.get(c)).filter(Boolean);
+    if (cloned.mirror && !doc.nodes[cloned.mirror]) {
+      // the target was deleted while this sat in the trash. If it was promoted, its own
+      // trash entry is the forwarding record (the original was converted to a mirror of
+      // its heir before being trashed) — walk the chain to the live successor.
+      let t = cloned.mirror;
+      const seen = new Set();
+      while (t && !doc.nodes[t] && !seen.has(t)) {
+        seen.add(t);
+        const fwd = (doc.trash || []).map(e => e.nodes[t]).find(x => x && x.mirror);
+        t = fwd ? fwd.mirror : null;
+      }
+      if (t && doc.nodes[t]) cloned.mirror = t; // healed; otherwise it restores broken, as before
+    }
     recOld(cloned.id); // restored node → undo removes it
     doc.nodes[cloned.id] = cloned;
   }
@@ -1746,6 +1774,7 @@ $('#attach-file').addEventListener('change', e => {
 
 window.uploadAttachments = async function uploadAttachments(id, files) {
   if (state.readOnly || SHARE_TOKEN) { showToast('Attachments are unavailable on shared links'); return; }
+  id = contentIdOf(id); // attachments are content — a paste onto a mirror attaches to the target
   snapshot();
   recOld(id); // capture the node before the async upload mutates its files
   let added = 0;
