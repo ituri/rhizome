@@ -668,6 +668,7 @@ function mirrorHere(id) {
 
 // sets/replaces a date pill on an item (Move to Today / Tomorrow / Next Week)
 function setItemDate(id, iso) {
+  id = contentIdOf(id); // the date pill lives in the shared text
   commitActiveText();
   snapshot();
   const n = N(id);
@@ -703,7 +704,7 @@ function mirrorItemToDate(id, iso) {
 function opCount(id) {
   let items = 0, done = 0;
   const walk = x => { for (const c of kidsOf(x)) { items++; if (N(c).done) done++; walk(c); } };
-  walk(id);
+  walk(contentIdOf(id)); // a mirror counts its target's subtree
   showToast(items ? `${items} item${items === 1 ? '' : 's'} below this${done ? ` · ${done} complete` : ''}` : 'No items below this');
 }
 
@@ -712,7 +713,7 @@ function setSubtreeCollapsed(id, collapsed) {
   if (state.readOnly) return;
   commitActiveText();
   snapshot();
-  for (const x of subtreeOf(id)) if (hasKids(x)) N(x).collapsed = collapsed;
+  for (const x of subtreeOf(contentIdOf(id))) if (hasKids(x)) N(x).collapsed = collapsed;
   if (collapsed) N(id).collapsed = false; // keep the item itself open so the effect is visible
   touch(id);
   renderPage();
@@ -745,6 +746,7 @@ function exportNode(id, format) {
 }
 
 function exportNodePop(anchor, id) {
+  id = contentIdOf(id); // exporting a mirror exports the shared content + subtree
   openPopover(anchor, pop => {
     const t = document.createElement('div');
     t.className = 'pop-title';
@@ -1062,6 +1064,7 @@ linkOverlay.addEventListener('mousedown', e => { if (e.target === linkOverlay) l
 /* ---------------- G. comments ---------------- */
 
 window.showComments = function showComments(anchor, id) {
+  id = contentIdOf(id); // comments are content — shared by every instance
   const pop = openPopover(anchor, p => {
     p.classList.add('comments-panel');
     const title = document.createElement('div');
@@ -1728,7 +1731,7 @@ function showSharePop(anchor, id) {
 let attachTargetId = null;
 
 function attachTo(id) {
-  attachTargetId = id;
+  attachTargetId = contentIdOf(id); // attachments are content — shared by every instance
   $('#attach-file').click();
 }
 
@@ -1840,23 +1843,24 @@ function askAI(id) {
 /* ---------------- O. item menu ---------------- */
 
 window.showItemMenu = function showItemMenu(anchor, id) {
-  const n = N(id);
-  if (isMirror(id)) {
+  const cid = contentIdOf(id);   // mirrors get the FULL menu — content actions hit the target
+  const n = N(cid);
+  if (isMirror(id) && !mirrorTarget(id)) {
+    // broken mirror (original gone, nothing promoted — e.g. restored from an old trash)
     openPopover(anchor, pop => {
-      const t = mirrorTarget(id);
-      if (t) pop.append(menuItem('Open original', '◇', () => zoomTo(t)));
       pop.append(menuItem('Delete mirror', '✕', () => opDelete(id), { danger: true }));
     });
     return;
   }
   openPopover(anchor, pop => {
+    if (isMirror(id)) pop.append(menuItem('Open original', '◈', () => zoomTo(cid)));
     if (!state.readOnly) {
       pop.append(
         menuItem(n.done ? 'Mark incomplete' : 'Complete', '✓', () => opToggleDone(id), { hint: 'Ctrl+Enter' }),
         menuItem(n.note != null ? 'Edit note' : 'Add note', '≡', () => opAddNote({ id, field: 'text' }), { hint: 'Shift+Enter' }),
       );
     }
-    pop.append(menuItem('Zoom in', '◎', () => zoomTo(id), { hint: 'Alt+→' }));
+    pop.append(menuItem('Zoom in', '◎', () => zoomTo(cid), { hint: 'Alt+→' }));
     if (!state.readOnly) {
       // turn into…
       const title = document.createElement('div');
@@ -1870,7 +1874,7 @@ window.showItemMenu = function showItemMenu(anchor, id) {
         const b = document.createElement('button');
         b.textContent = label;
         b.title = fmt;
-        if (fmtOf(id) === fmt) b.classList.add('active');
+        if (fmtOf(cid) === fmt) b.classList.add('active');
         b.addEventListener('click', () => { closeAllPopovers(); opSetFormat(id, fmt); });
         seg.append(b);
       }
@@ -1896,12 +1900,12 @@ window.showItemMenu = function showItemMenu(anchor, id) {
           window.showComments(it?.querySelector(':scope > .row') || anchor, id);
         }),
         menuItem('Attach file', '📎', () => attachTo(id)),
-        menuItem('Save as template', '🧩', () => saveAsTemplate(id)),
+        menuItem('Save as template', '🧩', () => saveAsTemplate(cid)),
         menuItem('Insert template…', '🧩', () => insertTemplatePop(anchor, { id, field: 'text' })),
         menuItem('Count items', '#', () => opCount(id)),
         menuItem('Export…', '⬇', () => exportNodePop(anchor, id)),
       );
-      if (hasKids(id)) pop.append(
+      if (hasKids(cid)) pop.append(
         menuItem('Sort A → Z', '↓', () => opSort(id, 1)),
         menuItem('Sort Z → A', '↑', () => opSort(id, -1)),
         menuItem('Expand all', '▾', () => setSubtreeCollapsed(id, false)),
@@ -1919,13 +1923,13 @@ window.showItemMenu = function showItemMenu(anchor, id) {
       }));
     }
     pop.append(
-      menuItem('Present', '▶', () => { zoomTo(id); setTimeout(() => startPresent(id), 100); }),
+      menuItem('Present', '▶', () => { zoomTo(cid); setTimeout(() => startPresent(cid), 100); }),
       menuItem('Copy link', '🔗', async () => {
-        await navigator.clipboard?.writeText(location.origin + location.pathname + '#/n/' + id);
+        await navigator.clipboard?.writeText(location.origin + location.pathname + '#/n/' + cid);
         showToast('Link copied');
       }, { hint: 'Alt+Shift+L' }),
       menuItem('Copy as text', '📄', async () => {
-        await navigator.clipboard?.writeText(subtreeToText(id, 0));
+        await navigator.clipboard?.writeText(subtreeToText(cid, 0));
         showToast('Copied as indented text');
       }),
     );
@@ -1935,7 +1939,7 @@ window.showItemMenu = function showItemMenu(anchor, id) {
         menuItem('Delete', '✕', () => opDelete(id), { hint: 'Ctrl+Shift+⌫', danger: true }),
       );
     }
-    const tnode = N(id);
+    const tnode = N(cid);
     const ts = v => v ? new Date(v).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—';
     const foot = document.createElement('div');
     foot.className = 'pop-title pop-foot';

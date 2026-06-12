@@ -201,10 +201,12 @@ const focusByText = text => `(() => {
   await sleep(300);
   const mirrorInfo = await page.evaluate(() => {
     const m = document.querySelector('.item.is-mirror');
-    return m ? { text: m.querySelector('.content').textContent, badge: !!m.querySelector('.mirror-badge') } : null;
+    if (!m) return null;
+    const orig = document.querySelector(`.item[data-id="${m.dataset.mirror}"]`);
+    return { text: m.querySelector('.content').textContent, diamonds: !!orig && orig.classList.contains('mirrored') };
   });
-  assert(mirrorInfo && mirrorInfo.text.includes('My Heading') && mirrorInfo.badge,
-    'Alt+Shift+M creates a live mirror showing original text');
+  assert(mirrorInfo && mirrorInfo.text.includes('My Heading') && mirrorInfo.diamonds,
+    'Alt+Shift+M creates a live mirror showing original text (diamond on both instances)');
   // mirror stays in sync when original edited
   await page.evaluate(focusByText('My Heading'));
   await page.keyboard.press('End');

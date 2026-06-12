@@ -1621,27 +1621,21 @@ time[datetime].today { color: oklch(0.5 0.14 150); background: oklch(0.55 0.14 1
 }
 .comment-input-row textarea:focus { border-color: var(--accent); }
 
-/* ---------------- mirrors ---------------- */
+/* ---------------- mirrors ----------------
+   Workflowy semantics: every instance of a mirrored item — the original included —
+   shows the diamond bullet; it reverts to a circle once only one instance remains.
+   Mirror rows are otherwise styled (and behave) exactly like normal rows. */
 
-.item.is-mirror > .row > .bullet .dot {
+.item.is-mirror > .row > .bullet .dot,
+.item.mirrored > .row > .bullet .dot {
   background: none;
   border: 1.7px solid var(--mention);
   width: 8px; height: 8px;
   transform: rotate(45deg);
   border-radius: 2px;
 }
-.item.is-mirror > .row > .content { color: var(--ink-soft); cursor: pointer; }
-.mirror-badge {
-  font-size: 10px;
-  color: var(--mention);
-  background: var(--mention-soft);
-  border-radius: 6px;
-  padding: 1px 6px;
-  margin-left: 7px;
-  vertical-align: 1.5px;
-  white-space: nowrap;
-}
 .item.is-mirror.broken > .row > .content { color: var(--ink-faint); font-style: italic; }
+.item.is-mirror.looped > .row > .content { color: var(--ink-faint); font-style: italic; }
 
 /* ---------------- backlinks ---------------- */
 
