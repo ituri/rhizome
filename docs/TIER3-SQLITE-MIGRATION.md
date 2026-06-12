@@ -376,11 +376,13 @@ Nothing in Phase 2+ ships until 1–4 are green across thousands of seeds.
 | **Phase 1** — SQLite persistence (incremental rows, FTS5), wire-compatible | **done, shipped** | `db.js`, `tests/test-db.js`; all e2e suites green on the SQLite backend |
 | **Phase 2 core** — convergent op-merge engine (HLC + timestamp-ordered replay + cycle-skip + idempotency) | **done, proven** | `ops.js`, `tests/test-converge.js`: byte-identical convergence + zero cycles across 2500 seeds × 400 ops × 4 replicas |
 | **Phase 2 integration** — `POST /api/ops` + SSE op broadcast (server), `opsdoc.js` field-LWW + cycle-skip; client HLC + id-stable diff + op delta-sync + remote-op apply | **done, tested** | `opsdoc.js`, `server.js`; `tests/test-ops-server.js` (engine-equivalence, LWW, cycle-skip, idempotency, round-trip), `tests/test-opsync.js` (two browsers converge via ops) |
-| **Phase 3** — FTS5-backed quick-jump for large docs | **done** | `tests/test-search.js` |
+| **Phase 3** — FTS5-backed search for large docs (quick-jump **and** the in-tree filter bar) | **done** | `tests/test-search.js` |
 | **Phase 3** — virtualized render | **deferred** | conflicts with the e2e suite's "every visible item is in the DOM" assumption and is explicitly out-of-scope in FEATURES; a standalone effort |
 | **Phase 4** — op delta-sync is the **default** save path | **done** | full e2e suite green with `settings.opSync` default-on |
 | **Phase 4** — op-based **trash** (delete/restore/purge as ops) → PUT retired for normal operation | **done** | `tests/test-optrash.js`: two clients build an identical trash entry (same `ts`), restore converges, trees byte-identical |
 | **Phase 4** — op-log undo (retire `structuredClone` snapshots) | **done, proven** | `tests/test-undo.js`: per-op + multi-level (undo-all→initial, redo-all→final) fuzz across 60×40 ops. Per-edit cost 64.8 ms → 0.1 ms at 50k nodes |
+| **Perf** — O(change) server persistence for op batches (`db.applyOps`: write touched rows, never a whole-doc re-flatten) | **done, measured** | `db.js`, `tests/test-db.js` round-trip; **247 ms → 0.2 ms** per save at 100k |
+| **Perf** — FTS-backed in-tree search bar (FTS candidate set, full operator predicate over candidates) | **done, measured** | `tests/test-search.js`; ~2 ms FTS at 100k vs an O(total) per-render walk |
 
 **Topology simplification that made integration tractable.** The decentralized engine
 (`ops.js`) needs full timestamp-ordered replay to converge. But Tendril has a single
@@ -417,6 +419,23 @@ primitives + the field-edit sites. Measured per-edit cost at 50k nodes: **64.8 m
 random op sequences verified both per-op (apply→undo→redo) and multi-level (undo
 *everything* → initial state, redo everything → final) — the multi-level check catches any
 op that mutates without journaling.
+
+**Closing the last two server-side O(n) paths.** Two costs outlived the op cutover, both
+now O(change). (1) **Persistence** — `commitOps` re-flattened and re-stringified the *whole*
+doc to diff it on every batch (≈247 ms at 100k, head-of-line blocking other clients).
+`db.applyOps` instead writes only the rows the batch touched, deriving the dirty set from the
+very ops just replayed — so it can't drift from the mutation (**247 ms → 0.2 ms** per save).
+Sparse `ord`s left by deletes/moves-out are harmless (loadDoc sorts children by `ord`); any
+parent that gains or reorders a child is renumbered in full, so duplicate ords never arise;
+the shadow is updated only *after* COMMIT; any failure falls back to a full reconcile; and an
+hourly pre-backup `sync()` re-canonicalises regardless — disk can never silently diverge from
+memory. (2) **In-tree search** — the filter bar walked every node *per render* (`renderPage`
+calls `computeSearch` every time). For large docs the plain-text terms now seed an FTS5
+candidate set (~2 ms at 100k, cached per query) and the full operator engine
+(`is:`/`has:`/`date:`/`>`/`OR`/negation) runs over those candidates; only text matching takes
+FTS token-prefix semantics — the same trade the quick-jump already makes above its threshold.
+Shares and offline keep the exact client-side walk. Proven by `tests/test-db.js` (applyOps
+round-trip + FTS index), `tests/test-ops-server.js`, and `tests/test-search.js`.
 
 **Nothing left in scope.** The only items not done are the two explicitly out-of-scope
 performance options: **virtualized rendering** (incompatible with the e2e suite's

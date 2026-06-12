@@ -199,20 +199,38 @@ try {
   if (entries.length) lastBackupAt = fs.statSync(path.join(BACKUP_DIR, entries[entries.length - 1])).mtimeMs;
 } catch { /* ignore */ }
 
-function persist() {
+function maybeBackup() {
+  const now = Date.now();
+  if (now - lastBackupAt <= BACKUP_EVERY_MS) return;
+  lastBackupAt = now;
+  // a full reconcile before the snapshot: backups are always canonical, and any drift the
+  // O(change) op path could have left (sparse ords, a mis-derived row) self-heals hourly.
+  try { db.sync(store.doc, store.version); } catch (e) { console.error('pre-backup resync failed:', e); }
   try {
-    db.sync(store.doc, store.version);           // incremental: only changed rows
-    const now = Date.now();
-    if (now - lastBackupAt > BACKUP_EVERY_MS) {
-      lastBackupAt = now;
-      const stamp = new Date(now).toISOString().replace(/[:.]/g, '-');
-      db.backup(path.join(BACKUP_DIR, `outline-${stamp}.db`));
-      const all = fs.readdirSync(BACKUP_DIR).filter(f => f.endsWith('.db')).sort();
-      for (const stale of all.slice(0, Math.max(0, all.length - BACKUP_KEEP))) {
-        try { fs.unlinkSync(path.join(BACKUP_DIR, stale)); } catch { /* ignore */ }
-      }
+    const stamp = new Date(now).toISOString().replace(/[:.]/g, '-');
+    db.backup(path.join(BACKUP_DIR, `outline-${stamp}.db`));
+    const all = fs.readdirSync(BACKUP_DIR).filter(f => f.endsWith('.db')).sort();
+    for (const stale of all.slice(0, Math.max(0, all.length - BACKUP_KEEP))) {
+      try { fs.unlinkSync(path.join(BACKUP_DIR, stale)); } catch { /* ignore */ }
     }
-  } catch (err) { console.error('persist failed:', err); }
+  } catch (e) { console.error('backup failed:', e); }
+}
+
+// whole-doc path (PUT, share merge, capture, v1 API): diff the full doc against the shadow
+function persist() {
+  try { db.sync(store.doc, store.version); maybeBackup(); }
+  catch (err) { console.error('persist failed:', err); }
+}
+
+// Route B hot path: persist only the rows the op batch touched (O(change)). If anything goes
+// wrong, fall back to a full reconcile so disk can never silently diverge from memory — worst
+// case is one slow save, never a corrupt one.
+function persistOps(ops) {
+  try { db.applyOps(store.doc, store.version, ops); maybeBackup(); }
+  catch (err) {
+    console.error('persistOps failed — falling back to full resync:', err);
+    try { db.sync(store.doc, store.version); } catch (e2) { console.error('full resync failed:', e2); }
+  }
 }
 
 /* ---------- live sync (SSE) ---------- */
@@ -256,7 +274,7 @@ function markSeen(id) {
 function commitOps(ops, origin) {
   store = { version: store.version + 1, doc: store.doc };
   for (const op of ops) markSeen(op.id);
-  persist();
+  persistOps(ops);                                // O(change) incremental write, not an O(doc) re-flatten
   broadcast({ version: store.version, ops, origin });
   return store.version;
 }

@@ -81,5 +81,49 @@ const tmp = () => path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'tendril-db-')
   s.close();
 }
 
+// 5. applyOps incremental persistence (Route B hot path): apply an insert/update/move/delete
+//    batch, persist only the touched rows, and prove a fresh reopen is identical to memory
+{
+  const { applyOpsToDoc } = require('../opsdoc');
+  const file = tmp();
+  const { doc } = makeDoc(800);
+  const s = new Store(file);
+  s.importDoc(doc, 1);
+  // a server-style trashFn that records a (root, ts, nodes) entry like pushTrash, then detaches
+  const trashFn = (d, id, parent, ts) => {
+    const ids = []; const stack = [id];
+    while (stack.length) { const x = stack.pop(); const n = d.nodes[x]; if (!n) continue; ids.push(x); stack.push(...(n.children || [])); }
+    const nodes = {}; for (const x of ids) nodes[x] = d.nodes[x];
+    (d.trash || (d.trash = [])).unshift({ ts, parent, root: id, nodes });
+    if (parent && d.nodes[parent]) { const a = d.nodes[parent].children; const i = a.indexOf(id); if (i >= 0) a.splice(i, 1); }
+    for (const x of ids) delete d.nodes[x];
+  };
+  const someParent = doc.nodes.root.children[0];
+  const moveTarget = doc.nodes.root.children[1];
+  const victim = Object.keys(doc.nodes).find(k => k !== 'root' && k !== someParent && k !== moveTarget && (doc.nodes[k].children || []).length === 0);
+  ok(!!someParent && !!moveTarget && someParent !== moveTarget && !!victim, 'fixture has two top-level parents and a deletable leaf');
+  const ops = [
+    { id: 'o1', kind: 'insert', node: 'new1', parent: someParent, ord: 0, hlc: 'h1', data: { id: 'new1', text: 'inserted alpha', note: null, done: false, collapsed: false } },
+    { id: 'o2', kind: 'update', node: moveTarget, patch: { text: 'updated beta' }, hlc: 'h2' },
+    { id: 'o3', kind: 'move', node: 'new1', parent: moveTarget, ord: 0, hlc: 'h3' },
+    { id: 'o4', kind: 'delete', node: victim, ts: 1717171717, hlc: 'h4' },
+  ];
+  const applied = applyOpsToDoc(doc, ops, trashFn);
+  ok(applied.length === 4, `all four ops applied (${applied.length})`);
+  s.applyOps(doc, 2, applied);
+  const s2 = new Store(file); // reopen to prove it persisted, not just cached in the shadow
+  const loaded = s2.loadDoc();
+  ok(loaded.version === 2, 'applyOps bumped the persisted version');
+  try { assert.deepStrictEqual(loaded.doc.nodes, doc.nodes); ok(true, 'incremental rows reopen deep-equal to the in-memory doc (800 nodes)'); }
+  catch (e) { ok(false, 'applyOps round-trip deep-equal: ' + e.message.split('\n')[0]); }
+  ok(loaded.doc.nodes.new1 && loaded.doc.nodes[moveTarget].children.includes('new1'), 'inserted-then-moved node landed under its new parent');
+  ok(loaded.doc.nodes[moveTarget].text === 'updated beta', 'field update persisted');
+  ok(!loaded.doc.nodes[victim], 'deleted leaf gone');
+  ok(s2.fsck().length === 0, 'fsck clean after applyOps (no dangling/cycle/FTS drift)');
+  ok(s2.search('alpha').includes('new1'), 'FTS index updated by applyOps (inserted node searchable)');
+  ok(s2.search('beta').includes(moveTarget), 'FTS index updated by applyOps (updated text searchable)');
+  s.close(); s2.close();
+}
+
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nDB TESTS PASSED');
 process.exit(failures ? 1 : 0);

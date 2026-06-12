@@ -53,6 +53,30 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   await sleep(300);
   assert(await page.evaluate(() => window.__ftsCalls === 0), 'small-doc quick-jump stays local (no FTS call)');
 
+  // ── in-tree search bar: large docs filter via the FTS index, not an O(n) per-render walk ──
+  await page.keyboard.press('Escape');                       // ensure quick-jump is closed
+  await page.evaluate(() => { window.__ftsCalls = 0; treeFtsThreshold = 5; if (searchActive()) setSearch(''); });
+  await page.focus('#search');
+  await page.type('#search', 'quokkazzz');
+  await sleep(600);                                          // 160ms debounce + FTS round-trip + re-render
+  const tree = await page.evaluate(() => ({
+    fts: window.__ftsCalls,
+    cacheOk: !!(state.ftsCandidates && state.ftsCandidates.ok && Array.isArray(state.ftsCandidates.ids)),
+    count: state.matchCount,
+    hasMarker: !!(state.matchSet && [...state.matchSet].some(id => /unique marker/.test(plainOf(N(id).text)))),
+    rendered: $$('.tree .item').length,
+    total: Object.keys(doc.nodes).length,
+  }));
+  assert(tree.fts > 0, 'large-doc in-tree search queried the FTS endpoint');
+  assert(tree.cacheOk, 'FTS candidate set was fetched and cached (candidate path, not the walk fallback)');
+  assert(tree.hasMarker && tree.count >= 1, `the unique marker matched via FTS candidates (${tree.count} match)`);
+  assert(tree.rendered < tree.total, `non-matching nodes were filtered out of the tree (${tree.rendered} shown of ${tree.total})`);
+  // operators still work over the FTS candidate set: -<term> excludes
+  await page.evaluate(() => setSearch('quokkazzz -nonexistentword'));
+  await sleep(300);
+  assert(await page.evaluate(() => state.matchCount >= 1), 'negation operator still applies over FTS candidates');
+  await page.evaluate(() => setSearch(''));
+
   await browser.close();
   console.log(failures ? `\n${failures} FAILURE(S)` : '\nSEARCH TESTS PASSED');
   process.exit(failures ? 1 : 0);

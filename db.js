@@ -157,6 +157,86 @@ class Store {
     this.shadow = nextKey;
   }
 
+  // Fast incremental persistence for an already-applied op batch (Route B hot path): write
+  // only the rows the ops touched — O(change), not O(doc). The dirty set is derived from the
+  // very ops the server just replayed into `doc`, so it cannot drift from the mutation.
+  //
+  // ord numbers may be left sparse by deletes / moves-out, which is harmless: loadDoc orders
+  // a parent's children by ord and a gap still sorts correctly. Any parent that gains or
+  // reorders a child is renumbered in full, so duplicate ords never arise. The shadow diff
+  // means a touched-but-unchanged row is still skipped, so writes match what sync() would do;
+  // only the O(doc) re-flatten is avoided. sync() (run before every hourly backup) re-derives
+  // canonical rows and would heal any drift regardless — incremental is never the last word.
+  applyOps(doc, version, ops) {
+    // A cold DB has no persisted forest for the incremental write to build on (root itself is
+    // never a child, so it would never be written). Establish the whole forest once, then every
+    // later batch goes incremental.
+    if (this.shadow.size === 0) { this.sync(doc, version); return; }
+
+    const reparent = new Set();   // parents whose child list grew or reordered → renumber fully
+    const dataOnly = new Set();   // nodes whose data changed but whose position did not
+    const removed = new Set();    // rows to delete (whole deleted subtrees)
+    let trashTouched = false;
+    for (const op of ops) {
+      switch (op && op.kind) {
+        case 'insert': reparent.add(doc.nodes[op.parent] ? op.parent : 'root'); dataOnly.add(op.node); break;
+        case 'update': dataOnly.add(op.node); break;
+        case 'move':   reparent.add(doc.nodes[op.parent] ? op.parent : 'root'); break;
+        case 'delete': {
+          trashTouched = true;
+          // the delete just created a trash entry keyed by (root, ts); its node map is the
+          // exact set of rows to remove (the whole subtree)
+          const e = (doc.trash || []).find(t => t.root === op.node && t.ts === op.ts);
+          if (e && e.nodes) for (const id of Object.keys(e.nodes)) removed.add(id);
+          else removed.add(op.node);
+          break;
+        }
+        case 'untrash': trashTouched = true; break;   // structurally a no-op; only the trash blob changed
+        default: break;
+      }
+    }
+
+    const rows = [];              // [id, parent_id, ord, data] to upsert
+    const seen = new Set();
+    for (const pid of reparent) {
+      const p = doc.nodes[pid];
+      if (!p) continue;           // parent itself was deleted in this batch → its rows are in `removed`
+      const kids = p.children || [];
+      for (let i = 0; i < kids.length; i++) {
+        const id = kids[i], c = doc.nodes[id];
+        if (!c || removed.has(id)) continue;
+        const { children, ...rest } = c;
+        rows.push([id, pid, i, JSON.stringify(rest)]);
+        seen.add(id);
+      }
+    }
+    for (const id of dataOnly) {
+      if (seen.has(id) || removed.has(id)) continue;   // already rewritten by a reparent pass, or gone
+      const c = doc.nodes[id];
+      if (!c) continue;
+      const { children, ...rest } = c;
+      const prev = this.shadow.get(id);                // a data-only edit keeps the row's position
+      let pid = null, ord = 0;
+      if (prev) { const a = prev.indexOf('|'), b = prev.indexOf('|', a + 1); pid = prev.slice(0, a); ord = +prev.slice(a + 1, b); if (pid === 'null') pid = null; }
+      rows.push([id, pid, ord, JSON.stringify(rest)]);
+    }
+
+    const wrote = [];   // shadow updates applied only AFTER a successful COMMIT, so a rolled-back
+    const erased = [];  // tx can never leave the shadow claiming rows the DB doesn't actually hold
+    this.tx(() => {
+      this.db.exec('PRAGMA defer_foreign_keys = ON');  // parents/children in one batch checked at COMMIT
+      for (const [id, pid, ord, data] of rows) {
+        const key = `${pid}|${ord}|${data}`;
+        if (this.shadow.get(id) !== key) { this._upsert.run(id, pid, ord, data); wrote.push([id, key]); }
+      }
+      for (const id of removed) { if (this.shadow.has(id)) { this._del.run(id); erased.push(id); } }
+      this.meta('version', String(version));
+      if (trashTouched) this.meta('trash', JSON.stringify(doc.trash || []));
+    });
+    for (const [id, key] of wrote) this.shadow.set(id, key);
+    for (const id of erased) this.shadow.delete(id);
+  }
+
   // FTS5 search → ordered node ids (server-side; Phase 3 wires the client to it)
   search(query, limit = 200) {
     const q = String(query || '').trim();

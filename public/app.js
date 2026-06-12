@@ -25,6 +25,7 @@ const state = {
   openSet: null,
   matchCount: 0,
   query: null,                   // parsed search query
+  ftsCandidates: null,           // {q, ids, ok, pending} — cached FTS candidate set for large-doc search
   readOnly: false,
   shareMode: null,               // 'view' | 'edit' | null
   aiEnabled: false,
@@ -1373,44 +1374,81 @@ function nodeMatchesSegment(id, seg) {
   return true;
 }
 
+// Build an FTS query for a segment: the plain positive (non-negated, single-term) text
+// conditions, space-joined. The /api/search endpoint prefix-wraps and ANDs them, yielding a
+// candidate superset the full predicate below then filters exactly. Returns '' when nothing
+// can bound the set (pure is:/has:/date:, OR-of-text, negation-only) → caller does a full walk.
+function ftsQueryForSegment(seg) {
+  const words = [];
+  for (const group of seg) {
+    if (group.or.length !== 1) continue;           // an OR alternative can't bound the candidates
+    const c = group.or[0];
+    if (c.kind === 'text' && !c.neg && c.value) words.push(c.value);
+  }
+  return words.join(' ');
+}
+
+// the ancestor-chain (`a > b > c`) constraint — shared by the full walk and the FTS path
+function passesAncestorChain(id, ancestorSegs) {
+  if (!ancestorSegs.length) return true;
+  const chain = ancestorsOf(id).filter(a => a !== ROOT); // top-down
+  let ci = 0;
+  for (const segA of ancestorSegs) {
+    let found = false;
+    while (ci < chain.length) { if (nodeMatchesSegment(chain[ci], segA)) { found = true; ci++; break; } ci++; }
+    if (!found) return false;
+  }
+  return true;
+}
+
+let treeFtsThreshold = 4000;   // above this the in-tree search bar uses the SQLite FTS index
+let searchSeq = 0;             // guards against a stale FTS response clobbering a newer query
+
 function computeSearch() {
-  state.matchSet = null;
-  state.openSet = null;
-  state.matchCount = 0;
-  state.query = null;
-  if (!searchActive()) return;
+  if (!searchActive()) { state.matchSet = null; state.openSet = null; state.matchCount = 0; state.query = null; state.ftsCandidates = null; return; }
   state.query = parseQuery(state.search);
   const segs = state.query.segments.filter(s => s.length);
-  if (!segs.length) { state.query = null; return; }
+  if (!segs.length) { state.matchSet = null; state.openSet = null; state.matchCount = 0; state.query = null; return; }
   const lastSeg = segs[segs.length - 1];
   const ancestorSegs = segs.slice(0, -1);
+
+  // Large docs: let SQLite FTS5 produce the candidate set (O(matches)) instead of walking
+  // every node on every render. The full operator predicate still runs over those candidates,
+  // so is:/has:/date:/negation/ancestor-chains all keep working; only plain-text matching
+  // takes FTS token-prefix semantics (same trade the quick-jump already makes above its
+  // threshold). Shares and offline keep the exact client-side walk.
+  const ftsQ = (!SHARE_TOKEN && Object.keys(doc.nodes).length > treeFtsThreshold) ? ftsQueryForSegment(lastSeg) : '';
+  let candidates = null;        // null → walk the whole zoom subtree
+  if (ftsQ) {
+    const cache = state.ftsCandidates;
+    if (!cache || cache.q !== ftsQ) {
+      // fetch once per distinct FTS query; re-render when it lands. The current matchSet stays
+      // on screen meanwhile — with the 160ms debounce and a local query that's a few ms.
+      const seq = ++searchSeq;
+      state.ftsCandidates = { q: ftsQ, ids: null, ok: false, pending: true };
+      fetch('/api/search?q=' + encodeURIComponent(ftsQ))
+        .then(r => r.json())
+        .then(({ ids }) => { if (seq === searchSeq) { state.ftsCandidates = { q: ftsQ, ids: ids || [], ok: true, pending: false }; renderPage(); } })
+        .catch(() => { if (seq === searchSeq) { state.ftsCandidates = { q: ftsQ, ids: null, ok: false, pending: false }; renderPage(); } });
+      return;                                    // keep prior results until candidates arrive
+    }
+    if (cache.pending) return;                   // in flight → leave the prior results up
+    if (cache.ok) candidates = cache.ids;        // got them → evaluate over candidates
+    // cache.ok === false (offline / error) → candidates stays null → full-walk fallback
+  }
+
   const matches = new Set();
   const open = new Set();
-
-  const visit = id => {
-    const n = N(id);
-    if (id !== ROOT && id !== state.zoom) {
-      if (nodeMatchesSegment(id, lastSeg)) {
-        // ancestor segments must match, in order, walking down from the top
-        let ok = true;
-        if (ancestorSegs.length) {
-          const chain = ancestorsOf(id).filter(a => a !== ROOT);
-          let ci = 0;
-          for (const segA of ancestorSegs) {
-            let found = false;
-            while (ci < chain.length) {
-              if (nodeMatchesSegment(chain[ci], segA)) { found = true; ci++; break; }
-              ci++;
-            }
-            if (!found) { ok = false; break; }
-          }
-        }
-        if (ok) matches.add(id);
-      }
-    }
-    for (const c of n.children) visit(c);
+  const consider = id => {
+    if (id === ROOT || id === state.zoom) return;
+    if (nodeMatchesSegment(id, lastSeg) && passesAncestorChain(id, ancestorSegs)) matches.add(id);
   };
-  visit(state.zoom);
+  if (candidates) {
+    for (const id of candidates) if (N(id) && isAncestor(state.zoom, id)) consider(id); // scope to the zoom
+  } else {
+    const visit = id => { consider(id); for (const c of N(id).children) visit(c); };
+    visit(state.zoom);
+  }
   for (const id of matches) {
     let p = parentOf(id);
     while (p && p !== state.zoom && !open.has(p)) { open.add(p); p = parentOf(p); }
@@ -1425,8 +1463,7 @@ function setSearch(q, { fromInput = false, append = false } = {}) {
   state.search = q;
   if (!fromInput) searchEl.value = q;
   searchBoxEl.classList.toggle('has-query', q.length > 0);
-  computeSearch();
-  renderPage();
+  renderPage();   // → computeSearch(): for large docs this fetches FTS candidates, then re-renders
 }
 
 const searchDebounced = debounce(q => setSearch(q, { fromInput: true }), 160);
