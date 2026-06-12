@@ -394,6 +394,87 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   const intoCard = await page.evaluate(c => document.activeElement?.closest?.('.item')?.dataset.id === kidsOf(c)[0], colWithCards);
   assert(intoCard, 'ArrowDown from a column header lands on its first card');
 
+  // ── 19-21: fresh board for the ⋯ menu + column-hop nav ──
+  const nb = await page.evaluate(() => {
+    const b = makeNode('NavBoard', { format: 'board' });
+    insertAt('root', 0, b);
+    const ids = { b, cols: {}, cards: {} };
+    for (const name of ['X', 'Y', 'Z']) {
+      const c = makeNode(name);
+      insertAt(b, kidsOf(b).length, c);
+      ids.cols[name] = c;
+    }
+    for (const t of ['x1', 'x2']) { const k = makeNode(t); insertAt(ids.cols.X, kidsOf(ids.cols.X).length, k); ids.cards[t] = k; }
+    const y1 = makeNode('y1'); insertAt(ids.cols.Y, 0, y1); ids.cards.y1 = y1;
+    location.hash = '#/n/' + b;
+    return ids;
+  });
+  await sleep(400);
+
+  // 19. the ⋯ menu opens on a CARD (hover reveals it, click opens the item menu)
+  const cardBtn = await page.evaluate(ids => {
+    const row = document.querySelector(`.item[data-id="${ids.cards.x1}"] > .row`);
+    const r = row.getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  }, nb);
+  await page.mouse.move(cardBtn.x, cardBtn.y);   // hover the card row
+  await sleep(120);
+  ok = await page.evaluate(ids => {
+    const btn = document.querySelector(`.item[data-id="${ids.cards.x1}"] > .row .itemmenu-btn`);
+    if (!btn) return 'no button';
+    const cs = getComputedStyle(btn);
+    const gutter = getComputedStyle(btn.closest('.gutter'));
+    if (cs.opacity !== '1' || gutter.pointerEvents !== 'auto') return `not hover-revealed (opacity ${cs.opacity}, pe ${gutter.pointerEvents})`;
+    btn.click();
+    const pop = document.querySelector('.popover');
+    const labels = pop ? [...pop.querySelectorAll('button')].map(b => b.textContent) : [];
+    return labels.some(l => l.includes('Delete')) && labels.some(l => l.includes('Move to…')) || 'menu missing actions';
+  }, nb);
+  assert(ok === true, `kanban card: hover reveals the ⋯ menu and it opens with the item actions${ok === true ? '' : ' — ' + ok}`);
+  await page.keyboard.press('Escape');
+  await sleep(120);
+
+  // 20. the ⋯ menu opens on a COLUMN header and can delete the column
+  const colBefore = await page.evaluate(() => document.querySelectorAll('.board > .board-col').length);
+  await page.evaluate(ids => {
+    const btn = document.querySelector(`.item[data-id="${ids.cols.Z}"] > .row .itemmenu-btn`);
+    btn.click();
+    [...document.querySelectorAll('.popover button')].find(b => b.textContent.includes('Delete')).click();
+  }, nb);
+  await sleep(300);
+  const colAfter = await page.evaluate(ids => ({
+    cols: document.querySelectorAll('.board > .board-col').length,
+    gone: !doc.nodes[ids.cols.Z],
+    trashed: (doc.trash || []).some(t => t.root === ids.cols.Z),
+  }), nb);
+  assert(colAfter.cols === colBefore - 1 && colAfter.gone && colAfter.trashed,
+    `column deleted via its ⋯ menu (${colBefore}→${colAfter.cols}, trashed=${colAfter.trashed})`);
+
+  // 21. ←/→ at the text edge hop between columns (same card index)
+  await page.evaluate(ids => focusItem(ids.cards.x1, 'text', 'end'), nb);
+  await sleep(80);
+  await page.keyboard.press('ArrowRight');
+  await sleep(120);
+  let hop = await page.evaluate(ids => document.activeElement?.closest('.item')?.dataset.id === ids.cards.y1, nb);
+  assert(hop, 'ArrowRight at the end of a card hops to the adjacent column');
+  await page.evaluate(() => setCaretOffset(document.activeElement, 0));
+  await page.keyboard.press('ArrowLeft');
+  await sleep(120);
+  hop = await page.evaluate(ids => document.activeElement?.closest('.item')?.dataset.id === ids.cards.x1, nb);
+  assert(hop, 'ArrowLeft at the start of a card hops back to the previous column');
+  // hopping into a collapsed column expands it
+  await page.evaluate(ids => {
+    const c = makeNode('W'); insertAt(ids.b, kidsOf(ids.b).length, c); N(c).collapsed = true;
+    window.__wcol = c; renderPage();
+    focusItem(ids.cards.y1, 'text', 'end');
+  }, nb);
+  await sleep(120);
+  await page.keyboard.press('ArrowRight');
+  await sleep(200);
+  hop = await page.evaluate(() => N(window.__wcol).collapsed === false &&
+    document.activeElement?.closest('.item')?.dataset.id === window.__wcol);
+  assert(hop, 'ArrowRight into a collapsed column expands and enters it');
+
   await browser.close();
   console.log(failures ? `\n${failures} FAILURE(S)` : '\nBOARD TESTS PASSED');
   process.exit(failures ? 1 : 0);

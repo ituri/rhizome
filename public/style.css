@@ -1461,7 +1461,21 @@ time[datetime].today { color: oklch(0.5 0.14 150); background: oklch(0.55 0.14 1
   margin-bottom: 7px;
   padding: 3px 6px;
 }
-.board-col .gutter { display: none; }
+/* boards have no left margin to hang the gutter in — pin just the ⋯ menu to the row's
+   top-right corner instead (hover-revealed; pointer-events gated so the invisible
+   button never steals clicks from the card text) */
+.board-col .gutter {
+  position: absolute;
+  right: 0;
+  top: 1px;
+  width: auto;
+  margin-left: 0;
+  padding-top: 0;
+  pointer-events: none;
+}
+.board-col .gutter .toggle { display: none; }
+.board-col .gutter .itemmenu-btn { background: var(--bg-raised); }
+.board-col .row:hover .gutter { pointer-events: auto; }
 .board-col .row { margin-left: 0; }
 .board-col > .item > .children-anim > .children .children {
   border-left: 1px solid var(--line-soft);

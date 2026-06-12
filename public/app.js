@@ -671,6 +671,24 @@ function focusNavTarget(target, edge, x) {
   target.scrollIntoView({ block: 'nearest' });
 }
 
+// In a board, ←/→ at the text edge should hop to the neighbouring COLUMN (same card
+// index), not to the previous/next stop of the same column — vertical arrows already
+// cover that. Returns the stop to land on, or null when not in a board / no neighbour.
+function boardHopTarget(el, dir) {
+  const colEl = el.closest('.board-col');
+  if (!colEl) return null;
+  const stops = c => [...c.querySelectorAll('.content, .note, .col-collapsed')]
+    .filter(x => x.offsetParent !== null && (x.isContentEditable || x.classList.contains('col-collapsed')));
+  let sib = colEl;
+  do { sib = dir < 0 ? sib.previousElementSibling : sib.nextElementSibling; }
+  while (sib && !sib.classList.contains('board-col'));
+  if (!sib) return null;
+  const theirs = stops(sib); // never empty: a column always has its title or its collapsed bar
+  if (!theirs.length) return null;
+  const idx = Math.max(0, stops(colEl).indexOf(el));
+  return theirs[Math.min(idx, theirs.length - 1)];
+}
+
 function editableCtx(el) {
   if (!el || !(el instanceof Element)) return null;
   el = el.closest?.('[contenteditable="true"]');
@@ -2918,10 +2936,18 @@ function onKeydown(e) {
     return;
   }
 
-  /* ----- horizontal hop ----- */
+  /* ----- horizontal hop (in a board: to the neighbouring column) ----- */
   if (e.key === 'ArrowLeft' && !mod && !e.altKey && !e.shiftKey) {
     const sel = getSelection();
     if (sel.rangeCount && sel.getRangeAt(0).collapsed && caretOffsetIn(el) === 0) {
+      const hop = boardHopTarget(el, -1);
+      if (hop) {
+        e.preventDefault();
+        if (hop.classList.contains('col-collapsed')) { focusNavTarget(hop, 'first', 0); return; }
+        setCaretOffset(hop, 'end');
+        hop.scrollIntoView({ block: 'nearest' });
+        return;
+      }
       const list = editables();
       const target = list[list.indexOf(el) - 1];
       if (target) { e.preventDefault(); setCaretOffset(target, 'end'); }
@@ -2931,6 +2957,14 @@ function onKeydown(e) {
   if (e.key === 'ArrowRight' && !mod && !e.altKey && !e.shiftKey) {
     const sel = getSelection();
     if (sel.rangeCount && sel.getRangeAt(0).collapsed && caretOffsetIn(el) === textLen(el)) {
+      const hop = boardHopTarget(el, 1);
+      if (hop) {
+        e.preventDefault();
+        if (hop.classList.contains('col-collapsed')) { focusNavTarget(hop, 'first', 0); return; }
+        setCaretOffset(hop, 0);
+        hop.scrollIntoView({ block: 'nearest' });
+        return;
+      }
       const list = editables();
       const target = list[list.indexOf(el) + 1];
       if (target) { e.preventDefault(); setCaretOffset(target, 0); }

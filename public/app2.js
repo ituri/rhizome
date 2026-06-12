@@ -256,6 +256,7 @@ function slashCommands(ctx) {
       { label: 'Move to Next Week', icon: '▦', fn: () => setItemDate(id, dateOffset(7)) },
       { label: 'Move to Date…', icon: '📅', fn: () => pickDate(nodeAnchor(id), iso => setItemDate(id, iso)) },
       { label: 'Mirror', icon: '◇', hint: 'Alt+Shift+M', fn: () => opMirror(id) },
+      { label: 'Mirror here…', icon: '◈', fn: () => mirrorHere(id) },
       { label: 'Mirror to…', icon: '◇', fn: () => openNodePicker('Mirror to…', t => mirrorItemTo(id, t), subtreeOf(id)) },
       { label: 'Mirror to Today', icon: '◇', fn: () => mirrorItemToDate(id, dateOffset(0)) },
       { label: 'Mirror to Date…', icon: '◇', fn: () => pickDate(nodeAnchor(id), iso => mirrorItemToDate(id, iso)) },
@@ -636,6 +637,33 @@ function mirrorItemTo(id, targetParent) {
   } else {
     showToast(where, { label: 'Show', fn: () => zoomTo(targetParent) });
   }
+}
+
+// Workflowy-style "Mirror here": pick any item and a live mirror of it appears at the
+// cursor — an empty bullet converts in place, anything else gains it as the next sibling.
+// (mirrorItemTo is the opposite direction: push a mirror of THIS item somewhere else.)
+function mirrorHere(id) {
+  openNodePicker('Mirror here…', picked => {
+    if (!N(picked) || !N(id)) return;
+    snapshot();
+    const target = isMirror(picked) ? (mirrorTarget(picked) || picked) : picked;
+    const n = N(id);
+    let mid = id;
+    if (!isMirror(id) && !plainOf(n.text).trim() && !kidsOf(id).length && !(n.note || '').trim()) {
+      recOld(id);
+      n.text = '';
+      n.mirror = target;
+      touch(id);
+    } else {
+      mid = makeNode('', { mirror: target });
+      insertAt(parentOf(id), kidsOf(parentOf(id)).indexOf(id) + 1, mid);
+    }
+    renderPage();
+    markDirty();
+    const el = elById.get(mid);
+    if (el) { el.classList.add('entering'); el.scrollIntoView({ block: 'nearest' }); }
+    showToast(`Mirror of “${crumbLabel(target)}”`);
+  }, [id]);
 }
 
 // sets/replaces a date pill on an item (Move to Today / Tomorrow / Next Week)
@@ -1856,7 +1884,8 @@ window.showItemMenu = function showItemMenu(anchor, id) {
         menuItem('Move to Date…', '📅', () => pickDate(anchor, iso => setItemDate(id, iso))),
         document.createElement('hr'),
         menuItem('Move to…', '→', () => openNodePicker('Move to…', t => moveItemTo(id, t), subtreeOf(id)), { hint: 'Alt+Ctrl+M' }),
-        menuItem('Mirror here', '◈', () => opMirror(id), { hint: 'Alt+Shift+M' }),
+        menuItem('Mirror', '◇', () => opMirror(id), { hint: 'Alt+Shift+M' }),
+        menuItem('Mirror here…', '◈', () => mirrorHere(id)),
         menuItem('Mirror to…', '◇', () => openNodePicker('Mirror to…', t => mirrorItemTo(id, t), subtreeOf(id))),
         menuItem('Mirror to Today', '◇', () => mirrorItemToDate(id, dateOffset(0))),
         menuItem('Mirror to Date…', '◇', () => pickDate(anchor, iso => mirrorItemToDate(id, iso))),

@@ -105,6 +105,46 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   }, tgt);
   assert(broken, 'deleting the original flips the mirror to the broken state');
 
+  // 7. "Mirror here…" on an EMPTY bullet converts it in place into a mirror of the pick
+  const emptyId = await page.evaluate(() => { const id = opNewAt(HOME, 0); renderPage(); mirrorHere(id); return id; });
+  await sleep(150);
+  await page.type('.np-input', 'Target');
+  await sleep(150);
+  await page.keyboard.press('Enter');
+  await sleep(300);
+  const here = await page.evaluate(({ emptyId, tgt }) => {
+    const item = document.querySelector(`.item[data-id="${emptyId}"]`);
+    return {
+      converted: N(emptyId)?.mirror === tgt,
+      inPlace: kidsOf(HOME)[0] === emptyId && kidsOf(HOME).filter(c => c === emptyId).length === 1,
+      shows: item ? item.querySelector(':scope > .row .content').textContent : '(none)',
+      isMirrorClass: item ? item.classList.contains('is-mirror') : false,
+    };
+  }, { emptyId, tgt });
+  assert(here.converted && here.inPlace, 'Mirror here on an empty bullet converts it in place (no extra node)');
+  assert(here.shows.includes('Target project') && here.isMirrorClass, `the bullet now reflects the picked item (${here.shows})`);
+
+  // 8. "Mirror here…" on a NON-empty bullet inserts the mirror as the next sibling
+  const fullId = await page.evaluate(() => {
+    const id = opNewAt(HOME, 0); N(id).text = 'keep me'; touch(id); renderPage(); mirrorHere(id); return id;
+  });
+  await sleep(150);
+  await page.type('.np-input', 'Target');
+  await sleep(150);
+  await page.keyboard.press('Enter');
+  await sleep(300);
+  const sib = await page.evaluate(({ fullId, tgt }) => {
+    const kids = kidsOf(HOME);
+    const next = kids[kids.indexOf(fullId) + 1];
+    return {
+      keptText: plainOf(N(fullId).text),
+      notConverted: !N(fullId).mirror,
+      siblingIsMirror: !!next && N(next).mirror === tgt,
+    };
+  }, { fullId, tgt });
+  assert(sib.keptText === 'keep me' && sib.notConverted, 'a non-empty bullet is left untouched');
+  assert(sib.siblingIsMirror, 'the mirror lands as its next sibling instead');
+
   await browser.close();
   console.log(failures ? `\n${failures} FAILURE(S)` : '\nMIRROR TESTS PASSED');
   process.exit(failures ? 1 : 0);
