@@ -62,6 +62,15 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   assert(inst.diamondMirror && inst.diamondOriginal, 'diamond bullet on the mirror AND the original');
   assert(inst.toastNamesTarget, 'toast names the destination');
 
+  // 2b. the sidebar shows the target's text for a mirror, never a "(mirror)" placeholder
+  const side = await page.evaluate(tgt => {
+    settings.sidebar = true; document.body.classList.add('with-sidebar');
+    sideOpen.add(tgt); window.renderSidebar?.();
+    const labels = [...document.querySelectorAll('#side-tree .side-item a')].map(a => a.textContent);
+    return { hasPlaceholder: labels.some(l => l.includes('(mirror)')), hasTargetText: labels.some(l => l.includes('Source task xkcd')) };
+  }, tgt);
+  assert(!side.hasPlaceholder && side.hasTargetText, "sidebar lists a mirror by its target's text, not a placeholder");
+
   // 3. the subtree is transcluded: the child renders under the mirror too (same data-id, twice)
   const trans = await page.evaluate(({ mid, child }) => ({
     copies: document.querySelectorAll(`.item[data-id="${child}"]`).length,

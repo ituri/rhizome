@@ -49,13 +49,14 @@ window.renderSidebar = function renderSidebar() {
   const build = (id, depth) => {
     const wrap = document.createDocumentFragment();
     for (const c of kidsOf(id)) {
-      const n = N(c);
+      const cid = contentIdOf(c); // a mirror lists its target's text and subtree
+      const n = N(cid);
       if (n.done && !settings.showCompleted) continue;
       const row = document.createElement('div');
       row.className = 'side-item';
-      if (hasKids(c)) row.classList.add('has-kids');
+      if (hasKids(cid)) row.classList.add('has-kids');
       if (sideOpen.has(c)) row.classList.add('open');
-      if (state.zoom === c) row.classList.add('current');
+      if (state.zoom === cid) row.classList.add('current');
       const tw = document.createElement('button');
       tw.className = 'side-twirl';
       tw.innerHTML = CHEVRON;
@@ -65,14 +66,14 @@ window.renderSidebar = function renderSidebar() {
         renderSidebar();
       });
       const a = document.createElement('a');
-      a.href = '#/n/' + c;
-      a.textContent = plainOf(n.text).trim() || (n.mirror ? '(mirror)' : 'Untitled');
+      a.href = '#/n/' + cid;
+      a.textContent = plainOf(n.text).trim() || 'Untitled';
       row.append(tw, a);
       wrap.append(row);
-      if (sideOpen.has(c) && hasKids(c) && depth < 12) {
+      if (sideOpen.has(c) && hasKids(cid) && depth < 12) {
         const kidsBox = document.createElement('div');
         kidsBox.className = 'side-kids';
-        kidsBox.append(build(c, depth + 1));
+        kidsBox.append(build(cid, depth + 1));
         wrap.append(kidsBox);
       }
     }
@@ -1212,9 +1213,10 @@ function buildSlideList(rootId) {
   const rootTitle = rootId === HOME && !SHARE_TOKEN ? 'Home' : plainOf(N(rootId).text).trim() || 'Untitled';
   list.push({ title: rootTitle, note: N(rootId).note, kids: kidsOf(rootId), overview: true });
   for (const c of kidsOf(rootId)) {
-    if (N(c).done && !settings.showCompleted) continue;
-    if (fmtOf(c) === 'divider') continue;
-    list.push({ title: plainOf(N(c).text).trim() || 'Untitled', note: N(c).note, kids: kidsOf(c) });
+    const cid = contentIdOf(c); // a mirror presents as its target
+    if (N(cid).done && !settings.showCompleted) continue;
+    if (fmtOf(cid) === 'divider') continue;
+    list.push({ title: plainOf(N(cid).text).trim() || 'Untitled', note: N(cid).note, kids: kidsOf(cid) });
   }
   return list;
 }
@@ -1234,12 +1236,13 @@ function renderSlide() {
   const buildUl = (ids, depth) => {
     const ul = document.createElement('ul');
     for (const id of ids) {
-      const n = N(id);
+      const cid = contentIdOf(id); // mirrors present their target's text and subtree
+      const n = N(cid);
       if (n.done && !settings.showCompleted) continue;
       const li = document.createElement('li');
       if (n.done) li.className = 'done';
-      li.textContent = plainOf(n.text).trim() || (n.mirror ? '(mirror)' : '');
-      if (depth < 2 && hasKids(id)) li.append(buildUl(kidsOf(id), depth + 1));
+      li.textContent = plainOf(n.text).trim();
+      if (depth < 2 && hasKids(cid)) li.append(buildUl(kidsOf(cid), depth + 1));
       ul.append(li);
     }
     return ul;

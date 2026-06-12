@@ -1813,8 +1813,8 @@ function buildBoardEl(boardId, zoomed) {
       const bar = document.createElement('button');
       bar.className = 'col-collapsed';
       bar.dataset.colToggle = col;
-      const cards = kidsOf(col).length;
-      bar.innerHTML = `<span class="cc-title">${escHtml(plainOf(N(col).text).trim() || 'Untitled')}</span>`
+      const cards = kidsOf(contentIdOf(col)).length;
+      bar.innerHTML = `<span class="cc-title">${escHtml(plainOf(N(contentIdOf(col)).text).trim() || 'Untitled')}</span>`
         + `<span class="cc-count">${cards} card${cards === 1 ? '' : 's'}</span>`
         + '<span class="cc-hint">Expand column</span>';
       colEl.append(bar);
@@ -3867,16 +3867,23 @@ $('#help-overlay').addEventListener('mousedown', e => { if (e.target.id === 'hel
 
 /* ---------------- 23. import / export ---------------- */
 
-function subtreeToText(id, depth) {
-  const n = N(id);
+// Text exporters follow mirrors (content + transcluded subtree). `stack` carries the
+// targets being transcluded up the recursion so a mirror loop exports once, not forever.
+function subtreeToText(id, depth, stack = []) {
+  const cid = contentIdOf(id);
+  const n = N(cid);
   let out = '  '.repeat(depth) + '- ' + plainOf(n.text) + (n.done ? ' ✓' : '') + '\n';
   if (n.note) out += n.note.split('\n').map(l => '  '.repeat(depth + 1) + l).join('\n') + '\n';
-  for (const c of n.children) out += subtreeToText(c, depth + 1);
+  if (cid === id || !stack.includes(cid)) {
+    const next = cid === id ? stack : [...stack, cid];
+    for (const c of n.children) out += subtreeToText(c, depth + 1, next);
+  }
   return out;
 }
 
-function subtreeToMarkdown(id, depth) {
-  const n = N(id);
+function subtreeToMarkdown(id, depth, stack = []) {
+  const cid = contentIdOf(id);
+  const n = N(cid);
   const fmt = n.format || 'bullet';
   const indent = '  '.repeat(depth);
   let line;
@@ -3890,17 +3897,23 @@ function subtreeToMarkdown(id, depth) {
   else line = `${indent}- ${text}${n.done ? ' ~~done~~' : ''}`;
   let out = line + '\n';
   if (n.note) out += n.note.split('\n').map(l => indent + '  ' + l).join('\n') + '\n';
-  for (const c of n.children) out += subtreeToMarkdown(c, depth + 1);
+  if (cid === id || !stack.includes(cid)) {
+    const next = cid === id ? stack : [...stack, cid];
+    for (const c of n.children) out += subtreeToMarkdown(c, depth + 1, next);
+  }
   return out;
 }
 
-function subtreeToOpml(id) {
-  const n = N(id);
+function subtreeToOpml(id, stack = []) {
+  const cid = contentIdOf(id);
+  const n = N(cid);
   const attrs = [`text="${escAttr(plainOf(n.text))}"`];
   if (n.note) attrs.push(`_note="${escAttr(n.note)}"`);
   if (n.done) attrs.push(`_complete="true"`);
-  if (!n.children.length) return `<outline ${attrs.join(' ')}/>`;
-  return `<outline ${attrs.join(' ')}>${n.children.map(subtreeToOpml).join('')}</outline>`;
+  const follow = cid === id || !stack.includes(cid);
+  if (!n.children.length || !follow) return `<outline ${attrs.join(' ')}/>`;
+  const next = cid === id ? stack : [...stack, cid];
+  return `<outline ${attrs.join(' ')}>${n.children.map(c => subtreeToOpml(c, next)).join('')}</outline>`;
 }
 
 function download(name, mime, content) {
