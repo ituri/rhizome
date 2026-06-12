@@ -626,7 +626,16 @@ function mirrorItemTo(id, targetParent) {
   insertAt(targetParent, kidsOf(targetParent).length, mid);
   renderPage();
   markDirty();
-  showToast('Mirror created');
+  // the mirror lands at the bottom of the target — show it, or say where it went
+  const el = elById.get(mid);
+  const where = `Mirror created in “${crumbLabel(targetParent)}”`;
+  if (el) {
+    el.classList.add('entering');
+    el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    showToast(where);
+  } else {
+    showToast(where, { label: 'Show', fn: () => zoomTo(targetParent) });
+  }
 }
 
 // sets/replaces a date pill on an item (Move to Today / Tomorrow / Next Week)
