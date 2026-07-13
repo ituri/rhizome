@@ -1,7 +1,7 @@
 # Tendril 🌱
 
 A self-hostable infinite outliner — a Workflowy-class tool that runs entirely on your own machine.
-One process, zero dependencies; your whole outline lives in a single JSON file (attachments alongside it).
+One process, zero runtime dependencies; your whole outline lives in a single SQLite database (attachments alongside it).
 
 ## Run it
 
@@ -10,7 +10,7 @@ node server.js
 # → http://localhost:3000
 ```
 
-That's it. No `npm install`, no build step. Requires Node 18+.
+That's it. No `npm install`, no build step. Requires **Node 22+** (it uses the built-in `node:sqlite` module).
 
 ### With Docker
 
@@ -103,14 +103,37 @@ surface tiny, but it is not a real-time CRDT.
 
 ## Where your data lives
 
-Everything is in `data/outline.json` (attachments in `data/files/`, backups in `data/backups/`,
-share tokens in `data/shares.json`). Copy the `data` folder and you've backed up everything.
+Your outline is a single SQLite database — `data/outline.db` (WAL mode, with an FTS5
+full-text index). Everything else sits alongside it in `data/`:
+
+| Path | Holds |
+|---|---|
+| `data/outline.db` | The outline itself (one row per node) |
+| `data/files/` | Attachments and pasted images |
+| `data/backups/` | Hourly rotating `.db` snapshots (last 40) |
+| `data/shares.json` | Share tokens |
+
+Copy the `data` folder and you've backed up everything.
+
+**Upgrading from an older JSON build?** On first launch Tendril imports an existing
+`data/outline.json` into the database once, then renames it to `data/outline.json.migrated`.
+Nothing writes back to the JSON file after that.
 
 ## Development
 
-The app is plain JS — no build step; edit and refresh. End-to-end test suites
-(250+ assertions via `puppeteer-core` + headless Chrome) live in
-[`tests/`](tests/README.md), with per-suite run instructions there.
+The app is plain JS — no build step; edit and refresh. Server-side it's `server.js` plus a
+small SQLite store (`db.js`) and op-merge engine (`opsdoc.js` / `ops.js`); the client is
+`public/app.js` + `public/app2.js`.
+
+```sh
+npm run lint          # eslint
+npm run typecheck     # tsc --noEmit (JSDoc types)
+npm run test:db       # pure-Node store + convergence suites (test:converge, test:ops, …)
+```
+
+Browser end-to-end suites (250+ assertions via `puppeteer-core` + headless Chrome) and the
+full list of `npm run test:*` suites live in [`tests/`](tests/README.md), with per-suite run
+instructions there.
 
 ## Notes on collaboration
 
