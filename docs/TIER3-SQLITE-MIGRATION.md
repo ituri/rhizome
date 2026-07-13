@@ -1,13 +1,13 @@
 # Tier 3 — per-node SQLite store: migration & correctness spec
 
-Status: **design** (no code yet). Goal: replace the whole-document JSON model with a
-per-node SQLite store so edits, saves, undo, search, and sync are **O(change)**, while
-*guaranteeing* — by the implementation, not by convention — that the data is never
-stale, inconsistent, corrupt, or lost under crashes, races, reordering, duplication, or
-network partition.
+Status: **implemented** — Phases 1-4 have shipped; see §11 for the per-piece status and
+its test evidence. Goal: replace the whole-document JSON model with a per-node SQLite store
+so edits, saves, undo, search, and sync are **O(change)**, while *guaranteeing* — by the
+implementation, not by convention — that the data is never stale, inconsistent, corrupt, or
+lost under crashes, races, reordering, duplication, or network partition.
 
-This document is the contract. Code follows only once the merge rules and invariants
-here are agreed and the verification plan (§9) is in place.
+This document is the design contract the implementation was built against; §7.7 records the
+merge topology that actually shipped and §11 tracks what landed against each phase.
 
 ---
 

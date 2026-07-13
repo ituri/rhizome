@@ -1,6 +1,12 @@
-# End-to-end tests
+# Tests
 
-Browser-level suites driving the real app in headless Chrome (250+ assertions total).
+Two families of suites, both exercising the **real** `server.js`:
+
+- **Browser e2e** — puppeteer-core + headless Chrome, driving the app UI (250+ assertions).
+- **Convergence, persistence & op-sync** — the Tier-3 SQLite / op-merge suites, launched via
+  `npm run test:*`. Some are pure Node; the rest are puppeteer-driven.
+
+## Browser e2e suites
 
 | Suite | Covers |
 |---|---|
@@ -17,7 +23,28 @@ Browser-level suites driving the real app in headless Chrome (250+ assertions to
 | `test-auth.js` | Password login flow — run the server with `TENDRIL_PASSWORD=s3cret PORT=3212` |
 | `test-fixes.js` | Regressions from the 2026-06 review: share-merge subtree scoping (+cycle/trash), files gate, server-side sync sanitization, static-path guard (spawns its own server on 3215), markdown-shortcut marker text, undo burst, operator-only search, calendar year carry, month-grid rows, import format fidelity |
 
-## Running
+## Convergence, persistence & op-sync suites (`npm run test:*`)
+
+The Tier-3 SQLite store and op-merge engine are proven by their own suites, run from the
+repo root. The **pure-Node** ones need nothing but Node; the **browser** ones need Chrome +
+`puppeteer-core` and a fresh server on 3211, like the e2e suites above.
+
+| Script | File | Kind | Proves |
+|---|---|---|---|
+| `npm run test:db` | `test-db.js` | Node | Store: migration round-trip, incremental sync, FTS5 search, `fsck` |
+| `npm run test:converge` | `test-converge.js` | Node | Op-merge convergence — byte-identical across partitioned replicas (fuzz) |
+| `npm run test:ops` | `test-ops-server.js` | Node | `POST /api/ops` round-trip: field-LWW, cycle-skip, idempotency |
+| `npm run test:rbconverge` | `test-rb-converge.js` | Node | Route B converges under dropped / duplicated / reordered broadcasts |
+| `npm run test:mirrorserver` | `test-mirror-server.js` | Node | Server-side mirror routing + share-merge round-trip |
+| `npm run test:optrash` | `test-optrash.js` | Browser | Op-based trash: delete / restore / purge converge across clients |
+| `npm run test:undo` | `test-undo.js` | Browser | Op-log undo/redo oracle (every mutation is journaled) |
+| `npm run test:emit` | `test-emit.js` | Browser | Journal → op → server-apply reproduces the client tree |
+| `npm run test:opsync` | `test-opsync.js` | Browser | Two browsers converge via `/api/ops` + SSE, no whole-doc transfer |
+| `npm run test:search` | `test-search.js` | Browser | Quick-jump backed by the SQLite FTS5 index |
+| `npm run test:mirror` | `test-mirror.js` | Browser | Mirror instance semantics (shared node, diamond bullet, promote-on-delete) |
+| `npm run test:worker` | `test-worker.js` | Browser | Off-thread serialization is byte-identical to `JSON.stringify` |
+
+## Running the browser e2e suites
 
 Requires Chrome and `puppeteer-core` (`npm i` in this folder — it has its own
 `package.json` so the app itself stays zero-dependency). Unless noted above,

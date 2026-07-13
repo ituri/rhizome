@@ -1,24 +1,64 @@
-# Tendril 🌱
+<h1 align="center">Tendril 🌱</h1>
 
-A self-hostable infinite outliner — a Workflowy-class tool that runs entirely on your own machine.
-One process, zero dependencies; your whole outline lives in a single JSON file (attachments alongside it).
+<p align="center"><b>A calm, infinite outliner that's entirely yours.</b><br>
+A Workflowy-class tool you run yourself: one process, zero runtime dependencies,<br>
+and your whole outline in a single SQLite file on your own machine.</p>
 
-## Run it
+<p align="center">
+  <img alt="Node 22+" src="https://img.shields.io/badge/node-%E2%89%A5%2022-43853d">
+  <img alt="Runtime dependencies: zero" src="https://img.shields.io/badge/runtime%20deps-0-4c8dae">
+  <img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-97ca00">
+</p>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/tendril-dark.png">
+  <img alt="Tendril showing a welcome outline with nested bullets, to-dos, tags, notes and a quote block" src="docs/screenshots/tendril-light.png">
+</picture>
+
+<p align="center"><sub>Light &amp; dark themes · 4 accent colors · 4 fonts · cozy or compact</sub></p>
+
+## ⚡ Quick start
 
 ```sh
+git clone https://github.com/SharifIsmail/tendril.git
+cd tendril
 node server.js
-# → http://localhost:3000
 ```
 
-That's it. No `npm install`, no build step. Requires Node 18+.
+Now open **http://localhost:3000** — that's the whole install.
 
-### With Docker
+No `npm install`. No build step. No database to set up. All you need is **Node 22+**
+(the outline is stored with Node's built-in `node:sqlite`).
+
+Prefer Docker?
 
 ```sh
 docker compose up -d
 ```
 
-### Options (environment variables)
+## ✨ What you can do
+
+| | |
+|---|---|
+| ✍️ **Outline everything** | Infinite nesting; zoom into any bullet with breadcrumbs and browser back/forward; notes on any item; drag & drop (touch too); multi-select with bulk indent/move/complete/delete; full split/merge editing at the caret; 200-step undo/redo for everything; trash with 30-day retention |
+| 🧱 **Rich blocks** | Headings, quotes, code blocks, dividers, to-do checkboxes, numbered lists and kanban boards — via markdown shortcuts (`# `, `> `, `[] `, `1. `, `---`, ```` ``` ````) or the `/` menu; bold/italic/underline/strikethrough, 8 text colors + 8 highlights |
+| 🏷️ **Tags & dates** | `#tags` and `@mentions` with autocomplete — click to filter; natural-language dates (type `next friday` or `in 3 days`, press **Tab**), date ranges, overdue/today styling; a month-grid calendar and a `Calendar › Year › Month › Day` journal with a Today button |
+| 🔍 **Search that understands you** | `"exact phrases"`, `-exclusion`, `OR`, `is:complete`, `has:note`, `changed:7d`, nested `ancestor > term` queries and more; `Ctrl+K` jumps anywhere; star your favorite pages and searches |
+| 🪞 **Reuse & review** | `[[wiki links]]` with backlinks on every page; mirrors you can edit from any instance; templates; comments; turn any node into instant presentation slides |
+| 📎 **Files & media** | Attach files or paste images straight onto items; YouTube / Shorts / Loom embeds and tracking-free X link-cards |
+| 📥 **Capture from anywhere** | `Ctrl+Shift+Space` quick-capture overlay, plus a token-protected capture API for email automations and iOS Shortcuts |
+| 🤝 **Sharing & sync** | Live cross-device sync (SSE) and instant cross-tab sync; offline changes are kept and retried; share any subtree by secret link — view-only or editable, revocable |
+| 📤 **Your data is portable** | Import and export Markdown, OPML, plain text and JSON; print any page; hourly rotating backups (last 40) |
+| 🔐 **Private by design** | Self-hosted, no accounts, no tracking; optional password login with TOTP MFA; everything lives in one folder you can copy |
+| 🤖 **Friendly to scripts & AI** | A per-node REST API built for agents, and an optional in-app ✨ Ask AI assistant (bring your own Anthropic key) |
+
+Press `Ctrl+/` in the app for the full keyboard reference. For the complete
+feature inventory — including what's deliberately not built — see
+[docs/FEATURES.md](docs/FEATURES.md).
+
+## ⚙️ Configuration (environment variables)
+
+Tendril runs with zero configuration. When you want more, everything is an environment variable:
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -35,36 +75,13 @@ docker compose up -d
 If you expose Tendril to the internet, set `TENDRIL_PASSWORD` (and ideally TOTP) and put it
 behind HTTPS — any reverse proxy (Caddy, nginx, Traefik) works; it's plain HTTP on one port.
 
-## Features
+With `TENDRIL_CAPTURE_TOKEN` set, anything can drop a thought into your Inbox:
 
-**Outlining** — infinite nesting; zoom into any bullet (click it or `Alt+→`/`Alt+.`) with breadcrumbs, editable page titles, and working browser back/forward; expand/collapse (`Ctrl+↑↓`, expand/collapse-all); notes on any item (`Shift+Enter`); complete & hide completed (`Ctrl+Enter`, `Ctrl+O`); drag & drop with depth control and touch support; multi-item selection (`Ctrl+A` twice) with bulk indent/move/complete/delete; full split/merge editing at the caret; smart multi-line paste; trash with 30-day retention and restore; undo/redo for everything.
-
-**Blocks & formatting** — headings (H1–H3), quotes, code blocks, dividers, paragraphs, **to-do checkboxes**, **numbered lists** (auto-renumber), and **kanban boards** (full-page when zoomed, with +add-card / +add-column); markdown shortcuts (`# `, `## `, `### `, `> `, `[] `, `1. `, `---`, ```` ``` ````); a **slash command menu** (`/`); a floating selection toolbar with bold/italic/underline/strikethrough/inline code/links and **8 text colors + 8 highlights**; `Ctrl+K` links selected text to a URL or to another item; **markdown-aware paste**; **Sort A–Z / Z–A**.
-
-**Tags, dates & search** — `#tags`/`@mentions` with **autocomplete**, click to filter (Shift+click adds to the filter); **natural-language dates** — type `today`, `next friday`, `oct 7`, `in 3 days`, or a range `jun 12 - jun 15` and press **Tab** to convert it to a date pill — plus a `!!`/`/date` picker, overdue/today styling, a **calendar view** (month grid), and a **Calendar journal** — a `Calendar › Year › Month › Day` hierarchy with a horizontal date-navigation strip and a **Today** button (sidebar + header); items dated elsewhere surface under their day; **`[[inline linking]]`** to any item (with backlinks); search with `"exact phrases"`, `-exclusion`, `OR`, `is:complete|todo|mirror|shared`, `has:note|date|file|comment|link`, `text:bold|code|color`, `highlight:yellow`, `changed:today|7d`, `on:<date>`, `link:<url>`, and nested `ancestor > term` queries.
-
-**Navigation** — collapsible **sidebar** with the outline tree and **starred pages/searches** (`Ctrl+Shift+8`); `Ctrl+K` jump-anywhere; `Ctrl+'` home; **backlinks** ("Linked from") on every page; deep links to any item.
-
-**Reuse & review** — **mirrors** (`Alt+Shift+M` or *Mirror to…* a chosen node): live read-only views that update as the original changes — click one to open the original (unlike Workflowy's, they're not editable in place); **Move to…** any node via a picker; **Move to Today / Tomorrow / Next Week** date stamps; **templates** (save any subtree, insert via `/`); **comments** on any item; **instant presentations** (any node becomes slides); duplicate with optional `#copy` tag; per-item Created/Changed timestamps.
-
-**Files & media** — attach files or **paste images** straight onto items (stored in your data dir); embeds for YouTube / **YouTube Shorts** (via the nocookie domain) and **Loom** as iframes, and **X/Twitter** as a plain link-card instead of Twitter's tracking widget; all embeds toggleable.
-
-**Capture** — quick capture overlay (`Ctrl+Shift+Space`) into an Inbox node, plus a token-protected **capture API** for email-to-outline style automations:
 ```sh
 curl -X POST "https://your-host/api/capture?token=…" -d "call mom tomorrow"
 ```
 
-**Sharing** — share any subtree via secret link, **view-only or editable**, revocable, with a blue ring marking shared items; guests see/edit just that subtree and edits flow back live.
-
-**Sync & data** — instant cross-tab sync, **live cross-device sync (SSE)**; offline changes are kept in localStorage and retried (plus a service-worker shell cache when served over HTTPS); hourly rotating backups (last 40); export to plain text, **Markdown**, OPML, JSON; import OPML/text/JSON.
-
-**Polish** — light/dark/auto themes, 4 accent colors, 4 font choices, cozy/compact density, reading/full-width pages, configurable date format & week-start, always-show-arrows, capitalize-first-word, rich (emoji) tags; smooth zoom & collapse animations (toggleable in the menu); **Print** (`Ctrl+P`); optional ✨ AI assistant (your own Anthropic key); password login with optional **TOTP MFA**; mobile toolbar.
-
-Press `Ctrl+/` in the app for the full keyboard reference. For the complete
-feature inventory — including what's deliberately not built — see
-[docs/FEATURES.md](docs/FEATURES.md).
-
-## Node API (for scripts & AI agents)
+## 🤖 Node API (for scripts & AI agents)
 
 A small per-node REST API lives at `/api/v1`, designed for an AI agent collaborating
 with you in real time: it reads context in one call, writes surgically by node ID
@@ -101,18 +118,41 @@ it's sanitized server-side and again on render. `GET` responses include a derive
 last-writer-wins model as the rest of the app — per-node writes keep the conflict
 surface tiny, but it is not a real-time CRDT.
 
-## Where your data lives
+## 🗂️ Where your data lives
 
-Everything is in `data/outline.json` (attachments in `data/files/`, backups in `data/backups/`,
-share tokens in `data/shares.json`). Copy the `data` folder and you've backed up everything.
+Your outline is a single SQLite database — `data/outline.db` (WAL mode, with an FTS5
+full-text index). Everything else sits alongside it in `data/`:
 
-## Development
+| Path | Holds |
+|---|---|
+| `data/outline.db` | The outline itself (one row per node) |
+| `data/files/` | Attachments and pasted images |
+| `data/backups/` | Hourly rotating `.db` snapshots (last 40) |
+| `data/shares.json` | Share tokens |
 
-The app is plain JS — no build step; edit and refresh. End-to-end test suites
-(250+ assertions via `puppeteer-core` + headless Chrome) live in
-[`tests/`](tests/README.md), with per-suite run instructions there.
+Copy the `data` folder and you've backed up everything.
 
-## Notes on collaboration
+**Upgrading from an older JSON build?** On first launch Tendril imports an existing
+`data/outline.json` into the database once, then renames it to `data/outline.json.migrated`.
+Nothing writes back to the JSON file after that.
+
+## 🛠️ Development
+
+The app is plain JS — no build step; edit and refresh. Server-side it's `server.js` plus a
+small SQLite store (`db.js`) and op-merge engine (`opsdoc.js` / `ops.js`); the client is
+`public/app.js` + `public/app2.js`.
+
+```sh
+npm run lint          # eslint
+npm run typecheck     # tsc --noEmit (JSDoc types)
+npm run test:db       # pure-Node store + convergence suites (test:converge, test:ops, …)
+```
+
+Browser end-to-end suites (250+ assertions via `puppeteer-core` + headless Chrome) and the
+full list of `npm run test:*` suites live in [`tests/`](tests/README.md), with per-suite run
+instructions there.
+
+## 🤝 Notes on collaboration
 
 Sharing gives others scoped view/edit access to subtrees, and all devices sync live —
 but conflict resolution is last-writer-wins (with additive merging), not a real-time CRDT.

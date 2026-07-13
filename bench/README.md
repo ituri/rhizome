@@ -10,11 +10,20 @@ npm run bench:profile   # CPU profile of the save path at 100k nodes
 npm run bench:load      # head-of-line blocking · version races · adversarial payloads
 ```
 
+> **Historical note.** The findings below characterize the **legacy whole-doc `PUT /api/doc`
+> save path** and predate the Tier-3 SQLite migration. That migration has since shipped:
+> saves, undo, and search are now **O(change)**, not O(whole document). The persistence and
+> undo costs measured here have been eliminated (per-save `247 ms → 0.2 ms` at 100k nodes;
+> per-edit undo `64.8 ms → 0.1 ms` at 50k) — see
+> [`docs/TIER3-SQLITE-MIGRATION.md`](../docs/TIER3-SQLITE-MIGRATION.md) §11. The scripts still
+> run: `PUT /api/doc` survives as a fallback path, so these harnesses remain useful as a
+> regression guard on it.
+
 ## Why these, not generic tools
 
-Every expensive operation in Tendril is **O(whole document)** — by design (one JSON
-doc is the unit of save, sync, and undo). So the bottlenecks are predictable; these
-scripts just quantify them and find the cliff.
+In the legacy model every expensive operation was **O(whole document)** — one JSON doc was
+the unit of save, sync, and undo — so the bottlenecks were predictable; these scripts quantify
+them and find the cliff. (That whole-doc model is what the Tier-3 migration replaced.)
 
 ## Findings (typical run, mid-range laptop)
 
@@ -62,13 +71,18 @@ the entire document on every full-doc PUT even though only changed nodes need it
 
 ## Takeaways
 
-The app is **correct and robust** under load; the ceiling is purely the whole-doc
-synchronous operations. Concrete, ordered improvements if you want to raise it:
+These runs found the app **correct and robust** under load, with the ceiling sitting purely
+in the whole-doc synchronous operations. That diagnosis is what motivated the Tier-3 SQLite
+migration, which addressed the architectural items directly:
 
-1. **Don't re-sanitize the whole doc per save** — sanitize only changed nodes (or trust
-   render-side sanitization and drop server-side for the bulk path). ~15% off every save.
-2. **Move `JSON.stringify` for persistence off the request path** — stringify in the
-   async `writeChain` tick, not synchronously inside `persist()`.
-3. **Beyond ~50k nodes** the real fixes are architectural (incremental/delta save instead
-   of whole-doc PUT; op-log instead of `structuredClone` snapshots; virtualized render
-   client-side). Know the ceiling before committing to them.
+1. ✅ **Incremental/delta save instead of whole-doc PUT** — the normal save path is now
+   `POST /api/ops`, and the server persists only the rows a batch touched (`db.applyOps`).
+   Per-doc `JSON.stringify` and the per-save re-sanitize are off the hot path.
+2. ✅ **Op-log undo instead of `structuredClone` snapshots** — each edit journals only the
+   nodes it touched (`64.8 ms → 0.1 ms` per edit at 50k).
+3. ⏳ **Virtualized client-side render** — still deferred: it conflicts with the e2e suite's
+   "every visible item is in the DOM" assumption and is out of scope in
+   [`docs/FEATURES.md`](../docs/FEATURES.md).
+
+See [`docs/TIER3-SQLITE-MIGRATION.md`](../docs/TIER3-SQLITE-MIGRATION.md) §11 for the shipped
+work and its measured wins.
