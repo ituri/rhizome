@@ -1,6 +1,6 @@
 # Tendril — feature inventory
 
-Status as of 2026-06-11. ✅ implemented (covered by the e2e suites in [`tests/`](../tests/README.md)) · 🟡 partial · ❌ pending.
+Status as of 2026-07-13. ✅ implemented (covered by the e2e suites in [`tests/`](../tests/README.md)) · 🟡 partial · ❌ pending.
 
 | Category | Feature | Status | Notes |
 |---|---|---|---|
@@ -17,7 +17,7 @@ Status as of 2026-06-11. ✅ implemented (covered by the e2e suites in [`tests/`
 | | Click-drag multi-select across bullets | ❌ | Workflowy also supports mouse-drag selection |
 | | Smart multi-line paste (indentation → hierarchy) | ✅ | |
 | | Trash with restore, 30-day retention | ✅ | Per-entry restore, delete-forever, empty |
-| | Undo/redo for everything | ✅ | Snapshot-based, 200 steps |
+| | Undo/redo for everything | ✅ | Op-log journal (O(change), not snapshots), 200 steps |
 | | Focus lands sensibly after delete/complete | ✅ | Prev bullet → next bullet → page title |
 | **Blocks & formatting** | Headings H1–H3, quote, code block, divider, paragraph | ✅ | |
 | | To-do checkboxes | ✅ | |
@@ -59,7 +59,7 @@ Status as of 2026-06-11. ✅ implemented (covered by the e2e suites in [`tests/`
 | | Backlinks ("Linked from") | ✅ | From any internal link (`[[ ]]`, Ctrl+K, pasted) and mirrors |
 | | `[[inline linking]]` with autocomplete + create-new | ✅ | |
 | | Starred-page switcher (`Ctrl+;`) | ❌ | Covered by sidebar + `Ctrl+K` |
-| | Mirrors (`Alt+Shift+M`, Mirror to…, Mirror to Today / Date…) | 🟡 | Live read-only views; click opens original. Workflowy's are editable in place |
+| | Mirrors (`Alt+Shift+M`, Mirror to…, Mirror to Today / Date…) | ✅ | Full interactive instances (Workflowy semantics): edit from any instance, all wear the diamond bullet, deleting the original promotes a mirror |
 | | Move to… node picker; Move to Today / Tomorrow / Next Week / Date… | ✅ | Date stamps |
 | | Templates (save subtree, insert via `/` or item menu) | ✅ | |
 | | Per-item export (text / Markdown / OPML / JSON) | ✅ | Subtree scope; doc-wide export also available |
