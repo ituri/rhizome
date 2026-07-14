@@ -360,7 +360,8 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
 
   /* ---- 15. server wrote a backup file ---- */
   await sleep(1200);
-  const backups = fs.readdirSync(process.env.TEMP + '\\tendril-e2e\\data\\backups').filter(f => f.endsWith('.json'));
+  const backupDir = process.env.DATA_DIR ? require('path').join(process.env.DATA_DIR, 'backups') : process.env.TEMP + '\\tendril-e2e\\data\\backups';
+  const backups = fs.readdirSync(backupDir).filter(f => f.endsWith('.db'));
   assert(backups.length >= 1, `rotating backup written (${backups.length} file)`);
 
   /* ---- 16. version counter + menu footer sanity ---- */
