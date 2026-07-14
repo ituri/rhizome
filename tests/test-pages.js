@@ -491,6 +491,38 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   assert(attrNav.onPage, 'clicking an attribute key opens its page');
   assert(attrNav.ref, 'the attribute page gathers blocks with that attribute as references');
 
+  /* ---- 29. page aliases: Aliases:: makes [[alias]] resolve to the page ---- */
+  await page.evaluate(() => { setSearch(''); location.hash = '#/outline'; });
+  await sleep(300);
+  const aliasSetup = await page.evaluate(() => {
+    const pg = opNewAt('root', 0); N(pg).text = 'Project Phoenix';
+    const al = opNewAt(pg, 0); N(al).text = 'Aliases:: phoenix, pp';
+    markDirty(); renderPage();
+    return { pg, before: pagesOf().length };
+  });
+  await sleep(300);
+  const aliasRes = await page.evaluate(sc => ({
+    mapHit: pageAliasMap().get('phoenix') === sc.pg,
+    findHit: findPageByTitle('PP') === sc.pg,
+    getNoDup: getOrCreatePage('phoenix') === sc.pg,
+    count: pagesOf().length,
+  }), aliasSetup);
+  assert(aliasRes.mapHit, 'Aliases:: registers each alias for the page');
+  assert(aliasRes.findHit, 'findPageByTitle resolves an alias (case-insensitive)');
+  assert(aliasRes.getNoDup && aliasRes.count === aliasSetup.before,
+    'getOrCreatePage(alias) returns the page without creating a duplicate');
+  await page.evaluate(() => {
+    const b = opNewAt('root', 0);
+    N(b).text = 'see <a href="#/n/' + getOrCreatePage('phoenix') + '" rel="noopener">phoenix</a> for details';
+    markDirty(); renderPage(); // reflect into the DOM so the pending commit keeps it
+  });
+  await sleep(250);
+  await page.evaluate(sc => zoomTo(sc.pg), aliasSetup);
+  await sleep(400);
+  const aliasBack = await page.evaluate(() =>
+    [...document.querySelectorAll('#backlinks .ref-row')].some(r => /for details/.test(r.textContent)));
+  assert(aliasBack, 'a [[alias]] link surfaces as a Linked Reference on the page');
+
   await browser.close();
   console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PAGES TESTS PASSED');
   process.exit(failures ? 1 : 0);

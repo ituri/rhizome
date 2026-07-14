@@ -299,7 +299,7 @@ function refreshCaretPop(query) {
     // rhizome: [[ searches pages and day pages like Roam (Ctrl+K links arbitrary items);
     // use the original-case `query` for the new-page title, `q` only for matching
     const found = searchPages(query, 8).filter(it => it.id !== caretPop.ctx.id);
-    const items = found.map(it => ({ label: it.plain.slice(0, 60), icon: it.day ? '📅' : '↗', linkId: it.id }));
+    const items = found.map(it => ({ label: it.plain.slice(0, 60), icon: it.day ? '📅' : it.alias ? '↷' : '↗', linkId: it.id }));
     if (query.trim() && !found.some(f => f.plain.trim().toLowerCase() === query.trim().toLowerCase())) {
       items.push({ label: `Create page “${query.trim().slice(0, 40)}”`, icon: '＋', create: query.trim() });
     }

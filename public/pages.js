@@ -18,10 +18,29 @@ function pagesOf() {
   return kidsOf(ROOT).filter(id => !isCalRoot(id));
 }
 
+// alias (lowercased) -> pageId, gathered from each page's `Aliases:: a, b, c` child block
+function pageAliasMap() {
+  const map = new Map();
+  for (const pid of pagesOf()) {
+    for (const cid of kidsOf(contentIdOf(pid))) {
+      const attr = window.parseAttribute(cid);
+      if (!attr || attr.key.toLowerCase() !== 'aliases') continue;
+      for (const raw of attr.value.split(',')) {
+        const a = raw.replace(/^\[\[|\]\]$/g, '').trim().toLowerCase();
+        if (a && !map.has(a)) map.set(a, pid);
+      }
+      break; // one Aliases block per page
+    }
+  }
+  return map;
+}
+window.pageAliasMap = pageAliasMap;
+
 function findPageByTitle(title) {
   const want = title.trim().toLowerCase();
   if (!want) return null;
-  return pagesOf().find(id => plainOf(N(id).text).trim().toLowerCase() === want) || null;
+  return pagesOf().find(id => plainOf(N(id).text).trim().toLowerCase() === want)
+    || pageAliasMap().get(want) || null;
 }
 
 // pages append at the top level; callers wrap in snapshot()
@@ -514,6 +533,13 @@ window.searchPages = function searchPages(q, limit = 8) {
     if (score >= 0) out.push({ id, plain, day, score });
   };
   for (const id of pagesOf()) scan(contentIdOf(id), false);
+  // aliases resolve to their page but surface under the alias text the user typed
+  for (const [alias, pid] of pageAliasMap()) {
+    if (out.some(o => o.id === pid)) continue; // already matched by title
+    let score = -1;
+    if (terms.length && terms.every(t => alias.includes(t))) score = 90 - alias.indexOf(terms[0]);
+    if (score >= 0) out.push({ id: pid, plain: alias, day: false, alias: true, score });
+  }
   const root = calRoot(false);
   if (root) {
     for (const y of kidsOf(root)) {
