@@ -359,6 +359,46 @@ const focusByText = text => `(() => {
     Object.values(doc.nodes).some(n => (n.text || '').includes('added by a guest')));
   assert(ok, 'guest edits flow back into the owner document live');
 
+  /* ---- 14c. Share popover opens from the item menu via REAL mouse clicks ----
+     (a stale outside-mousedown listener from the closed item menu used to close
+     the share popover on the next mousedown; only real pointer events hit it) */
+  const realClickBtn = async text => {
+    const box = await page.evaluate(t => {
+      const btn = [...document.querySelectorAll('.popover button')].find(b =>
+        [...b.querySelectorAll('span')].some(s => s.textContent.trim() === t) || b.textContent.trim() === t);
+      if (!btn) return null;
+      const r = btn.getBoundingClientRect();
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    }, text);
+    if (!box) return false;
+    await page.mouse.click(box.x, box.y);
+    return true;
+  };
+  await page.evaluate(() => { location.hash = '#/outline'; }); // so the new root item renders
+  await sleep(350);
+  await page.evaluate(() => {
+    const id = opNewAt('root', 0);
+    N(id).text = 'share me please'; markDirty(); renderPage();
+    // open the item menu (arms its outside-mousedown listener, same as a real ⋯ click)
+    window.showItemMenu(document.querySelector(`.item[data-id="${id}"] .row`), id);
+  });
+  await sleep(250);
+  assert(await realClickBtn('Share'), 'item menu offers Share');
+  await sleep(250);
+  const sawShareOptions = await page.evaluate(() => !!document.querySelector('.share-pop') &&
+    [...document.querySelectorAll('.share-pop button')].some(b => /View only/.test(b.textContent)));
+  assert(sawShareOptions, 'clicking Share opens the share popover');
+  // the regression: a real mousedown on "View only" used to trigger the closed
+  // item-menu's stale outside-listener and dismiss the share popover
+  assert(await realClickBtn('View only'), 'share popover offers View only');
+  await sleep(500);
+  const stillOpen = await page.evaluate(() =>
+    !!document.querySelector('.share-pop') &&
+    (!!document.querySelector('.share-pop input') || [...document.querySelectorAll('.share-pop button')].some(b => /View only/.test(b.textContent))));
+  assert(stillOpen, 'the share popover survives the View-only mousedown (stale-listener regression)');
+  await page.keyboard.press('Escape');
+  await sleep(150);
+
   /* ---- 15. presentation mode ---- */
   await page.evaluate(() => startPresent());
   await sleep(250);

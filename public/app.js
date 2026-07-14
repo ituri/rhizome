@@ -3708,8 +3708,12 @@ function cancelDrag() {
 let currentPopover = null;
 let popoverAnchor = null;
 let popoverOpts = null;
+let popoverCloser = null; // the active outside-mousedown listener, cleared when the popover closes
 
 function closeAllPopovers() {
+  // drop the outside-mousedown listener too, or a closed popover's stale listener
+  // fires on the NEXT popover and closes it before its click lands (nested menus)
+  if (popoverCloser) { document.removeEventListener('mousedown', popoverCloser); popoverCloser = null; }
   currentPopover?.remove();
   currentPopover = null;
   popoverAnchor = null;
@@ -3751,10 +3755,9 @@ function openPopover(anchor, build, opts = {}) {
   popoverAnchor = anchor;
   popoverOpts = opts;
   setTimeout(() => {
-    const close = ev => {
-      if (!pop.contains(ev.target)) { closeAllPopovers(); document.removeEventListener('mousedown', close); }
-    };
-    document.addEventListener('mousedown', close);
+    if (currentPopover !== pop) return; // superseded before the listener even armed
+    popoverCloser = ev => { if (!pop.contains(ev.target)) closeAllPopovers(); };
+    document.addEventListener('mousedown', popoverCloser);
   });
   return pop;
 }
