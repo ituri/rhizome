@@ -125,21 +125,23 @@ const focusByText = text => `(() => {
   const dateInfo = await page.evaluate(() => {
     const els = [...document.querySelectorAll('.tree .item')];
     const it = els.find(e => (e.querySelector(':scope > .row .content')?.textContent || '').includes('pay rent'));
-    const t = it?.querySelector('time[datetime]');
-    return t ? { iso: t.getAttribute('datetime'), today: t.classList.contains('today') } : null;
+    const a = it?.querySelector('a[href^="#/n/"]');
+    const day = a && doc.nodes[a.getAttribute('href').replace('#/n/', '')];
+    return day ? { cd: day.cd, isDay: day.cal === 'day', isToday: day.cd === todayStr() } : null;
   });
-  assert(dateInfo && dateInfo.today, `date pill inserted and styled as today (${dateInfo?.iso})`);
+  assert(dateInfo && dateInfo.isDay && dateInfo.isToday,
+    `"!!" inserts a link to today's page (${dateInfo && dateInfo.cd})`); // rhizome: dates are day-page links
 
-  // clicking the date filters by on:
+  // clicking the date link opens that day page (Roam behavior, was: on: filter)
   await page.evaluate(() => {
-    const t = [...document.querySelectorAll('time[datetime]')][0];
-    t.click();
+    const it = [...document.querySelectorAll('.tree .item')].find(e => (e.querySelector(':scope > .row .content')?.textContent || '').includes('pay rent'));
+    it.querySelector('a[href^="#/n/"]').click();
   });
-  await sleep(250);
-  ok = await page.evaluate(() => state.search.startsWith('on:') && state.matchCount >= 1);
-  assert(ok, 'clicking a date filters by on:<date>');
-  await page.evaluate(() => setSearch(''));
-  await sleep(120);
+  await sleep(450);
+  ok = await page.evaluate(() => N(state.zoom)?.cal === 'day' && N(state.zoom)?.cd === todayStr());
+  assert(ok, 'clicking a date link opens that day page');
+  await page.evaluate(() => { location.hash = '#/outline'; });
+  await sleep(300);
 
   /* ---- 6. tag autocomplete ---- */
   await page.evaluate(focusByText('pay rent'));
@@ -370,20 +372,7 @@ const focusByText = text => `(() => {
   await page.keyboard.press('Escape');
   await sleep(150);
 
-  /* ---- 16. calendar shows dated item ---- */
-  await page.evaluate(() => showCalendar());
-  await sleep(250);
-  ok = await page.evaluate(() => {
-    const grid = document.querySelector('#cal-grid');
-    return !document.querySelector('#calendar-overlay').hidden &&
-      grid.querySelector('.cal-day.today') &&
-      [...grid.querySelectorAll('.cal-item')].some(a => a.textContent.includes('pay rent'));
-  });
-  assert(ok, 'calendar shows the dated item on today');
-  await page.keyboard.press('Escape');
-  await sleep(150);
-
-  /* ---- 17. Ctrl+O hides completed ---- */
+  /* ---- 16. Ctrl+O hides completed ---- */
   await page.evaluate(focusByText('My Heading'));
   await page.keyboard.down('Control'); await page.keyboard.press('o'); await page.keyboard.up('Control');
   await sleep(200);

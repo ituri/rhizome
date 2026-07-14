@@ -133,9 +133,9 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   await sleep(550);
   ok = await page.evaluate(() => {
     const id = editableCtx(document.activeElement)?.id || [...document.querySelectorAll('.tree .item')].map(e => e.dataset.id).find(i => /<time/.test(doc.nodes[i].text));
-    return Object.values(doc.nodes).some(n => /finish the deck/.test(plainOf(n.text)) && /<time datetime="/.test(n.text) && !/tomorrow/i.test(n.text));
+    return Object.values(doc.nodes).some(n => /finish the deck/.test(plainOf(n.text)) && /href="#\/n\//.test(n.text) && !/tomorrow/i.test(n.text));
   });
-  assert(ok, 'clicking the date hint converts the phrase to a pill');
+  assert(ok, 'clicking the date hint converts the phrase to a day-page link');
 
   /* ---- 7b. Ctrl+Shift+Backspace always leaves the caret somewhere sensible ---- */
   await page.evaluate(() => {
@@ -225,12 +225,12 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
     const trip = kids.find(n => plainOf(n.text).includes('plan trip'));
     const todo = kids.find(n => plainOf(n.text).includes('pack bags'));
     return {
-      tripHasDate: trip && /<time datetime="/.test(trip.text) && !/tomorrow/i.test(trip.text),
+      tripHasDate: trip && /href="#\/n\//.test(trip.text) && !/tomorrow/i.test(trip.text),
       nested: trip && kidsOf(trip.id).some(id => plainOf(doc.nodes[id].text).includes('book hotel')),
       todoFmt: todo && todo.format === 'todo',
     };
   });
-  assert(captured.tripHasDate, 'capture converts a trailing "tomorrow" into a date pill');
+  assert(captured.tripHasDate, 'capture converts a trailing "tomorrow" into a day-page link');
   assert(captured.nested, 'Tab-indented capture line nests under the line above');
   assert(captured.todoFmt, 'markdown "- [ ]" in capture keeps the todo format');
 

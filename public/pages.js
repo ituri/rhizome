@@ -460,6 +460,38 @@ window.searchPages = function searchPages(q, limit = 8) {
   return out.slice(0, limit);
 };
 
+// find or create a journal day node (caller must have snapshot()ed)
+window.ensureDayId = iso => findDay(iso) || ensureDay(iso);
+
+// a link element / HTML pointing at a journal day page (creates the day)
+window.dayLinkEl = function dayLinkEl(iso) {
+  const a = document.createElement('a');
+  a.setAttribute('href', '#/n/' + ensureDayId(iso));
+  a.setAttribute('rel', 'noopener');
+  a.textContent = roamDateLabel(iso);
+  return a;
+};
+window.dayLinkHtml = iso => `<a href="#/n/${ensureDayId(iso)}" rel="noopener">${escHtml(roamDateLabel(iso))}</a>`;
+
+// drop a trailing date reference (legacy <time> pill or day-link) so re-dating an
+// item replaces cleanly instead of stacking references
+window.stripTrailingDateRefs = function stripTrailingDateRefs(content) {
+  for (let changed = true; changed;) {
+    changed = false;
+    let last = content.lastChild;
+    while (last && last.nodeType === Node.TEXT_NODE && !last.textContent.trim()) {
+      const prev = last.previousSibling; content.removeChild(last); last = prev; changed = true;
+    }
+    if (last && last.nodeType === Node.ELEMENT_NODE) {
+      if (last.tagName === 'TIME' && last.hasAttribute('datetime')) { content.removeChild(last); changed = true; }
+      else if (last.tagName === 'A') {
+        const m = (last.getAttribute('href') || '').match(/^#\/n\/([A-Za-z0-9]+)/);
+        if (m && N(m[1])?.cal === 'day') { content.removeChild(last); changed = true; }
+      }
+    }
+  }
+};
+
 // insert an internal link to a journal day page at the caret (creates the day)
 window.insertJournalLink = function insertJournalLink(ctx, iso, at) {
   if (state.readOnly) return;
@@ -698,8 +730,30 @@ function linkifyMatch(nodeId, pageId, title) {
   return true;
 }
 
+// one-time upgrade of legacy single-date <time> pills to real day-page links
+// (date ranges keep their pill — they span days, not a single page)
+function migrateDatePills() {
+  if (SHARE_TOKEN || state.readOnly || !doc) return;
+  let changed = false;
+  for (const id of Object.keys(doc.nodes)) {
+    const n = doc.nodes[id];
+    if (!n.text || !n.text.includes('<time')) continue;
+    const tpl = document.createElement('template');
+    tpl.innerHTML = n.text;
+    let touched = false;
+    tpl.content.querySelectorAll('time[datetime]').forEach(t => {
+      const dt = t.getAttribute('datetime');
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dt)) return; // ranges (iso/iso2) stay pills
+      t.replaceWith(dayLinkEl(dt));
+      touched = true;
+    });
+    if (touched) { recOld(id); n.text = sanitizeHtml(tpl.innerHTML); n.m = Date.now(); changed = true; }
+  }
+  if (changed) { markDirty(); renderPage(); }
+}
+
 // init() (app2.js) is async and still awaiting the doc when this file runs
 (function afterDocLoad() {
-  if (doc) migrateDayLabels();
+  if (doc) { migrateDayLabels(); migrateDatePills(); }
   else setTimeout(afterDocLoad, 100);
 })();

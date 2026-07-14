@@ -568,7 +568,7 @@ function insertDate(ctx, iso) {
   snapshot();
   const r = getSelection().getRangeAt(0);
   r.collapse(false);
-  insertInlineAtCaret(sel, r, makeTimePill(iso));
+  insertInlineAtCaret(sel, r, dayLinkEl(iso)); // rhizome: a day-page link, not a pill
   scheduleCommit(ctx.el);
 }
 
@@ -677,22 +677,22 @@ function mirrorHere(id) {
 
 // sets/replaces a date pill on an item (Move to Today / Tomorrow / Next Week)
 function setItemDate(id, iso) {
-  id = contentIdOf(id); // the date pill lives in the shared text
+  id = contentIdOf(id); // the date reference lives in the shared text
   commitActiveText();
   snapshot();
   const n = N(id);
   recOld(id);
-  // strip any existing date, then append the new one
+  // rhizome: a date is a real link to the day page (Roam-style), not a <time> pill;
+  // strip a trailing existing date reference so re-dating replaces cleanly
   const tpl = document.createElement('template');
   tpl.innerHTML = n.text || '';
-  tpl.content.querySelectorAll('time[datetime]').forEach(t => t.remove());
-  let html = tpl.innerHTML.replace(/\s+$/, '');
-  html += ` <time datetime="${iso}">${escHtml(formatDate(iso))}</time>`;
+  stripTrailingDateRefs(tpl.content);
+  const html = tpl.innerHTML.replace(/\s+$/, '') + ' ' + dayLinkHtml(iso);
   n.text = sanitizeHtml(html);
   touch(id);
   renderPage();
   markDirty();
-  showToast('Dated ' + formatDate(iso));
+  showToast('Linked ' + roamDateLabel(iso));
 }
 
 function dateOffset(days) {
@@ -868,7 +868,8 @@ window.applyDateSuggest = function applyDateSuggest() {
   const sel = getSelection();
   const r = sel.getRangeAt(0);
   r.deleteContents();                                 // remove it
-  insertInlineAtCaret(sel, r, makeTimePill(sug.iso, sug.iso2)); // drop in the date pill
+  // rhizome: a single date becomes a day-page link; ranges stay <time> pills
+  insertInlineAtCaret(sel, r, sug.iso2 ? makeTimePill(sug.iso, sug.iso2) : dayLinkEl(sug.iso));
   scheduleCommit(sug.el);
   return true;
 };
@@ -1303,69 +1304,7 @@ presentOverlay.addEventListener('click', e => {
   else presentOverlay.hidden = true;
 });
 
-/* ---------------- J. calendar ---------------- */
-
-let calMonth = null; // Date at first of month
-
-function datesIndex() {
-  const map = new Map();
-  for (const id of Object.keys(doc.nodes)) {
-    const n = doc.nodes[id];
-    const html = (n.text || '') + ' ' + (n.note || '');
-    for (const m of html.matchAll(/datetime="(\d{4}-\d{2}-\d{2})/g)) {
-      if (!map.has(m[1])) map.set(m[1], []);
-      if (map.get(m[1]).length < 8) map.get(m[1]).push({ id, text: plainOf(n.text).trim().slice(0, 40) || 'Untitled', done: n.done });
-    }
-  }
-  return map;
-}
-
-function renderCalendar() {
-  const grid = $('#cal-grid');
-  const y = calMonth.getFullYear(), mo = calMonth.getMonth();
-  $('#cal-title').textContent = calMonth.toLocaleString(undefined, { month: 'long', year: 'numeric' });
-  grid.innerHTML = '';
-  const sunStart = settings.weekStart === 'sun';
-  const dows = sunStart ? ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-  for (const dow of dows) {
-    const d = document.createElement('div');
-    d.className = 'cal-dow';
-    d.textContent = dow;
-    grid.append(d);
-  }
-  const idx = datesIndex();
-  const first = new Date(y, mo, 1);
-  let startOffset = sunStart ? first.getDay() : (first.getDay() + 6) % 7;
-  const today = todayStr();
-  for (let i = 0; i < 42; i++) {
-    const d = new Date(y, mo, 1 - startOffset + i);
-    // stop at a row boundary once we're past the month — never mid-row
-    if (i >= 28 && i % 7 === 0 && d.getMonth() !== mo) break;
-    const iso = isoOf(d);
-    const cell = document.createElement('div');
-    cell.className = 'cal-day' + (d.getMonth() !== mo ? ' other' : '') + (iso === today ? ' today' : '');
-    cell.innerHTML = `<div class="cal-num">${d.getDate()}</div>`;
-    for (const it of idx.get(iso) || []) {
-      const a = document.createElement('a');
-      a.className = 'cal-item';
-      a.href = '#/n/' + it.id;
-      a.textContent = (it.done ? '✓ ' : '• ') + it.text;
-      a.addEventListener('click', () => { $('#calendar-overlay').hidden = true; });
-      cell.append(a);
-    }
-    grid.append(cell);
-  }
-}
-
-function showCalendar() {
-  calMonth = calMonth || new Date(new Date().setDate(1));
-  $('#calendar-overlay').hidden = false;
-  renderCalendar();
-}
-
 /* ---------------- J2. calendar hierarchy (Calendar › Year › Month › Day) ---------------- */
-
-const inCalendar = id => { let p = id; while (p) { if (N(p)?.cal) return true; p = parentOf(p); } return false; };
 
 function calRoot(create) {
   let id = meta().calendar;
@@ -1437,99 +1376,14 @@ window.gotoDate = gotoDate;
 const calStripEl = $('#cal-strip');
 
 window.renderCalStrip = function renderCalStrip() {
-  const el = calStripEl;
-  const n = doc.nodes[state.zoom];
-  // share docs have no home root, so the journal hierarchy can't be navigated/created
-  if (!n || !n.cal || n.cal === 'root' || !doc.nodes[ROOT]) { el.hidden = true; el.innerHTML = ''; return; }
-
-  // rhizome: a day page is a normal page — no strip chrome, only items dated to it
-  if (n.cal === 'day') {
-    const dated = (datesIndex().get(n.cd) || []).filter(it => !inCalendar(it.id));
-    if (!dated.length) { el.hidden = true; el.innerHTML = ''; return; }
-    el.hidden = false;
-    el.innerHTML = '';
-    const sec = document.createElement('div');
-    sec.className = 'cal-dated';
-    sec.innerHTML = '<div class="cal-dated-h">Items dated to this day</div>';
-    for (const it of dated) {
-      const a = document.createElement('a');
-      a.className = 'cal-dated-item' + (it.done ? ' done' : '');
-      a.href = '#/n/' + it.id;
-      a.textContent = (it.done ? '✓ ' : '') + it.text;
-      sec.append(a);
-    }
-    el.append(sec);
-    return;
-  }
-
-  el.hidden = false;
-  el.innerHTML = '';
-
-  if (n.cal === 'year') {
-    const row = document.createElement('div');
-    row.className = 'cs-months';
-    const now = new Date();
-    for (let m = 0; m < 12; m++) {
-      const b = document.createElement('button');
-      b.className = 'cs-mon-tab' + (n.cy === now.getFullYear() && m === now.getMonth() ? ' today' : '');
-      b.textContent = MONTHS_SHORT[m];
-      b.addEventListener('click', () => { commitActiveText(); snapshot(); const id = ensureMonth(n.cy, m); markDirty(); zoomTo(id); });
-      row.append(b);
-    }
-    el.append(navArrows(n), row);
-    return;
-  }
-
-  // day & month → a horizontal day strip; center on the current/this-month day
-  const base = n.cal === 'day' ? n.cd : `${n.cy}-${String(n.cm + 1).padStart(2, '0')}-01`;
-  const [by, bm, bd] = base.split('-').map(Number);
-  const baseDate = new Date(by, bm - 1, bd);
-  const days = document.createElement('div');
-  days.className = 'cs-days';
-  const range = n.cal === 'day' ? [-18, 18] : [0, new Date(n.cy, n.cm + 1, 0).getDate() - 1];
-  let prevMon = -1;
-  for (let off = range[0]; off <= range[1]; off++) {
-    const dt = new Date(baseDate); dt.setDate(dt.getDate() + off);
-    const iso = isoOf(dt);
-    const b = document.createElement('button');
-    b.className = 'cs-day' + (n.cal === 'day' && iso === n.cd ? ' current' : '') + (iso === todayStr() ? ' today' : '');
-    b.innerHTML = `<span class="cs-dow">${DOW_SHORT[dt.getDay()]}</span><span class="cs-num">${dt.getDate()}</span>`;
-    if (dt.getMonth() !== prevMon) { b.dataset.mon = MONTHS_SHORT[dt.getMonth()].toUpperCase(); prevMon = dt.getMonth(); }
-    b.addEventListener('click', () => gotoDate(iso));
-    days.append(b);
-  }
-  el.append(navArrows(n), days);
-  requestAnimationFrame(() => {
-    const cur = days.querySelector('.cs-day.current') || days.querySelector('.cs-day.today');
-    if (cur) cur.scrollIntoView({ inline: 'center', block: 'nearest' });
-  });
-
-  // (day pages return above — items dated to a day render there without the strip)
+  // rhizome: no calendar strip/overview — day pages are normal pages and the
+  // year/month container nodes render as plain outline pages
+  calStripEl.hidden = true;
+  calStripEl.innerHTML = '';
 };
-
-function navArrows(n) {
-  const wrap = document.createElement('div');
-  wrap.className = 'cs-nav';
-  const mk = (label, fn, title) => { const b = document.createElement('button'); b.textContent = label; b.title = title; b.addEventListener('click', fn); return b; };
-  const step = dir => {
-    if (n.cal === 'day') { const d = new Date(n.cd + 'T00:00:00'); d.setDate(d.getDate() + dir); gotoDate(isoOf(d)); }
-    else if (n.cal === 'month') { commitActiveText(); snapshot(); const d = new Date(n.cy, n.cm + dir, 1); const id = ensureMonth(d.getFullYear(), d.getMonth()); markDirty(); zoomTo(id); }
-    else { commitActiveText(); snapshot(); const id = ensureYear(n.cy + dir); markDirty(); zoomTo(id); }
-  };
-  wrap.append(
-    mk('‹', () => step(-1), 'Previous'),
-    mk('▦', () => showCalendar(), 'Open the month picker'),
-    mk('›', () => step(1), 'Next'),
-  );
-  return wrap;
-}
 
 $('#side-today')?.addEventListener('click', () => gotoToday());
 $('#btn-calendar').addEventListener('click', () => { location.hash = '#/'; });  // rhizome: header → daily notes
-$('#cal-prev').addEventListener('click', () => { calMonth.setMonth(calMonth.getMonth() - 1); renderCalendar(); });
-$('#cal-next').addEventListener('click', () => { calMonth.setMonth(calMonth.getMonth() + 1); renderCalendar(); });
-$('#cal-close').addEventListener('click', () => { $('#calendar-overlay').hidden = true; });
-$('#calendar-overlay').addEventListener('mousedown', e => { if (e.target.id === 'calendar-overlay') e.target.hidden = true; });
 
 /* ---------------- K. trash ---------------- */
 
@@ -1652,10 +1506,11 @@ function enhanceCaptureSpec(spec) {
   const plain = plainOf(spec.text);
   const hit = nlDate(plain);
   if (hit && hit.start + hit.phrase.length === plain.length && spec.text.endsWith(escHtml(hit.phrase))) {
-    const dt = hit.iso2 ? `${hit.iso}/${hit.iso2}` : hit.iso;
-    const label = hit.iso2 ? `${formatDate(hit.iso)} – ${formatDate(hit.iso2)}` : formatDate(hit.iso);
-    spec.text = spec.text.slice(0, spec.text.length - escHtml(hit.phrase).length).replace(/\s+$/, ' ')
-      + `<time datetime="${dt}">${escHtml(label)}</time>`;
+    // rhizome: a single captured date links to its day page; ranges stay pills
+    const ref = hit.iso2
+      ? `<time datetime="${hit.iso}/${hit.iso2}">${escHtml(`${formatDate(hit.iso)} – ${formatDate(hit.iso2)}`)}</time>`
+      : dayLinkHtml(hit.iso);
+    spec.text = spec.text.slice(0, spec.text.length - escHtml(hit.phrase).length).replace(/\s+$/, ' ') + ref;
   }
   if (settings.capitalize) spec.text = applyCapitalize(spec.text);
   spec.children.forEach(enhanceCaptureSpec);
@@ -1665,8 +1520,8 @@ function doCapture() {
   const text = captureInput.value;
   const forest = parseIndentedText(text);
   if (!forest.length) { captureOverlay.hidden = true; return; }
+  snapshot(); // rhizome: before enhance — a captured date may create its day node
   forest.forEach(enhanceCaptureSpec);
-  snapshot();
   const inbox = findOrCreateInbox();
   materializeForest(forest, inbox);
   captureInput.value = '';
@@ -2069,7 +1924,6 @@ $('#btn-menu').addEventListener('click', e => {
     if (!SHARE_TOKEN) {
       pop.append(document.createElement('hr'));
       pop.append(
-        menuItem('Calendar', '📅', () => showCalendar()),
         menuItem('Quick capture', '📥', () => window.showCapture(), { hint: 'Ctrl+Shift+Space' }),
         menuItem('Trash', '🗑', () => showTrash()),
         menuItem('Present', '▶', () => startPresent()),

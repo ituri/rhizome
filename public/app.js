@@ -1296,12 +1296,17 @@ function parseQuery(q) {
   return { segments: segments.map(s => s.filter(c => c.or.length)), raw: q };
 }
 
-// every ISO date in an item's <time> pills, including both ends of a range
+// every ISO date an item references: <time> pills (both ends of a range) plus
+// rhizome day-page links (a date is a link now, so date search must see it too)
 function pillDates(html) {
   const out = [];
   for (const m of (html || '').matchAll(/datetime="(\d{4}-\d{2}-\d{2})(?:\/(\d{4}-\d{2}-\d{2}))?/g)) {
     out.push(m[1]);
     if (m[2]) out.push(m[2]);
+  }
+  for (const m of (html || '').matchAll(/#\/n\/([A-Za-z0-9]+)/g)) {
+    const t = doc.nodes[m[1]];
+    if (t && t.cal === 'day' && t.cd) out.push(t.cd);
   }
   return out;
 }
@@ -1353,7 +1358,7 @@ function nodeMeetsCond(n, cond, hay, html) {
       break;
     case 'has':
       if (cond.value === 'note') hit = !!(n.note && n.note.trim());
-      else if (cond.value === 'date') hit = html.includes('<time');
+      else if (cond.value === 'date') hit = pillDates(html).length > 0; // rhizome: pills + day-links
       else if (cond.value === 'file' || cond.value === 'image') hit = !!(n.files && n.files.length);
       else if (cond.value === 'comment') hit = !!(n.comments && n.comments.length);
       else if (cond.value === 'link') hit = html.includes('<a ');
@@ -1405,7 +1410,7 @@ function nodeMeetsCond(n, cond, hay, html) {
       hit = (n.note || '').toLowerCase().includes(cond.value.replace(/^note:/, ''));
       break;
     case 'on':
-      hit = html.includes(`datetime="${cond.value}`);
+      hit = pillDates(html).includes(cond.value); // rhizome: matches pills and day-links
       break;
     case 'link': {
       // match by URL/href even when the link's display text was changed
@@ -2772,10 +2777,6 @@ function onKeydown(e) {
   }
   if (!$('#trash-overlay').hidden) {
     if (e.key === 'Escape') { e.preventDefault(); $('#trash-overlay').hidden = true; }
-    return;
-  }
-  if (!$('#calendar-overlay').hidden) {
-    if (e.key === 'Escape') { e.preventDefault(); $('#calendar-overlay').hidden = true; }
     return;
   }
   if (window.caretPopKeydown?.(e)) return;

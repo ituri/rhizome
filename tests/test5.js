@@ -54,11 +54,13 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   let pill = await page.evaluate(() => {
     const id = editableCtx(document.activeElement)?.id;
     const n = doc.nodes[id];
-    const el = document.querySelector(`.item[data-id="${id}"] time`);
-    return { hasTime: /<time datetime="/.test(n.text), noWord: !/today/i.test(n.text), today: el?.classList.contains('today') };
+    const a = document.querySelector(`.item[data-id="${id}"] a[href^="#/n/"]`);
+    const dayId = a?.getAttribute('href').replace('#/n/', '');
+    const day = dayId && doc.nodes[dayId];
+    return { linked: !!day && day.cal === 'day' && day.cd === todayStr(), noWord: !/today/i.test(n.text), label: a?.textContent || '' };
   });
-  assert(pill.hasTime && pill.noWord, 'Tab replaces "today" with a date pill');
-  assert(pill.today, 'the pill is styled as today');
+  assert(pill.linked && pill.noWord, 'Tab replaces "today" with a link to today\'s page'); // rhizome
+  assert(/\d{4}/.test(pill.label), 'the inserted date link shows the Roam label');
   // Tab did NOT indent (still a top-level row)
   let indented = await page.evaluate(() => {
     const id = editableCtx(document.activeElement)?.id;
@@ -75,12 +77,13 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   await sleep(550);
   let ok = await page.evaluate(() => {
     const id = editableCtx(document.activeElement)?.id;
-    const dt = document.querySelector(`.item[data-id="${id}"] time`)?.getAttribute('datetime');
-    if (!dt) return false;
-    const d = new Date(dt + 'T00:00:00');
+    const a = document.querySelector(`.item[data-id="${id}"] a[href^="#/n/"]`);
+    const day = a && doc.nodes[a.getAttribute('href').replace('#/n/', '')];
+    if (!day || day.cal !== 'day') return false;
+    const d = new Date(day.cd + 'T00:00:00');
     return d.getDay() === 5 && d > new Date(); // a friday in the future
   });
-  assert(ok, '"next friday" converts to a future Friday');
+  assert(ok, '"next friday" links to a future Friday page'); // rhizome
 
   /* ---- 4. Tab with no date still indents normally ---- */
   await page.keyboard.press('End');

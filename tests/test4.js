@@ -131,21 +131,29 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   });
   await sleep(300);
   ok = await page.evaluate(() => {
-    const n = doc.nodes[window.__dated];
-    return n.text.includes('<time datetime="' + todayStr());
+    const a = document.querySelector(`.item[data-id="${window.__dated}"] a[href^="#/n/"]`);
+    const day = a && doc.nodes[a.getAttribute('href').replace('#/n/', '')];
+    return !!day && day.cal === 'day' && day.cd === todayStr();
   });
-  assert(ok, 'Move to Today stamps the item with today\'s date');
+  assert(ok, 'Move to Today links the item to today\'s page'); // rhizome: dates are links
 
-  /* ---- 7. date format setting reformats live ---- */
+  /* ---- 7. date format setting reformats range pills (single dates are links now) ---- */
+  await page.evaluate(() => {
+    const r = makeNode('trip <time datetime="2026-06-12/2026-06-15">x</time>');
+    insertAt('root', 0, r);
+    window.__range = r;
+    renderPage();
+  });
+  await sleep(150);
   const before = await page.evaluate(() =>
-    document.querySelector(`.item[data-id="${window.__dated}"] time`).textContent);
+    document.querySelector(`.item[data-id="${window.__range}"] time`).textContent);
   await page.evaluate(() => { settings.dateFormat = 'iso'; renderPage(); });
   await sleep(200);
   const fmtCheck = await page.evaluate(() => {
-    const txt = document.querySelector(`.item[data-id="${window.__dated}"] time`).textContent;
-    return { txt, iso: todayStr(), match: txt === todayStr() };
+    const txt = document.querySelector(`.item[data-id="${window.__range}"] time`).textContent;
+    return { txt, match: txt.includes('2026-06-12') && txt.includes('2026-06-15') };
   });
-  assert(fmtCheck.match && fmtCheck.txt !== before, `date format setting reformats existing pills (${before} → ${fmtCheck.txt})`);
+  assert(fmtCheck.match && fmtCheck.txt !== before, `date format setting reformats range pills (${before} → ${fmtCheck.txt})`);
   await page.evaluate(() => { settings.dateFormat = 'medium'; renderPage(); });
 
   /* ---- 8. full-width setting ---- */
