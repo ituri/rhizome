@@ -235,24 +235,6 @@ const node = (id, text, children = [], extra = {}) =>
   assert(await page.evaluate(() => document.querySelectorAll('.tree .item').length > 0),
     'outline still renders after operator-only search');
 
-  /* B6. calendar month arrows carry the year */
-  await page.evaluate(() => { snapshot(); const m = ensureMonth(2026, 0); markDirty(); zoomTo(m); });
-  await sleep(400);
-  await page.evaluate(() => { document.querySelector('#cal-strip .cs-nav button').click(); });
-  await sleep(400);
-  const prevMonth = await page.evaluate(() => ({ cy: N(state.zoom).cy, cm: N(state.zoom).cm }));
-  assert(prevMonth.cy === 2025 && prevMonth.cm === 11,
-    `‹ from January 2026 lands on December 2025 (got ${prevMonth.cy}-${prevMonth.cm + 1})`);
-  await page.evaluate(() => { location.hash = '#/outline'; });
-  await sleep(300);
-
-  /* B7. month grid always renders whole weeks */
-  await page.evaluate(() => { calMonth = new Date(2026, 5, 1); $('#calendar-overlay').hidden = false; renderCalendar(); });
-  await sleep(200);
-  const cells = await page.evaluate(() => document.querySelectorAll('#calendar-overlay .cal-day').length);
-  assert(cells % 7 === 0 && cells >= 28, `month grid is row-aligned (${cells} cells)`);
-  await page.evaluate(() => { $('#calendar-overlay').hidden = true; });
-
   /* B8. parsed forests keep formats everywhere (import/AI path) */
   const fidelity = await page.evaluate(() => {
     const forest = parseIndentedText('- [x] packed bag\n  ## section');

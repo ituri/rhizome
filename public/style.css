@@ -1992,17 +1992,6 @@ html, body { font-size: 14px; line-height: 1.5; }
 [data-theme="dark"] .content a[href^="#/n/"]::before, [data-theme="dark"] .note a[href^="#/n/"]::before, [data-theme="dark"] .zoom-note a[href^="#/n/"]::before, [data-theme="dark"] .ref-row a[href^="#/n/"]::before,
 [data-theme="dark"] .content a[href^="#/n/"]::after, [data-theme="dark"] .note a[href^="#/n/"]::after, [data-theme="dark"] .zoom-note a[href^="#/n/"]::after, [data-theme="dark"] .ref-row a[href^="#/n/"]::after { color: #44545f; }
 
-/* dark sidebar, Roam-style, in every theme */
-body.sidebar-open .sidebar { width: 232px; border-right: none; }
-.sidebar { background: #182026; }
-.sidebar .side-title { color: #5c778a; }
-.sidebar .side-item a, .sidebar .side-nav { color: #aebecb; }
-.sidebar .side-nav svg { color: #8399a8; }
-.sidebar .side-item:hover, .sidebar .side-nav:hover { background: rgba(255, 255, 255, 0.07); color: #d8e1e8; }
-.sidebar .side-item.current, .sidebar a.side-nav.current { background: rgba(255, 255, 255, 0.13); }
-.sidebar .side-item.current a, .sidebar a.side-nav.current { color: #fff; }
-.sidebar .side-remove { color: #7b8f9d; }
-.sidebar .side-star-q { color: #8399a8; }
 
 /* pill search box */
 #search {

@@ -1,5 +1,6 @@
-/* Calendar hierarchy: Today button, Year/Month/Day nodes, navigation strip,
-   day navigation, dated-items surfacing. */
+/* Journal storage: Year/Month/Day hierarchy under the calendar container, day
+   pages behaving as normal pages, dated items surfacing as linked references.
+   (Rhizome removed the calendar strip/overview — dates are day-page links.) */
 const puppeteer = require('puppeteer-core');
 const CHROME = process.env.CHROME || 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -16,9 +17,9 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   await sleep(400);
 
   const today = await page.evaluate(() => todayStr());
-  const [Y, M, D] = today.split('-').map(Number);
+  const [Y, M] = today.split('-').map(Number);
 
-  /* ---- 1. gotoToday() builds Calendar > Year > Month > Day and zooms in ---- */
+  /* ---- 1. gotoDate builds Calendar > Year > Month > Day and zooms in ---- */
   await page.evaluate(() => gotoDate(todayStr()));
   await sleep(450);
   const built = await page.evaluate(() => {
@@ -34,11 +35,12 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
       title: document.querySelector('#zoom-title').textContent,
     };
   });
-  assert(built && /Calendar/.test(built.rootText), 'gotoToday creates a "Calendar" root node');
+  assert(built && /Calendar/.test(built.rootText), 'gotoDate creates a "Calendar" root node');
   assert(built.year === Y && built.month === M - 1 && built.dayIso === today,
     `Calendar › ${Y} › ${M} › ${today} hierarchy built`);
-  assert(built.zoomedDay === today, 'gotoToday zooms into today\'s day node');
-  assert(/,/.test(built.title), `day title is a weekday label ("${built.title}")`);
+  assert(built.zoomedDay === today, 'gotoDate zooms into today\'s day node');
+  assert(/^(January|February|March|April|May|June|July|August|September|October|November|December) \d{1,2}(st|nd|rd|th), \d{4}$/.test(built.title),
+    `day title is a Roam date ("${built.title}")`);
 
   /* ---- 2. a day page is a normal page: no calendar crumbs, no strip ---- */
   const dayChrome = await page.evaluate(() => ({
@@ -46,117 +48,69 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
     strip: document.querySelector('#cal-strip').hidden,
     calPage: document.querySelector('#page').classList.contains('cal-page'),
   }));
-  assert(dayChrome.crumbs === 'none', 'day pages show no calendar breadcrumbs'); // rhizome
-  assert(dayChrome.strip && !dayChrome.calPage, 'day pages carry no strip or cal-page chrome'); // rhizome
+  assert(dayChrome.crumbs === 'none', 'day pages show no calendar breadcrumbs');
+  assert(dayChrome.strip && !dayChrome.calPage, 'day pages carry no strip or cal-page chrome');
 
-  /* ---- 3. the month node keeps the day navigation strip ---- */
-  let strip = await page.evaluate(() => {
-    const root = Object.values(doc.nodes).find(n => n.cal === 'root');
-    const year = root.children.map(id => doc.nodes[id]).find(n => n.cal === 'year');
-    const month = year.children.find(id => doc.nodes[id].cal === 'month');
-    zoomTo(month);
-    return new Promise(r => setTimeout(() => {
-      const el = document.querySelector('#cal-strip');
-      if (el.hidden) return r(null);
-      r({
-        count: el.querySelectorAll('.cs-day').length,
-        today: !!el.querySelector('.cs-day.today'),
-        hasMonthLabel: !!el.querySelector('.cs-day[data-mon]'),
-        arrows: !!el.querySelector('.cs-nav'),
-      });
-    }, 450));
-  });
-  assert(strip && strip.count > 14, `month view renders a row of days (${strip?.count})`);
-  assert(strip.today, 'today is highlighted in the month strip');
-  assert(strip.hasMonthLabel && strip.arrows, 'strip has month labels and ‹ › navigation');
-
-  /* ---- 4. write under today, then navigate to another day via the month strip ---- */
-  await page.evaluate(() => gotoDate(todayStr()));
-  await sleep(450);
+  /* ---- 3. each day keeps its own content across navigation ---- */
   await page.evaluate(() => setCaretOffset(document.querySelector('#zoom-title'), 'end'));
   await page.keyboard.press('ArrowDown');     // start a bullet under today (empty-page nav)
   await page.keyboard.type('Daily standup notes');
   await sleep(500);
-  // from the month view, click a neighboring day cell
-  const before = await page.evaluate(() => Object.keys(doc.nodes).length);
-  await page.evaluate(() => {
-    const root = Object.values(doc.nodes).find(n => n.cal === 'root');
-    const year = root.children.map(id => doc.nodes[id]).find(n => n.cal === 'year');
-    const month = year.children.find(id => doc.nodes[id].cal === 'month');
-    zoomTo(month);
-  });
+  // navigate to another day, then back — the note stays on today's page
+  await page.evaluate(() => { const d = new Date(); d.setDate(d.getDate() + 1); gotoDate(isoOf(d)); });
   await sleep(450);
-  await page.evaluate(() => {
-    const cur = document.querySelector('.cs-day.today');
-    let pick = cur?.nextElementSibling;
-    while (pick && !pick.classList.contains('cs-day')) pick = pick.nextElementSibling;
-    if (!pick) { pick = cur?.previousElementSibling; while (pick && !pick.classList.contains('cs-day')) pick = pick.previousElementSibling; }
-    pick.click();
-  });
-  await sleep(450);
-  const navd = await page.evaluate(() => {
-    const z = doc.nodes[state.zoom];
-    return { isDay: z?.cal === 'day', iso: z?.cd, nodeCount: Object.keys(doc.nodes).length };
-  });
-  assert(navd.isDay && navd.iso !== today, `clicking a neighboring day navigates to its day node (${navd.iso})`);
-  assert(navd.nodeCount > before, 'the new day node was created on demand');
-  // today's note is preserved on its own day
+  const other = await page.evaluate(() => ({
+    isDay: N(state.zoom)?.cal === 'day',
+    iso: N(state.zoom)?.cd,
+    empty: kidsOf(state.zoom).every(id => !plainOf(N(id).text).trim()),
+  }));
+  assert(other.isDay && other.iso !== today, `gotoDate opens a fresh day page (${other.iso})`);
   await page.evaluate(() => gotoDate(todayStr()));
   await sleep(450);
   let ok = await page.evaluate(() =>
     kidsOf(state.zoom).some(id => plainOf(doc.nodes[id].text).includes('Daily standup notes')));
   assert(ok, 'each day keeps its own content (today still has its note)');
 
-  /* ---- 5. zoom to the Year node → month tabs ---- */
-  await page.evaluate(() => {
-    const root = Object.values(doc.nodes).find(n => n.cal === 'root');
-    const year = root.children.find(id => doc.nodes[id].cal === 'year');
-    location.hash = '#/n/' + year;
-  });
-  await sleep(450);
-  ok = await page.evaluate(() => {
-    const tabs = [...document.querySelectorAll('#cal-strip .cs-mon-tab')];
-    return tabs.length === 12 && tabs.some(t => t.textContent === 'Jan') && tabs.some(t => t.textContent === 'Dec');
-  });
-  assert(ok, 'the Year node shows Jan–Dec month tabs');
-  // click a month tab → navigate to that month
-  await page.evaluate(() => {
-    [...document.querySelectorAll('#cal-strip .cs-mon-tab')].find(t => t.textContent === 'Dec').click();
-  });
-  await sleep(450);
-  ok = await page.evaluate(() => { const z = doc.nodes[state.zoom]; return z?.cal === 'month' && z?.cm === 11; });
-  assert(ok, 'clicking a month tab navigates to that month node');
-
-  /* ---- 6. items dated elsewhere surface under their day ---- */
+  /* ---- 4. items linked to a day surface under that day's Linked References ---- */
   await page.evaluate(() => { location.hash = '#/outline'; });
   await sleep(350);
   await page.evaluate(t => {
-    const n = makeNode(`Renew passport <time datetime="${t}">x</time>`);
+    snapshot();
+    const day = ensureDay(t);
+    const n = makeNode(`Renew passport <a href="#/n/${day}" rel="noopener">${roamDateLabel(t)}</a>`);
     insertAt('root', 0, n);
     markDirty();
   }, today);
   await sleep(200);
   await page.evaluate(() => gotoDate(todayStr()));
   await sleep(450);
-  ok = await page.evaluate(() => {
-    const sec = document.querySelector('#cal-strip .cal-dated');
-    return sec && /Renew passport/.test(sec.textContent) && /Items dated to this day/.test(sec.textContent);
-  });
-  assert(ok, 'items dated to today surface under today in the calendar');
+  ok = await page.evaluate(() =>
+    [...document.querySelectorAll('#backlinks .ref-row')].some(r => /Renew passport/.test(r.textContent)));
+  assert(ok, 'items linked to today surface under today\'s Linked References');
 
-  /* ---- 7. the Calendar node + Today button work from the sidebar ---- */
+  /* ---- 5. date search still finds day-linked items ---- */
+  await page.evaluate(() => { location.hash = '#/outline'; });
+  await sleep(300);
+  ok = await page.evaluate(() => {
+    setSearch('date:today');
+    return state.matchCount >= 1;
+  });
+  assert(ok, 'date:today search matches items linked to today');
+  await page.evaluate(() => setSearch(''));
+  await sleep(120);
+
+  /* ---- 6. the Calendar container stays out of the sidebar; topbar button opens Daily Notes ---- */
   await page.evaluate(() => { settings.sidebar = true; applyTheme(); renderSidebar(); });
   await sleep(200);
   ok = await page.evaluate(() =>
     ![...document.querySelectorAll('#side-pages .side-item')].some(el => /Calendar/.test(el.textContent)));
-  assert(ok, 'the Calendar container stays out of the sidebar page list'); // rhizome
-  // navigate away, then use the topbar Today button
+  assert(ok, 'the Calendar container stays out of the sidebar page list');
   await page.evaluate(() => { location.hash = '#/outline'; });
   await sleep(350);
   await page.click('#btn-calendar');
   await sleep(450);
   ok = await page.evaluate(() => state.view === 'daily' && [...document.querySelectorAll('.day-section')].some(s => N(s.dataset.day).cd === todayStr()));
-  assert(ok, 'the topbar Today button opens Daily Notes with today on top'); // rhizome
+  assert(ok, 'the topbar button opens Daily Notes with today on top');
 
   await browser.close();
   console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL CALENDAR TESTS PASSED');
