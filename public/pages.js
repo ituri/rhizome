@@ -318,6 +318,175 @@ window.renderSidebar = function renderSidebar() {
   }
 };
 
+/* ---------------- Linked & Unlinked References ---------------- */
+
+// replaces the upstream flat "Linked from" list with Roam-style sections:
+// linked references grouped by their containing page, plus a lazy
+// unlinked-references scan with a one-click Link action
+window.renderBacklinks = function renderBacklinks() {
+  if (!doc || state.zoom === HOME) { backlinksEl.hidden = true; return; }
+  const target = state.zoom;
+
+  // references from daily notes group under their day page, not the calendar container
+  const refGroupOf = id => {
+    let p = id;
+    while (p) { if (N(p)?.cal === 'day') return p; p = parentOf(p); }
+    return pageOf(id);
+  };
+
+  const groups = new Map(); // containing page (or day) → rows
+  let linkedCount = 0;
+  for (const id of Object.keys(doc.nodes)) {
+    if (id === target) continue;
+    const n = doc.nodes[id];
+    if (n.mirror === target || (n.text || '').includes('#/n/' + target)) {
+      const gid = refGroupOf(id);
+      if (gid === target) continue; // references from inside the page aren't backlinks
+      const rows = groups.get(gid) || [];
+      if (rows.length >= 30) continue;
+      if (n.mirror === target) {
+        const host = parentOf(id) || id;
+        rows.push({ id: host, label: '⧉ mirrored in ' + (plainOf(N(host)?.text || '').trim() || 'Untitled') });
+      } else {
+        rows.push({ id, html: n.text });
+      }
+      groups.set(gid, rows);
+      linkedCount++;
+    }
+  }
+
+  backlinksEl.hidden = false;
+  backlinksEl.innerHTML = '';
+  const head = document.createElement('h3');
+  head.textContent = `Linked References (${linkedCount})`;
+  backlinksEl.append(head);
+  if (!linkedCount) {
+    const none = document.createElement('div');
+    none.className = 'ref-none';
+    none.textContent = 'No linked references yet.';
+    backlinksEl.append(none);
+  }
+  for (const [gid, rows] of groups) {
+    const gEl = document.createElement('div');
+    gEl.className = 'ref-group';
+    const title = document.createElement('a');
+    title.className = 'ref-page';
+    title.href = '#/n/' + gid;
+    title.textContent = plainOf(N(gid)?.text || '').trim() || 'Untitled';
+    gEl.append(title);
+    for (const r of rows) {
+      const row = document.createElement('div');
+      row.className = 'ref-row';
+      if (r.html != null) {
+        row.innerHTML = decorate(r.html);
+        row.addEventListener('click', e => { if (!e.target.closest('a')) zoomTo(r.id); });
+      } else {
+        const a = document.createElement('a');
+        a.href = '#/n/' + r.id;
+        a.textContent = r.label;
+        row.append(a);
+      }
+      gEl.append(row);
+    }
+    backlinksEl.append(gEl);
+  }
+
+  renderUnlinkedSection(target);
+};
+
+function renderUnlinkedSection(target) {
+  const title = plainOf(N(target).text).trim();
+  if (title.length < 3) return; // too short to mean anything in a text scan
+  const box = document.createElement('div');
+  box.className = 'unlinked-box';
+  const head = document.createElement('h3');
+  head.className = 'unlinked-head';
+  head.innerHTML = '<span class="unlinked-caret">▸</span> Unlinked References';
+  const body = document.createElement('div');
+  body.className = 'unlinked-body';
+  body.hidden = true;
+  let scanned = false;
+  head.addEventListener('click', () => {
+    body.hidden = !body.hidden;
+    head.classList.toggle('open', !body.hidden);
+    if (!scanned && !body.hidden) { scanned = true; fillUnlinked(body, target, title); }
+  });
+  box.append(head, body);
+  backlinksEl.append(box);
+}
+
+// the O(doc) plain-text scan only runs when the section is expanded
+function fillUnlinked(body, target, title) {
+  const needle = title.toLowerCase();
+  const rows = [];
+  for (const id of Object.keys(doc.nodes)) {
+    if (rows.length >= 50) break;
+    if (id === target || isAncestor(target, id)) continue;
+    const n = doc.nodes[id];
+    if (n.mirror || n.cal) continue; // calendar titles ("July 14th, 2026") are noise, not mentions
+    if ((n.text || '').includes('#/n/' + target)) continue; // already linked
+    const plain = plainOf(n.text || '');
+    if (!plain.toLowerCase().includes(needle)) continue;
+    rows.push({ id, plain: plain.trim() });
+  }
+  body.innerHTML = '';
+  if (!rows.length) {
+    const none = document.createElement('div');
+    none.className = 'ref-none';
+    none.textContent = 'No unlinked mentions.';
+    body.append(none);
+    return;
+  }
+  for (const r of rows) {
+    const row = document.createElement('div');
+    row.className = 'ref-row unlinked-row';
+    const span = document.createElement('span');
+    span.className = 'unlinked-text';
+    span.textContent = r.plain.slice(0, 120);
+    span.addEventListener('click', () => zoomTo(r.id));
+    const btn = document.createElement('button');
+    btn.className = 'unlinked-link-btn';
+    btn.textContent = 'Link';
+    btn.addEventListener('click', () => {
+      if (!linkifyMatch(r.id, target, title)) showToast('Could not link this mention automatically');
+    });
+    row.append(span, btn);
+    body.append(row);
+  }
+}
+
+// wrap the first plain-text occurrence of the page title in an internal link
+function linkifyMatch(nodeId, pageId, title) {
+  const n = N(nodeId);
+  if (!n || state.readOnly) return false;
+  const tpl = document.createElement('template');
+  tpl.innerHTML = n.text || '';
+  const needle = title.toLowerCase();
+  const walker = document.createTreeWalker(tpl.content, NodeFilter.SHOW_TEXT);
+  let hit = null;
+  while (walker.nextNode()) {
+    const t = walker.currentNode;
+    if (t.parentElement?.closest('a')) continue; // never nest inside an existing link
+    const idx = t.nodeValue.toLowerCase().indexOf(needle);
+    if (idx >= 0) { hit = { t, idx }; break; }
+  }
+  if (!hit) return false; // e.g. the mention spans inline markup — leave it to the user
+  snapshot();
+  const rest = hit.t.splitText(hit.idx);
+  rest.splitText(title.length);
+  const a = document.createElement('a');
+  a.setAttribute('href', '#/n/' + pageId);
+  a.setAttribute('rel', 'noopener');
+  a.textContent = rest.nodeValue; // keeps the original casing
+  rest.replaceWith(a);
+  recOld(nodeId);
+  n.text = sanitizeHtml(tpl.innerHTML);
+  touch(nodeId);
+  markDirty();
+  renderPage(); // the row migrates from Unlinked to Linked
+  return true;
+}
+
 // init() (app2.js) is async and still awaiting the doc when this file runs
 (function afterDocLoad() {
   if (doc) migrateDayLabels();

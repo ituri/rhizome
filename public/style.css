@@ -1937,3 +1937,22 @@ a.side-nav.current { background: var(--accent-softer); color: var(--ink); }
   border: 1px solid var(--line); background: none; color: var(--ink-soft); font: inherit; cursor: pointer;
 }
 .daily-more:hover { background: var(--accent-softer); color: var(--ink); }
+.ref-group { margin: 10px 0 14px; }
+.ref-page { display: block; font-size: 13px; font-weight: 600; color: var(--accent); text-decoration: none; margin-bottom: 4px; }
+.ref-row { padding: 4px 0 4px 10px; border-left: 2px solid var(--line); font-size: 14px; color: var(--ink-soft); cursor: pointer; }
+.ref-row:hover { border-left-color: var(--accent); color: var(--ink); }
+.ref-row a { color: var(--ink-soft); text-decoration: none; }
+.ref-row a:hover { color: var(--accent); }
+.ref-none { color: var(--ink-faint); font-size: 13px; padding: 2px 0 6px; }
+.unlinked-box { margin-top: 18px; }
+.unlinked-head { cursor: pointer; user-select: none; }
+.unlinked-caret { display: inline-block; transition: transform 0.15s; margin-right: 4px; }
+.unlinked-head.open .unlinked-caret { transform: rotate(90deg); }
+.unlinked-row { display: flex; align-items: baseline; gap: 10px; }
+.unlinked-text { flex: 1; }
+.unlinked-link-btn {
+  border: 1px solid var(--line); background: none; color: var(--accent); font: inherit;
+  font-size: 12px; padding: 1px 10px; border-radius: 6px; cursor: pointer; opacity: 0;
+}
+.unlinked-row:hover .unlinked-link-btn { opacity: 1; }
+.unlinked-link-btn:hover { background: var(--accent-softer); }
