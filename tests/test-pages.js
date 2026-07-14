@@ -262,6 +262,39 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   const ct = await page.evaluate(() => plainOf(N(window.__timeHost).text || ''));
   assert(/\d{2}:\d{2}/.test(ct), `slash Current Time inserts a timestamp ("${ct}")`);
 
+  /* ---- 19. typing [[Title]] in full auto-links to a (possibly empty) page ---- */
+  await page.evaluate(() => { location.hash = '#/'; });
+  await sleep(500);
+  await page.evaluate(() => { window.__wlHost = opNewAt(findDay(todayStr()), 0); });
+  await sleep(200);
+  await page.evaluate(() => document.querySelector(`.item[data-id="${window.__wlHost}"] .content`)?.focus());
+  await sleep(150);
+  await page.keyboard.type('ping [[Frisch Angelegt]]');
+  await sleep(450);
+  const wl = await page.evaluate(() => {
+    const n = N(window.__wlHost);
+    const pageId = pagesOf().find(p => plainOf(N(p).text).trim() === 'Frisch Angelegt');
+    return {
+      linked: pageId && (n.text || '').includes('#/n/' + pageId),
+      noBrackets: !/\[\[|\]\]/.test(n.text || ''),
+      empty: pageId ? kidsOf(pageId).length === 0 : null,
+      topLevel: pageId ? kidsOf(ROOT).includes(pageId) : false,
+    };
+  });
+  assert(wl.linked && wl.noBrackets, 'typing [[Title]] converts to a link and drops the brackets');
+  assert(wl.topLevel && wl.empty === true, 'the linked page is created top-level and empty');
+
+  /* ---- 20. typing [[Existing]] reuses the page (no duplicate) ---- */
+  await page.evaluate(() => { window.__wl2 = opNewAt(findDay(todayStr()), 0); });
+  await sleep(200);
+  await page.evaluate(() => document.querySelector(`.item[data-id="${window.__wl2}"] .content`)?.focus());
+  await sleep(150);
+  await page.keyboard.type('again [[frisch angelegt]]'); // different case
+  await sleep(450);
+  const dupCount = await page.evaluate(() =>
+    pagesOf().filter(p => plainOf(N(p).text).trim().toLowerCase() === 'frisch angelegt').length);
+  assert(dupCount === 1, `typed [[Existing]] reuses the page (count ${dupCount})`);
+
   await browser.close();
   console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PAGES TESTS PASSED');
   process.exit(failures ? 1 : 0);

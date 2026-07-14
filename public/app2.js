@@ -430,6 +430,28 @@ window.editorInputHook = function editorInputHook(ctx) {
     return;
   }
 
+  // [[title]] typed out in full → link to that page immediately (created if
+  // needed, even when still empty), no popover interaction required
+  const wl = before.match(/\[\[([^[\]\n]+)\]\]$/);
+  if (wl && wl[1].trim() && ctx.field === 'text' && fmtOf(ctx.id) !== 'codeblock' && !state.readOnly) {
+    window.closeCaretPop();
+    const title = wl[1].trim();
+    snapshot();
+    const pageId = getOrCreatePage(title);
+    selectPlainRange(ctx.el, off - wl[0].length, off); // select the whole "[[title]]"
+    const sel = getSelection();
+    const r = sel.getRangeAt(0);
+    r.deleteContents();
+    const a = document.createElement('a');
+    a.setAttribute('href', '#/n/' + pageId);
+    a.setAttribute('rel', 'noopener');
+    a.textContent = title;
+    insertInlineAtCaret(sel, r, a);
+    scheduleCommit(ctx.el);
+    markDirty();
+    return;
+  }
+
   // [[ → internal-link autocomplete
   const lm = before.match(/\[\[([^\]\n]*)$/);
   if (lm && ctx.field === 'text' && fmtOf(ctx.id) !== 'codeblock') {
