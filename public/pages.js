@@ -736,6 +736,121 @@ window.parseAttribute = function parseAttribute(node) {
   return m ? { key: m[1].trim(), value: m[2].trim() } : null;
 };
 
+/* ---------------- Live queries: {{query: {and:…}{or:…}{not:…}{between:…}}} ---------------- */
+
+// parse a query block into an AST. Page refs come from anchors (#/n/id) or literal
+// [[Name]] / #tag; a [[date]] becomes a date leaf (for {between}). Returns a clause or null.
+window.parseLiveQuery = function parseLiveQuery(raw) {
+  const qm = (raw || '').match(/\{\{query:([\s\S]*)\}\}/);
+  if (!qm) return null;
+  const tokens = [];
+  const re = /\{(and|or|not|between)\s*:|(\})|<a[^>]*href="#\/n\/([A-Za-z0-9]+)"[^>]*>[\s\S]*?<\/a>|\[\[([^\]]+)\]\]|#\[\[([^\]]+)\]\]|#([\p{L}\p{N}_][\p{L}\p{N}_\-/]*)/gu;
+  let m;
+  while ((m = re.exec(qm[1]))) {
+    if (m[1]) { tokens.push({ t: 'open', op: m[1] }); continue; }
+    if (m[2]) { tokens.push({ t: 'close' }); continue; }
+    if (m[3]) { // an existing anchor: a day node is a date, anything else a page
+      const cd = N(m[3]) && N(m[3]).cd;
+      tokens.push(cd ? { t: 'date', iso: cd } : { t: 'page', id: m[3] });
+      continue;
+    }
+    const name = (m[4] || m[5] || m[6] || '').trim();
+    if (!name) continue;
+    const iso = parseRoamDate(name);
+    if (iso) { tokens.push({ t: 'date', iso }); continue; }
+    const id = findPageByTitle(name);
+    if (id) tokens.push({ t: 'page', id });
+  }
+  let i = 0;
+  const parse = () => {
+    const tok = tokens[i];
+    if (!tok) return null;
+    if (tok.t === 'page') { i++; return { op: 'ref', id: tok.id }; }
+    if (tok.t === 'date') { i++; return { op: 'date', iso: tok.iso }; }
+    if (tok.t === 'open') {
+      i++;
+      const children = [];
+      while (tokens[i] && tokens[i].t !== 'close') { const c = parse(); if (c) children.push(c); else i++; }
+      i++; // consume the matching }
+      return { op: tok.op, children };
+    }
+    i++;
+    return null;
+  };
+  return parse();
+};
+
+// evaluate a query AST → array of matching block ids (selfId excluded)
+window.evalLiveQuery = function evalLiveQuery(ast, selfId) {
+  if (!ast) return [];
+  const isResult = id => {
+    const n = doc.nodes[id];
+    return id !== selfId && n && n.text && !isCalRoot(id)
+      && plainOf(n.text).trim() && !/\{\{query:/.test(n.text); // query blocks aren't results
+  };
+  const universe = () => Object.keys(doc.nodes).filter(isResult);
+  const refMatches = pageId => {
+    const set = new Set();
+    const title = plainOf(N(pageId).text).trim();
+    const tagRe = /^[\p{L}\p{N}_][\p{L}\p{N}_\-/]*$/u.test(title)
+      ? new RegExp('[#@]' + title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![\\p{L}\\p{N}_\\-/])', 'u') : null;
+    for (const id of Object.keys(doc.nodes)) {
+      if (!isResult(id)) continue;
+      const n = doc.nodes[id];
+      // a block matches a page ref if it links/tags the page, or lives on it (not the title itself)
+      if (n.text.includes('#/n/' + pageId) || (tagRe && tagRe.test(n.text)) || (refGroupOf(id) === pageId && id !== pageId)) set.add(id);
+    }
+    return set;
+  };
+  const inter = sets => sets.reduce((a, s) => new Set([...a].filter(x => s.has(x))));
+  const ev = node => {
+    if (node.op === 'ref') return refMatches(node.id);
+    if (node.op === 'date') return new Set(); // only meaningful inside {between}
+    if (node.op === 'between') {
+      const isos = node.children.map(c => c.iso).filter(Boolean).sort();
+      const [a, b] = isos;
+      const set = new Set();
+      if (!a || !b) return set;
+      for (const id of Object.keys(doc.nodes)) {
+        if (!isResult(id)) continue;
+        const cd = N(refGroupOf(id)) && N(refGroupOf(id)).cd;
+        if (cd && cd >= a && cd <= b) set.add(id);
+      }
+      return set;
+    }
+    const pos = (node.children || []).filter(c => c.op !== 'not');
+    const negs = (node.children || []).filter(c => c.op === 'not');
+    let acc;
+    if (node.op === 'or') { acc = new Set(); for (const c of pos) for (const x of ev(c)) acc.add(x); if (!pos.length) acc = new Set(universe()); }
+    else if (node.op === 'not') { acc = new Set(universe()); for (const x of ev(node.children[0] || {})) acc.delete(x); return acc; }
+    else acc = pos.length ? inter(pos.map(ev)) : new Set(universe()); // and (default)
+    for (const ng of negs) for (const x of ev(ng.children[0] || {})) acc.delete(x);
+    return acc;
+  };
+  const res = ev(ast);
+  res.delete(selfId);
+  return [...res];
+};
+
+// the live result list appended under a {{query:…}} block (re-runs on every render)
+window.buildQueryResults = function buildQueryResults(n) {
+  if (!/\{\{query:/.test(n.text || '')) return null;
+  const box = document.createElement('div');
+  box.className = 'query-block';
+  const ast = window.parseLiveQuery(n.text);
+  if (!ast) { box.innerHTML = '<div class="ref-none">Invalid query.</div>'; return box; }
+  const ids = window.evalLiveQuery(ast, n.id).filter(id => doc.nodes[id]);
+  const rows = ids.map(id => ({ id, html: N(contentIdOf(id)).text }));
+  const built = rows.length ? buildRefGroups(null, rows) : null;
+  const head = document.createElement('div');
+  head.className = 'query-head';
+  head.textContent = `${ids.length} result${ids.length === 1 ? '' : 's'}`;
+  box.append(head);
+  if (built) box.append(built.el);
+  else { const none = document.createElement('div'); none.className = 'ref-none'; none.textContent = 'No matches.'; box.append(none); }
+  return box;
+};
+
 // grouped DOM for one target's rows; null when nothing survives the self-filter
 function buildRefGroups(target, rows) {
   const groups = new Map();

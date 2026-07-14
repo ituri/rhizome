@@ -1850,6 +1850,8 @@ function mountItem(id, underMatch = false) {
   if (atts) item.append(atts);
   const embed = buildEmbed(cn);
   if (embed) item.append(embed);
+  const qr = window.buildQueryResults?.(cn); // live {{query:…}} result list
+  if (qr) item.append(qr);
 
   const um = underMatch || (searchActive() && state.matchSet?.has(id));
 

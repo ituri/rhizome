@@ -523,6 +523,48 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
     [...document.querySelectorAll('#backlinks .ref-row')].some(r => /for details/.test(r.textContent)));
   assert(aliasBack, 'a [[alias]] link surfaces as a Linked Reference on the page');
 
+  /* ---- 30. live queries: {{query}} lists matching blocks with and/or/not ---- */
+  await page.evaluate(() => { setSearch(''); location.hash = '#/outline'; });
+  await sleep(300);
+  const q = await page.evaluate(() => {
+    const alpha = getOrCreatePage('Alpha'), beta = getOrCreatePage('Beta');
+    const link = (id, l) => '<a href="#/n/' + id + '" rel="noopener">' + l + '</a>';
+    // create every node first — opNewAt commits the prior focused (empty) block, so set text only after
+    const b1 = opNewAt('root', 0), b2 = opNewAt('root', 0), b3 = opNewAt('root', 0);
+    const qb = opNewAt('root', 0), qb2 = opNewAt('root', 0), qb3 = opNewAt('root', 0);
+    N(b1).text = 'task one about ' + link(alpha, 'Alpha');
+    N(b2).text = 'task two ' + link(alpha, 'Alpha') + ' and ' + link(beta, 'Beta');
+    N(b3).text = 'unrelated note';
+    N(qb).text = '{{query: {and: ' + link(alpha, 'Alpha') + '}}}';
+    N(qb2).text = '{{query: {and: ' + link(alpha, 'Alpha') + ' ' + link(beta, 'Beta') + '}}}';
+    N(qb3).text = '{{query: {and: ' + link(alpha, 'Alpha') + ' {not: ' + link(beta, 'Beta') + '}}}}';
+    markDirty(); renderPage();
+    return { alpha, beta, b1, b2, b3, qb, qb2, qb3 };
+  });
+  await sleep(300);
+  const qr = await page.evaluate(sc => {
+    const ids = id => evalLiveQuery(parseLiveQuery(N(id).text), id).sort();
+    const dom = document.querySelector(`.item[data-id="${sc.qb}"] .query-block`);
+    return {
+      A: ids(sc.qb), AB: ids(sc.qb2), AnotB: ids(sc.qb3),
+      b1: sc.b1, b2: sc.b2,
+      domRows: dom ? dom.querySelectorAll('.ref-row').length : -1,
+      head: dom ? dom.querySelector('.query-head')?.textContent : null,
+    };
+  }, q);
+  assert(qr.A.includes(qr.b1) && qr.A.includes(qr.b2) && qr.A.length === 2,
+    `{and: [[Alpha]]} matches exactly the blocks referencing Alpha (${qr.A.length})`);
+  assert(qr.AB.length === 1 && qr.AB[0] === qr.b2, '{and: Alpha Beta} intersects to the block referencing both');
+  assert(qr.AnotB.length === 1 && qr.AnotB[0] === qr.b1, '{and: Alpha {not: Beta}} excludes the Beta block');
+  assert(qr.domRows >= 2 && /result/.test(qr.head || ''), 'the query block renders a live, counted result list');
+  // live update: adding a new Alpha reference grows the result set
+  const qLive = await page.evaluate(sc => {
+    const b4 = opNewAt('root', 0); N(b4).text = 'late addition <a href="#/n/' + sc.alpha + '" rel="noopener">Alpha</a>';
+    markDirty(); renderPage();
+    return evalLiveQuery(parseLiveQuery(N(sc.qb).text), sc.qb).length;
+  }, q);
+  assert(qLive === 3, `the query re-evaluates live when a new matching block appears (${qLive})`);
+
   await browser.close();
   console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PAGES TESTS PASSED');
   process.exit(failures ? 1 : 0);
