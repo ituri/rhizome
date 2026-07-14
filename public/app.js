@@ -1552,9 +1552,12 @@ function crumbLabel(id) {
 function renderCrumbs() {
   crumbsEl.innerHTML = '';
   if (state.zoom === HOME) { crumbsEl.style.display = 'none'; return; }
-  crumbsEl.style.display = '';
-  const chain = ancestorsOf(state.zoom).filter(id => id === HOME || isAncestor(HOME, id));
+  let chain = ancestorsOf(state.zoom).filter(id => id === HOME || isAncestor(HOME, id));
   if (!chain.includes(HOME)) chain.unshift(HOME);
+  // rhizome: crumbs start at the containing page, not at a "Home" root
+  if (!SHARE_TOKEN) chain = chain.filter(id => id !== HOME);
+  if (!chain.length) { crumbsEl.style.display = 'none'; return; }
+  crumbsEl.style.display = '';
   chain.forEach((id, i) => {
     if (i > 0) {
       const sep = document.createElement('span');
@@ -3814,16 +3817,21 @@ function renderJump(q) {
           .filter(id => doc.nodes[id] && !N(id).mirror && plainOf(N(id).text).trim())
           .slice(0, 14)
           .map(id => ({ id, plain: plainOf(N(id).text).trim(), path: jumpPath(id), done: N(id).done }));
-        paintJump(items);
+        paintJump(items, q);
       })
-      .catch(() => { if (seq === jumpSeq) paintJump(searchNodes(q)); }); // offline → local fallback
+      .catch(() => { if (seq === jumpSeq) paintJump(searchNodes(q), q); }); // offline → local fallback
     return;
   }
-  paintJump(searchNodes(q));
+  paintJump(searchNodes(q), q);
 }
 
-function paintJump(items) {
+function paintJump(items, q = '') {
   jumpItems = items;
+  // rhizome: offer to create a page unless the query already names one exactly
+  const title = q.trim();
+  if (title && !SHARE_TOKEN && !state.readOnly && !window.findPageByTitle?.(title)) {
+    jumpItems = [...items, { createPage: title, plain: `Create page “${title.slice(0, 80)}”`, path: '' }];
+  }
   jumpActive = 0;
   jumpResults.innerHTML = '';
   if (!jumpItems.length) {
@@ -3831,8 +3839,22 @@ function paintJump(items) {
     return;
   }
   jumpItems.forEach((it, i) => {
-    jumpResults.append(jumpRow(it, i === 0, () => { hideJump(); zoomTo(it.id); }, { showDone: true }));
+    const row = jumpRow(it, i === 0, () => { hideJump(); jumpPick(it); }, { showDone: true });
+    if (it.createPage) row.classList.add('jump-create');
+    jumpResults.append(row);
   });
+}
+
+// shared by click and Enter: create-page rows materialize on pick
+function jumpPick(it) {
+  if (it.createPage) {
+    snapshot();
+    const id = getOrCreatePage(it.createPage);
+    markDirty();
+    zoomTo(id);
+  } else {
+    zoomTo(it.id);
+  }
 }
 
 jumpInput.addEventListener('input', () => renderJump(jumpInput.value));
@@ -3861,7 +3883,7 @@ function jumpKeydown(e) {
     count: () => jumpItems.length,
     getActive: () => jumpActive, setActive: v => { jumpActive = v; },
     onEscape: hideJump,
-    onEnter: () => { const it = jumpItems[jumpActive]; if (it) { hideJump(); zoomTo(it.id); } },
+    onEnter: () => { const it = jumpItems[jumpActive]; if (it) { hideJump(); jumpPick(it); } },
   });
 }
 

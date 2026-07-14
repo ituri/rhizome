@@ -363,8 +363,8 @@ function pickLink(it) {
   snapshot();
   let linkId, label;
   if (it.create) {
-    linkId = makeNode(escHtml(it.create));
-    insertAt(state.zoom, kidsOf(state.zoom).length, linkId);
+    // rhizome: [[…]] creates (or reuses) a top-level page, never a child here
+    linkId = getOrCreatePage(it.create);
     label = it.create;
   } else {
     if (!doc.nodes[it.linkId]) return;
@@ -1389,8 +1389,8 @@ function ensureCalChild(parent, pred, make) {
   return id;
 }
 function calDayLabel(iso) {
-  const [y, m, d] = iso.split('-').map(Number);
-  return `${DOW_SHORT[new Date(y, m - 1, d).getDay()]}, ${MONTHS_SHORT[m - 1]} ${d}`;
+  // rhizome: day pages carry Roam-style titles ("July 14th, 2026")
+  return roamDateLabel(iso);
 }
 function ensureYear(y) {
   return ensureCalChild(calRoot(true), id => N(id).cal === 'year' && N(id).cy === y,

@@ -16,5 +16,5 @@ function topLevelNames(file) {
   return names;
 }
 
-const shared = new Set([...topLevelNames('public/app.js'), ...topLevelNames('public/app2.js')]);
+const shared = new Set([...topLevelNames('public/app.js'), ...topLevelNames('public/app2.js'), ...topLevelNames('public/pages.js')]);
 module.exports = Object.fromEntries([...shared].map(n => [n, 'writable']));

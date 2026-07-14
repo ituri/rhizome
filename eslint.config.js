@@ -32,7 +32,7 @@ module.exports = [
 
   // Browser client: one shared global scope, no modules
   {
-    files: ['public/app.js', 'public/app2.js'],
+    files: ['public/app.js', 'public/app2.js', 'public/pages.js'],
     languageOptions: { ecmaVersion: 2023, sourceType: 'script', globals: { ...globals.browser, ...sharedClientGlobals } },
     rules,
   },

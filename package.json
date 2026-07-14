@@ -6,7 +6,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "lint": "eslint server.js db.js ops.js opsdoc.js public/app.js public/app2.js bench",
+    "lint": "eslint server.js db.js ops.js opsdoc.js public/app.js public/app2.js public/pages.js bench",
     "typecheck": "tsc --noEmit",
     "test:db": "node tests/test-db.js",
     "test:converge": "node tests/test-converge.js",
@@ -20,6 +20,7 @@
     "test:search": "node tests/test-search.js",
     "test:mirror": "node tests/test-mirror.js",
     "test:mirrorserver": "node tests/test-mirror-server.js",
+    "test:pages": "node tests/test-pages.js",
     "bench:curve": "node --expose-gc bench/curve.js",
     "bench:profile": "node bench/profile.js",
     "bench:load": "node bench/load.js"

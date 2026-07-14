@@ -112,7 +112,7 @@ const assert = (cond, msg) => {
   let title = await page.$eval('#zoom-title', el => el.textContent);
   let crumbs = await page.$eval('#crumbs', el => el.textContent);
   assert(title === 'child item', `zoom shows item as title ("${title}")`);
-  assert(crumbs.includes('Home'), `breadcrumbs render ("${crumbs}")`);
+  assert(crumbs.includes('Welcome'), `breadcrumbs start at the containing page ("${crumbs}")`); // rhizome: no Home crumb
   const hash = await page.evaluate(() => location.hash);
   assert(/^#\/n\//.test(hash), `zoom updates URL (${hash})`);
   await page.keyboard.down('Alt'); await page.keyboard.press('ArrowLeft'); await page.keyboard.up('Alt');
