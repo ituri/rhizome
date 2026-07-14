@@ -304,7 +304,35 @@ function refreshCaretPop(query) {
       items.push({ label: `Create page “${query.trim().slice(0, 40)}”`, icon: '＋', create: query.trim() });
     }
     renderCaretItems(items, it => pickLink(it), 'Search for a page — type to create one');
+  } else if (caretPop.type === 'blockref') {
+    const found = searchNodes(query, 8).filter(it => it.id !== caretPop.ctx.id);
+    const items = found.map(it => ({ label: it.plain.slice(0, 60), icon: '⟨⟩', path: it.path, blockId: it.id }));
+    renderCaretItems(items, it => pickBlockRef(it), query.trim() ? 'No matching blocks' : 'Search for a block to reference');
   }
+}
+
+// (( inline block reference: insert a live reference to a single block. Stored as
+// an empty <a class="block-ref">; decorate fills the target's current text.
+function pickBlockRef(it) {
+  const { ctx, start } = caretPop;
+  let caret = caretOffsetIn(ctx.el) ?? start;
+  if ((ctx.el.textContent || '').slice(caret, caret + 2) === '))') caret += 2; // consume the auto-closed ))
+  window.closeCaretPop();
+  if (!doc.nodes[it.blockId]) return;
+  snapshot();
+  selectPlainRange(ctx.el, start, caret);
+  const sel = getSelection();
+  const r = sel.getRangeAt(0);
+  r.deleteContents();
+  const a = document.createElement('a');
+  a.setAttribute('href', '#/n/' + it.blockId);
+  a.setAttribute('rel', 'noopener');
+  a.className = 'block-ref';
+  a.setAttribute('contenteditable', 'false');
+  a.textContent = plainOf(N(it.blockId).text).trim().slice(0, 120) || 'Untitled';
+  insertInlineAtCaret(sel, r, a);
+  scheduleCommit(ctx.el);
+  markDirty();
 }
 
 function deletePlainRange(el, from, to) {
@@ -431,6 +459,12 @@ window.editorInputHook = function editorInputHook(ctx) {
     else refreshCaretPop(m[1]);
     return;
   }
+  if (caretPop && caretPop.type === 'blockref') {
+    const m = before.match(/\(\(([^()\n]*)$/);
+    if (!m || off <= caretPop.start) { window.closeCaretPop(); }
+    else refreshCaretPop(m[1]);
+    return;
+  }
 
   // [[title]] typed out in full → link to that page immediately (created if
   // needed, even when still empty), no popover interaction required
@@ -457,6 +491,15 @@ window.editorInputHook = function editorInputHook(ctx) {
   if (lm && ctx.field === 'text' && fmtOf(ctx.id) !== 'codeblock') {
     openCaretPop('linkpop', ctx, off - lm[0].length);
     refreshCaretPop(lm[1]);
+    clearDateSuggest();
+    return;
+  }
+
+  // (( → block-reference picker (inline reference to a single block)
+  const bm = before.match(/\(\(([^()\n]*)$/);
+  if (bm && ctx.field === 'text' && fmtOf(ctx.id) !== 'codeblock') {
+    openCaretPop('blockref', ctx, off - bm[0].length);
+    refreshCaretPop(bm[1]);
     clearDateSuggest();
     return;
   }

@@ -440,6 +440,33 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   const mwtRef = await page.evaluate(() => [...document.querySelectorAll('#backlinks .ref-row')].some(r => /siehe/.test(r.textContent)));
   assert(mwtRef, 'the multi-word tag page gathers its reference');
 
+  /* ---- 27. inline block reference (( )) shows the target's live text ---- */
+  await page.evaluate(() => { location.hash = '#/outline'; });
+  await sleep(350);
+  const brTarget = await page.evaluate(() => { const i = opNewAt('root', 0); N(i).text = 'Referenzierter Block XYZ'; markDirty(); renderPage(); return i; });
+  await sleep(150);
+  await page.evaluate(() => { window.__brHost = opNewAt('root', 0); document.querySelector(`.item[data-id="${window.__brHost}"] .content`).focus(); });
+  await sleep(150);
+  await page.keyboard.type('ref ((');
+  await sleep(250);
+  await page.keyboard.type('Referenzierter');
+  await sleep(350);
+  await page.evaluate(() => { const it = [...document.querySelectorAll('.caret-pop .pop-item')].find(x => /Referenzierter Block/.test(x.textContent)); it && it.click(); });
+  await sleep(400);
+  await page.evaluate(() => commitActiveText());
+  await sleep(200);
+  const br = await page.evaluate(t => ({
+    empty: /class="block-ref"><\/a>/.test(N(window.__brHost).text),
+    refs: N(window.__brHost).text.includes('#/n/' + t),
+    shown: document.querySelector(`.item[data-id="${window.__brHost}"] a.block-ref`)?.textContent,
+  }), brTarget);
+  assert(br.empty && br.refs, 'a (( )) block reference is stored empty and links the target');
+  assert(br.shown === 'Referenzierter Block XYZ', `the block ref shows the target's live text (got "${br.shown}")`);
+  await page.evaluate(t => { snapshot(); recOld(t); N(t).text = 'Geänderter Blocktext'; touch(t); markDirty(); renderPage(); }, brTarget);
+  await sleep(300);
+  const brLive = await page.evaluate(() => document.querySelector(`.item[data-id="${window.__brHost}"] a.block-ref`)?.textContent);
+  assert(brLive === 'Geänderter Blocktext', `the block ref updates live when the target changes (got "${brLive}")`);
+
   await browser.close();
   console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PAGES TESTS PASSED');
   process.exit(failures ? 1 : 0);

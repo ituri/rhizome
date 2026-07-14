@@ -87,6 +87,9 @@ button { font-family: inherit; }
 }
 
 .brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   font-family: var(--serif);
   font-style: italic;
   font-weight: 500;
@@ -96,6 +99,7 @@ button { font-family: inherit; }
   text-decoration: none;
   user-select: none;
 }
+.brand-logo { width: 20px; height: 20px; flex: none; color: var(--accent); }
 .brand-dot { color: var(--accent); font-style: normal; }
 
 .topbar-right { display: flex; align-items: center; gap: 6px; min-width: 0; }
@@ -2080,3 +2084,16 @@ html, body { font-size: 14px; line-height: 1.5; }
   color: var(--mention); background: var(--mention-soft);
 }
 a.tag::before, a.tag::after { content: none !important; } /* no [[ ]] brackets on tag pills */
+
+/* inline block references (( )) — a live, clickable snippet of the target block */
+a.block-ref, .ref-row a.block-ref {
+  color: var(--ink);
+  background: color-mix(in oklab, var(--accent) 8%, transparent);
+  box-shadow: inset 2px 0 0 color-mix(in oklab, var(--accent) 55%, transparent);
+  border-radius: 3px;
+  padding: 0.02em 0.34em 0.02em 0.28em;
+  text-decoration: none;
+  cursor: pointer;
+}
+a.block-ref:hover { background: color-mix(in oklab, var(--accent) 15%, transparent); }
+a.block-ref::before, a.block-ref::after { content: none !important; }

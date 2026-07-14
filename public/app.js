@@ -242,7 +242,9 @@ function serializeChildren(node) {
       } else if (child.tagName === 'A') {
         const href = safeHref(child.getAttribute('href'));
         const inner = serializeChildren(child);
-        if (!href) { out += inner; }
+        if (href && child.classList.contains('block-ref')) { // rhizome: store block refs empty (text stays live)
+          out += `<a href="${escAttr(href)}" class="block-ref"></a>`;
+        } else if (!href) { out += inner; }
         else if (child.classList.contains('tag')) { // rhizome: keep #[[…]] tag pills (whitelisted class)
           const cls = child.classList.contains('mention') ? 'tag mention' : 'tag';
           const dt = child.getAttribute('data-tag');
@@ -331,6 +333,14 @@ function decorate(html, opts = {}) {
   const walk = (node, inLink) => {
     for (const child of [...node.childNodes]) {
       if (child.nodeType === Node.ELEMENT_NODE) {
+        // rhizome: a block reference shows the target block's CURRENT text, live
+        if (child.tagName === 'A' && child.classList.contains('block-ref')) {
+          const m = (child.getAttribute('href') || '').match(/#\/n\/([A-Za-z0-9]+)/);
+          const t = m && doc.nodes[m[1]];
+          child.textContent = t ? (plainOf(t.text).trim().slice(0, 140) || 'Untitled') : '(deleted block)';
+          child.setAttribute('contenteditable', 'false');
+          continue;
+        }
         if (child.tagName === 'TIME' && child.getAttribute('datetime')) {
           const dt = child.getAttribute('datetime');
           const t = todayStr();
@@ -3203,14 +3213,15 @@ pageEl.addEventListener('beforeinput', e => {
   if (key !== burst.key || now - burst.at > 800) snapshot();
   burst = { key, at: now };
 
-  // rhizome: auto-close brackets ([ → [], [[ → [[]]) and type over the close
+  // rhizome: auto-close brackets ([ → [], (( → (())) and type over the close
   if (e.inputType === 'insertText' && fmtOf(ctx.id) !== 'codeblock') {
     const sel = getSelection();
     if (!sel.rangeCount || !sel.getRangeAt(0).collapsed) return;
-    if (e.data === '[') {
+    const CLOSE = { '[': ']', '(': ')' };
+    if (CLOSE[e.data]) {
       e.preventDefault();
       const r = sel.getRangeAt(0);
-      const t = document.createTextNode('[]');
+      const t = document.createTextNode(e.data + CLOSE[e.data]);
       r.insertNode(t);
       const caret = document.createRange();
       caret.setStart(t, 1); caret.collapse(true);
@@ -3218,7 +3229,7 @@ pageEl.addEventListener('beforeinput', e => {
       ctx.el.normalize();
       scheduleCommit(ctx.el);
       window.editorInputHook?.(ctx);
-    } else if (e.data === ']' && (ctx.el.textContent || '')[caretOffsetIn(ctx.el)] === ']') {
+    } else if ((e.data === ']' || e.data === ')') && (ctx.el.textContent || '')[caretOffsetIn(ctx.el)] === e.data) {
       e.preventDefault(); // step over the auto-inserted close instead of doubling it
       sel.modify('move', 'forward', 'character');
       window.editorInputHook?.(ctx);
