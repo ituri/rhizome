@@ -108,9 +108,13 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   await page.evaluate(() => { location.hash = '#/outline'; });
   await sleep(350);
   await page.click('#btn-calendar');
+  await sleep(300);
+  ok = await page.evaluate(() => !!document.querySelector('.datepick .dp-day'));
+  assert(ok, 'the topbar button opens a date picker'); // rhizome
+  await page.evaluate(() => document.querySelector('.datepick .dp-day.today').click());
   await sleep(450);
-  ok = await page.evaluate(() => state.view === 'daily' && [...document.querySelectorAll('.day-section')].some(s => N(s.dataset.day).cd === todayStr()));
-  assert(ok, 'the topbar button opens Daily Notes with today on top');
+  ok = await page.evaluate(() => N(state.zoom)?.cal === 'day' && N(state.zoom)?.cd === todayStr());
+  assert(ok, 'picking today jumps to today\'s journal page');
 
   await browser.close();
   console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL CALENDAR TESTS PASSED');

@@ -106,9 +106,13 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   ok = await page.evaluate(() => !!document.querySelector('#btn-calendar'));
   assert(ok, 'calendar button exists in the header');
   await page.click('#btn-calendar');
+  await sleep(300);
+  ok = await page.evaluate(() => !!document.querySelector('.datepick .dp-day'));
+  assert(ok, 'header calendar button opens a date picker'); // rhizome
+  await page.evaluate(() => document.querySelector('.datepick .dp-day.today').click());
   await sleep(450);
-  ok = await page.evaluate(() => state.view === 'daily' && !!document.querySelector('.day-section'));
-  assert(ok, 'header calendar button opens the Daily Notes view'); // rhizome
+  ok = await page.evaluate(() => N(state.zoom)?.cal === 'day' && N(state.zoom)?.cd === todayStr());
+  assert(ok, 'picking a day jumps to that day\'s journal page'); // rhizome
   await page.evaluate(() => { location.hash = '#/outline'; });
   await sleep(300);
 

@@ -147,10 +147,10 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   }));
   assert(info.zoomIsDay && info.view === null, 'clicking a day header zooms into the day page');
   assert(info.strip && info.crumbs === 'none', 'the zoomed day looks like a normal page (no strip, no crumbs)'); // rhizome
-  await page.click('#btn-calendar');
+  await page.evaluate(() => { location.hash = '#/'; });
   await sleep(500);
   info = await page.evaluate(() => ({ view: state.view, sections: document.querySelectorAll('.day-section').length }));
-  assert(info.view === 'daily' && info.sections >= 1, 'the topbar calendar button returns to Daily Notes');
+  assert(info.view === 'daily' && info.sections >= 1, 'navigating home returns to Daily Notes');
 
   /* ---- 8. everything persists across a reload ---- */
   await page.waitForFunction(() =>

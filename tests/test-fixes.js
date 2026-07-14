@@ -412,8 +412,10 @@ const node = (id, text, children = [], extra = {}) =>
     closeAllPopovers();
     return labels;
   });
-  const need = ['Insert template…', 'Count items', 'Export…', 'Mirror to Today', 'Move to Date…', 'Expand all'];
+  const need = ['Insert template…', 'Mirror to Today', 'Move to Date…', 'Expand all'];
+  const gone = ['Count items', 'Export…', 'Move to Next Week', 'Mirror here…', 'Copy as text', 'Present'];
   assert(need.every(l => menuLabels.some(t => t.includes(l))), `item ⋯ menu exposes ${need.join(', ')}`);
+  assert(gone.every(l => !menuLabels.some(t => t.includes(l))), 'trimmed item ⋯ menu drops the Tendril extras'); // rhizome
 
   /* B14. topbar pinned so topbar + full-height sidebar fill the viewport exactly
      (the old 52px magic number vs ~54px real topbar left a sub-pixel scroll) */

@@ -1387,7 +1387,8 @@ window.renderCalStrip = function renderCalStrip() {
 };
 
 $('#side-today')?.addEventListener('click', () => gotoToday());
-$('#btn-calendar').addEventListener('click', () => { location.hash = '#/'; });  // rhizome: header → daily notes
+// rhizome: the header calendar opens a date picker → jump to that day's journal page
+$('#btn-calendar').addEventListener('click', e => pickDate(e.currentTarget, iso => gotoDate(iso)));
 
 /* ---------------- K. trash ---------------- */
 
@@ -1791,19 +1792,18 @@ window.showItemMenu = function showItemMenu(anchor, id) {
       }
       pop.append(seg);
       pop.append(document.createElement('hr'));
+      // rhizome: trimmed for a Roam-style bullet menu — no Next Week, no mirror
+      // variants beyond Mirror / Mirror to Today, no Count / Export (doc-wide
+      // export stays in the main menu), no Present / Copy-as-text
       pop.append(
         menuItem('Add date', '📅', () => openDatePop({ id, field: 'text', el: elById.get(id)?.querySelector('.content') }), { hint: '!!' }),
         menuItem('Move to Today', '▦', () => moveItemToDay(id, dateOffset(0))),
         menuItem('Move to Tomorrow', '▦', () => moveItemToDay(id, dateOffset(1))),
-        menuItem('Move to Next Week', '▦', () => moveItemToDay(id, dateOffset(7))),
         menuItem('Move to Date…', '📅', () => pickDate(anchor, iso => moveItemToDay(id, iso))),
         document.createElement('hr'),
         menuItem('Move to…', '→', () => openNodePicker('Move to…', t => moveItemTo(id, t), subtreeOf(id)), { hint: 'Alt+Ctrl+M' }),
         menuItem('Mirror', '◇', () => opMirror(id), { hint: 'Alt+Shift+M' }),
-        menuItem('Mirror here…', '◈', () => mirrorHere(id)),
-        menuItem('Mirror to…', '◇', () => openNodePicker('Mirror to…', t => mirrorItemTo(id, t), subtreeOf(id))),
         menuItem('Mirror to Today', '◇', () => mirrorItemToDate(id, dateOffset(0))),
-        menuItem('Mirror to Date…', '◇', () => pickDate(anchor, iso => mirrorItemToDate(id, iso))),
         menuItem('Duplicate', '⧉', () => opDuplicate(id), { hint: 'Ctrl+D' }),
         document.createElement('hr'),
         menuItem('Comments', '💬', () => {
@@ -1813,8 +1813,6 @@ window.showItemMenu = function showItemMenu(anchor, id) {
         menuItem('Attach file', '📎', () => attachTo(id)),
         menuItem('Save as template', '🧩', () => saveAsTemplate(cid)),
         menuItem('Insert template…', '🧩', () => insertTemplatePop(anchor, { id, field: 'text' })),
-        menuItem('Count items', '#', () => opCount(id)),
-        menuItem('Export…', '⬇', () => exportNodePop(anchor, id)),
       );
       if (hasKids(cid)) pop.append(
         menuItem('Sort A → Z', '↓', () => opSort(id, 1)),
@@ -1834,15 +1832,10 @@ window.showItemMenu = function showItemMenu(anchor, id) {
       }));
     }
     pop.append(
-      menuItem('Present', '▶', () => { zoomTo(cid); setTimeout(() => startPresent(cid), 100); }),
       menuItem('Copy link', '🔗', async () => {
         await navigator.clipboard?.writeText(location.origin + location.pathname + '#/n/' + cid);
         showToast('Link copied');
       }, { hint: 'Alt+Shift+L' }),
-      menuItem('Copy as text', '📄', async () => {
-        await navigator.clipboard?.writeText(subtreeToText(cid, 0));
-        showToast('Copied as indented text');
-      }),
     );
     if (!state.readOnly) {
       pop.append(
