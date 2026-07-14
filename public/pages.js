@@ -225,6 +225,20 @@ function renderPagesView(frag) {
     const n = N(cid);
     return { id: cid, title: plainOf(n.text).trim() || 'Untitled', c: n.c ?? 0, m: n.m ?? 0 };
   });
+  // journal day pages are pages too (Roam lists them in All Pages)
+  const root = calRoot(false);
+  if (root) {
+    for (const y of kidsOf(root)) {
+      if (N(y).cal !== 'year') continue;
+      for (const mo of kidsOf(y)) {
+        if (N(mo).cal !== 'month') continue;
+        for (const d of kidsOf(mo)) {
+          const n = N(d);
+          if (n.cal === 'day') rows.push({ id: d, title: plainOf(n.text).trim() || 'Untitled', c: n.c ?? 0, m: n.m ?? 0 });
+        }
+      }
+    }
+  }
   const { key, dir } = pagesSort;
   rows.sort((a, b) => key === 'title'
     ? a.title.localeCompare(b.title) * dir

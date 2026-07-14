@@ -1439,6 +1439,27 @@ window.renderCalStrip = function renderCalStrip() {
   const n = doc.nodes[state.zoom];
   // share docs have no home root, so the journal hierarchy can't be navigated/created
   if (!n || !n.cal || n.cal === 'root' || !doc.nodes[ROOT]) { el.hidden = true; el.innerHTML = ''; return; }
+
+  // rhizome: a day page is a normal page — no strip chrome, only items dated to it
+  if (n.cal === 'day') {
+    const dated = (datesIndex().get(n.cd) || []).filter(it => !inCalendar(it.id));
+    if (!dated.length) { el.hidden = true; el.innerHTML = ''; return; }
+    el.hidden = false;
+    el.innerHTML = '';
+    const sec = document.createElement('div');
+    sec.className = 'cal-dated';
+    sec.innerHTML = '<div class="cal-dated-h">Items dated to this day</div>';
+    for (const it of dated) {
+      const a = document.createElement('a');
+      a.className = 'cal-dated-item' + (it.done ? ' done' : '');
+      a.href = '#/n/' + it.id;
+      a.textContent = (it.done ? '✓ ' : '') + it.text;
+      sec.append(a);
+    }
+    el.append(sec);
+    return;
+  }
+
   el.hidden = false;
   el.innerHTML = '';
 
@@ -1481,23 +1502,7 @@ window.renderCalStrip = function renderCalStrip() {
     if (cur) cur.scrollIntoView({ inline: 'center', block: 'nearest' });
   });
 
-  // items dated to this day from elsewhere in the outline
-  if (n.cal === 'day') {
-    const dated = (datesIndex().get(n.cd) || []).filter(it => !inCalendar(it.id));
-    if (dated.length) {
-      const sec = document.createElement('div');
-      sec.className = 'cal-dated';
-      sec.innerHTML = '<div class="cal-dated-h">Items dated to this day</div>';
-      for (const it of dated) {
-        const a = document.createElement('a');
-        a.className = 'cal-dated-item' + (it.done ? ' done' : '');
-        a.href = '#/n/' + it.id;
-        a.textContent = (it.done ? '✓ ' : '') + it.text;
-        sec.append(a);
-      }
-      el.append(sec);
-    }
-  }
+  // (day pages return above — items dated to a day render there without the strip)
 };
 
 function navArrows(n) {

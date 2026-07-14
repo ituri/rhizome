@@ -40,43 +40,65 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   assert(built.zoomedDay === today, 'gotoToday zooms into today\'s day node');
   assert(/,/.test(built.title), `day title is a weekday label ("${built.title}")`);
 
-  /* ---- 2. breadcrumb is Calendar › Year › Month › Day ---- */
-  const crumbs = await page.evaluate(() => document.querySelector('#crumbs').textContent);
-  assert(/Calendar/.test(crumbs) && new RegExp(String(Y)).test(crumbs), `breadcrumb shows the calendar path (${crumbs})`);
+  /* ---- 2. a day page is a normal page: no calendar crumbs, no strip ---- */
+  const dayChrome = await page.evaluate(() => ({
+    crumbs: document.querySelector('#crumbs').style.display,
+    strip: document.querySelector('#cal-strip').hidden,
+    calPage: document.querySelector('#page').classList.contains('cal-page'),
+  }));
+  assert(dayChrome.crumbs === 'none', 'day pages show no calendar breadcrumbs'); // rhizome
+  assert(dayChrome.strip && !dayChrome.calPage, 'day pages carry no strip or cal-page chrome'); // rhizome
 
-  /* ---- 3. the day navigation strip renders with today highlighted ---- */
+  /* ---- 3. the month node keeps the day navigation strip ---- */
   let strip = await page.evaluate(() => {
-    const el = document.querySelector('#cal-strip');
-    if (el.hidden) return null;
-    const days = [...el.querySelectorAll('.cs-day')];
-    const current = el.querySelector('.cs-day.current');
-    const todayCell = el.querySelector('.cs-day.today');
-    const hasMonthLabel = !!el.querySelector('.cs-day[data-mon]');
-    return { count: days.length, current: !!current, today: !!todayCell, hasMonthLabel, arrows: !!el.querySelector('.cs-nav') };
+    const root = Object.values(doc.nodes).find(n => n.cal === 'root');
+    const year = root.children.map(id => doc.nodes[id]).find(n => n.cal === 'year');
+    const month = year.children.find(id => doc.nodes[id].cal === 'month');
+    zoomTo(month);
+    return new Promise(r => setTimeout(() => {
+      const el = document.querySelector('#cal-strip');
+      if (el.hidden) return r(null);
+      r({
+        count: el.querySelectorAll('.cs-day').length,
+        today: !!el.querySelector('.cs-day.today'),
+        hasMonthLabel: !!el.querySelector('.cs-day[data-mon]'),
+        arrows: !!el.querySelector('.cs-nav'),
+      });
+    }, 450));
   });
-  assert(strip && strip.count > 14, `day strip renders a row of days (${strip?.count})`);
-  assert(strip.current && strip.today, 'the current/today day is highlighted in the strip');
+  assert(strip && strip.count > 14, `month view renders a row of days (${strip?.count})`);
+  assert(strip.today, 'today is highlighted in the month strip');
   assert(strip.hasMonthLabel && strip.arrows, 'strip has month labels and ‹ › navigation');
 
-  /* ---- 4. write under today, then navigate to another day via the strip ---- */
+  /* ---- 4. write under today, then navigate to another day via the month strip ---- */
+  await page.evaluate(() => gotoDate(todayStr()));
+  await sleep(450);
   await page.evaluate(() => setCaretOffset(document.querySelector('#zoom-title'), 'end'));
   await page.keyboard.press('ArrowDown');     // start a bullet under today (empty-page nav)
   await page.keyboard.type('Daily standup notes');
   await sleep(500);
-  // click the next day in the strip
+  // from the month view, click a neighboring day cell
   const before = await page.evaluate(() => Object.keys(doc.nodes).length);
   await page.evaluate(() => {
-    const cur = document.querySelector('.cs-day.current');
-    let nxt = cur.nextElementSibling;
-    while (nxt && !nxt.classList.contains('cs-day')) nxt = nxt.nextElementSibling;
-    nxt.click();
+    const root = Object.values(doc.nodes).find(n => n.cal === 'root');
+    const year = root.children.map(id => doc.nodes[id]).find(n => n.cal === 'year');
+    const month = year.children.find(id => doc.nodes[id].cal === 'month');
+    zoomTo(month);
+  });
+  await sleep(450);
+  await page.evaluate(() => {
+    const cur = document.querySelector('.cs-day.today');
+    let pick = cur?.nextElementSibling;
+    while (pick && !pick.classList.contains('cs-day')) pick = pick.nextElementSibling;
+    if (!pick) { pick = cur?.previousElementSibling; while (pick && !pick.classList.contains('cs-day')) pick = pick.previousElementSibling; }
+    pick.click();
   });
   await sleep(450);
   const navd = await page.evaluate(() => {
     const z = doc.nodes[state.zoom];
     return { isDay: z?.cal === 'day', iso: z?.cd, nodeCount: Object.keys(doc.nodes).length };
   });
-  assert(navd.isDay && navd.iso > today, `clicking the next day navigates to a new day node (${navd.iso})`);
+  assert(navd.isDay && navd.iso !== today, `clicking a neighboring day navigates to its day node (${navd.iso})`);
   assert(navd.nodeCount > before, 'the new day node was created on demand');
   // today's note is preserved on its own day
   await page.evaluate(() => gotoDate(todayStr()));

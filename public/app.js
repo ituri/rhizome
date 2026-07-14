@@ -1557,8 +1557,9 @@ function renderCrumbs() {
   if (state.zoom === HOME) { crumbsEl.style.display = 'none'; return; }
   let chain = ancestorsOf(state.zoom).filter(id => id === HOME || isAncestor(HOME, id));
   if (!chain.includes(HOME)) chain.unshift(HOME);
-  // rhizome: crumbs start at the containing page, not at a "Home" root
-  if (!SHARE_TOKEN) chain = chain.filter(id => id !== HOME);
+  // rhizome: crumbs start at the containing page, not at a "Home" root, and the
+  // calendar containers stay invisible — a day page is a normal page
+  if (!SHARE_TOKEN) chain = chain.filter(id => id !== HOME && !['root', 'year', 'month'].includes(N(id)?.cal));
   if (!chain.length) { crumbsEl.style.display = 'none'; return; }
   crumbsEl.style.display = '';
   chain.forEach((id, i) => {
@@ -1900,7 +1901,8 @@ function renderPage() {
   treeEl.innerHTML = '';
   treeEl.classList.toggle('hide-done', !settings.showCompleted);
   pageEl.classList.toggle('board-page', N(state.zoom).format === 'board');
-  pageEl.classList.toggle('cal-page', !!N(state.zoom).cal && N(state.zoom).cal !== 'root');
+  // rhizome: day pages are normal pages — cal-page styling only wraps year/month navigation
+  pageEl.classList.toggle('cal-page', ['year', 'month'].includes(N(state.zoom).cal));
   const roots = kidsOf(state.zoom).filter(c => shouldShow(c, false));
   const frag = document.createDocumentFragment();
   const specialView = window.pagesViewActive?.() ? 'pages' : window.dailyViewActive?.() ? 'daily' : null;

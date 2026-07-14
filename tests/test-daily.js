@@ -141,11 +141,12 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   await sleep(500);
   info = await page.evaluate(() => ({
     zoomIsDay: N(state.zoom)?.cal === 'day',
-    strip: !document.querySelector('#cal-strip').hidden,
+    strip: document.querySelector('#cal-strip').hidden,
+    crumbs: document.querySelector('#crumbs').style.display,
     view: state.view,
   }));
   assert(info.zoomIsDay && info.view === null, 'clicking a day header zooms into the day page');
-  assert(info.strip, 'the calendar strip appears on a zoomed day');
+  assert(info.strip && info.crumbs === 'none', 'the zoomed day looks like a normal page (no strip, no crumbs)'); // rhizome
   await page.click('#btn-calendar');
   await sleep(500);
   info = await page.evaluate(() => ({ view: state.view, sections: document.querySelectorAll('.day-section').length }));
