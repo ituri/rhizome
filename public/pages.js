@@ -140,7 +140,7 @@ function renderDailyView(frag) {
       const ph = document.createElement('div');
       ph.className = 'day-empty';
       ph.textContent = cd === today
-        ? 'Click here, or press Enter, to begin today’s note.'
+        ? "Click here to start writing. Type '/' to see commands."
         : 'Nothing here.';
       if (!state.readOnly) ph.addEventListener('click', () => opNewAt(id, 0));
       sec.append(ph);
@@ -150,7 +150,7 @@ function renderDailyView(frag) {
       const box = document.createElement('div');
       box.className = 'day-refs';
       const h = document.createElement('h3');
-      h.textContent = `Linked References (${built.count})`;
+      h.textContent = `${built.count} Linked Reference${built.count === 1 ? '' : 's'}`;
       box.append(h, built.el);
       sec.append(box);
     }
@@ -504,7 +504,8 @@ window.renderBacklinks = function renderBacklinks() {
   backlinksEl.hidden = false;
   backlinksEl.innerHTML = '';
   const head = document.createElement('h3');
-  head.textContent = `Linked References (${built ? built.count : 0})`;
+  const n = built ? built.count : 0;
+  head.textContent = n ? `${n} Linked Reference${n === 1 ? '' : 's'}` : 'Linked References';
   backlinksEl.append(head);
   if (!built) {
     const none = document.createElement('div');

@@ -139,7 +139,7 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   assert(ok, 'clicking an internal link zooms to the linked item');
   // backlink shows on the target's page
   ok = await page.evaluate(() => !document.querySelector('#backlinks').hidden &&
-    document.querySelector('#backlinks').textContent.includes('Linked References'));
+    document.querySelector('#backlinks').textContent.includes('Linked Reference'));
   assert(ok, 'the [[ link generates a backlink on the target');
   await page.evaluate(() => { location.hash = '#/outline'; });
   await sleep(300);

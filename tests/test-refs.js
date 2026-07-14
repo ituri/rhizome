@@ -44,7 +44,7 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
       rows: [...g.querySelectorAll('.ref-row')].map(r => r.textContent.trim()),
     })),
   }));
-  assert(/Linked References \(1\)/.test(refs.head), `linked header with count ("${refs.head}")`);
+  assert(/^1 Linked Reference$/.test(refs.head || ''), `linked header with count ("${refs.head}")`);
   assert(refs.groups.length === 1 && refs.groups[0].page === 'Beta Sammlung', 'reference grouped under its page');
   assert(refs.groups[0].rows[0].includes('für Details'), 'the referencing bullet text is shown');
 
@@ -68,7 +68,7 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
     text: N(window.__plain).text,
     rowCount: [...document.querySelectorAll('#backlinks .ref-group .ref-row')].length,
   }));
-  assert(/Linked References \(2\)/.test(refs.head), `mention moved to linked (${refs.head})`);
+  assert(/^2 Linked References$/.test(refs.head || ''), `mention moved to linked (${refs.head})`);
   assert(new RegExp('<a href="#/n/' + await page.evaluate(() => window.__alpha) + '"[^>]*>alpha projekt</a>').test(refs.text),
     `text got an internal link with original casing (${refs.text})`);
 
@@ -86,7 +86,7 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
     head: document.querySelector('#backlinks h3')?.textContent,
     mirrorRow: [...document.querySelectorAll('#backlinks .ref-row')].some(r => /mirrored in/.test(r.textContent)),
   }));
-  assert(/Linked References \(3\)/.test(refs.head), `mirror counted (${refs.head})`);
+  assert(/^3 Linked References$/.test(refs.head || ''), `mirror counted (${refs.head})`);
   assert(refs.mirrorRow, 'mirror shown as a "mirrored in" row');
 
   /* ---- 5. day pages get references too; calendar titles are not "mentions" ---- */
@@ -131,7 +131,7 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
       bullet: box?.querySelector('.ref-row')?.textContent || null,
     };
   });
-  assert(refs.head && /Linked References \(\d+\)/.test(refs.head), `today's day section shows references ("${refs.head}")`);
+  assert(refs.head && /^\d+ Linked Reference/.test(refs.head), `today's day section shows references ("${refs.head}")`);
   assert(refs.group === 'Testseite', `reference grouped under the linking page ("${refs.group}")`);
   assert(/heute:/.test(refs.bullet || ''), 'the referencing bullet renders in the day section');
 

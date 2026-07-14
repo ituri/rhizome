@@ -1961,3 +1961,81 @@ a.side-nav.current { background: var(--accent-softer); color: var(--ink); }
   font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
   color: var(--ink-faint); font-weight: 600; margin: 0 0 6px;
 }
+
+/* ================= rhizome: Roam-inspired skin ================= */
+:root {
+  --sans: Inter, "Instrument Sans", "Segoe UI", system-ui, sans-serif;
+}
+html:not([data-theme="dark"]) { --ink: #202b33; }
+html, body { font-size: 14px; line-height: 1.5; }
+
+/* titles: Inter 500 at Roam scale (replaces the serif display face) */
+.zoom-title, .day-title, .pages-head {
+  font-family: var(--sans);
+  font-weight: 500;
+  font-size: 36px;
+  line-height: 1.25;
+  letter-spacing: 0;
+}
+.day-title { margin: 0 0 12px; }
+.day-section { margin-bottom: 46px; }
+.day-section + .day-section { padding-top: 32px; }
+
+/* internal links: Roam blue with the signature faint [[brackets]] */
+.content a[href^="#/n/"], .note a[href^="#/n/"], .zoom-note a[href^="#/n/"], .ref-row a[href^="#/n/"] {
+  color: #106ba3;
+  text-decoration: none;
+}
+.content a[href^="#/n/"]::before, .note a[href^="#/n/"]::before, .zoom-note a[href^="#/n/"]::before, .ref-row a[href^="#/n/"]::before { content: "[["; color: #ced9e0; }
+.content a[href^="#/n/"]::after, .note a[href^="#/n/"]::after, .zoom-note a[href^="#/n/"]::after, .ref-row a[href^="#/n/"]::after { content: "]]"; color: #ced9e0; }
+[data-theme="dark"] .content a[href^="#/n/"], [data-theme="dark"] .note a[href^="#/n/"], [data-theme="dark"] .zoom-note a[href^="#/n/"], [data-theme="dark"] .ref-row a[href^="#/n/"] { color: #61a5d1; }
+[data-theme="dark"] .content a[href^="#/n/"]::before, [data-theme="dark"] .note a[href^="#/n/"]::before, [data-theme="dark"] .zoom-note a[href^="#/n/"]::before, [data-theme="dark"] .ref-row a[href^="#/n/"]::before,
+[data-theme="dark"] .content a[href^="#/n/"]::after, [data-theme="dark"] .note a[href^="#/n/"]::after, [data-theme="dark"] .zoom-note a[href^="#/n/"]::after, [data-theme="dark"] .ref-row a[href^="#/n/"]::after { color: #44545f; }
+
+/* dark sidebar, Roam-style, in every theme */
+body.sidebar-open .sidebar { width: 232px; border-right: none; }
+.sidebar { background: #182026; }
+.sidebar .side-title { color: #5c778a; }
+.sidebar .side-item a, .sidebar .side-nav { color: #aebecb; }
+.sidebar .side-nav svg { color: #8399a8; }
+.sidebar .side-item:hover, .sidebar .side-nav:hover { background: rgba(255, 255, 255, 0.07); color: #d8e1e8; }
+.sidebar .side-item.current, .sidebar a.side-nav.current { background: rgba(255, 255, 255, 0.13); }
+.sidebar .side-item.current a, .sidebar a.side-nav.current { color: #fff; }
+.sidebar .side-remove { color: #7b8f9d; }
+.sidebar .side-star-q { color: #8399a8; }
+
+/* pill search box */
+#search {
+  border: 1px solid var(--line);
+  border-radius: 30px;
+  padding: 4px 12px 4px 30px;
+  background: var(--bg);
+}
+
+/* references, Roam presentation: gray heading, blue group title, tinted rows */
+.backlinks h3, .day-refs h3, .unlinked-head {
+  font-size: 13px;
+  font-weight: 700;
+  color: #8a9ba8;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.backlinks { border-top: none; }
+.ref-page { color: #106ba3; font-size: 15px; font-weight: 600; margin: 12px 0 2px; }
+[data-theme="dark"] .ref-page { color: #61a5d1; }
+.ref-page::before { content: "▾ "; color: #8a9ba8; font-size: 11px; }
+.ref-row {
+  background: #f5f8fa;
+  border-left: none;
+  border-radius: 3px;
+  padding: 6px 10px;
+  margin: 4px 0 4px 8px;
+  color: var(--ink);
+}
+.ref-row:hover { background: #edf3f8; border-left: none; }
+[data-theme="dark"] .ref-row { background: rgba(255, 255, 255, 0.05); }
+[data-theme="dark"] .ref-row:hover { background: rgba(255, 255, 255, 0.09); }
+.day-refs { border-top: none; }
+
+/* lighter Roam-gray bullet dots (light theme) */
+:root:not([data-theme="dark"]) .bullet .dot { background: #a7b6c2; }

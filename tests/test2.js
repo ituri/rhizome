@@ -223,7 +223,7 @@ const focusByText = text => `(() => {
   });
   await sleep(350);
   ok = await page.evaluate(() => !document.querySelector('#backlinks').hidden &&
-    document.querySelector('#backlinks').textContent.includes('Linked References'));
+    document.querySelector('#backlinks').textContent.includes('Linked Reference'));
   assert(ok, 'backlinks panel lists where the item is mirrored');
   await page.evaluate(() => { location.hash = '#/outline'; });
   await sleep(300);
