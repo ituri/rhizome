@@ -669,11 +669,13 @@ function collectLinkedRefs(targets) {
   // Roam-style: a page also collects #tag / @mention references to its title.
   // Only single-token titles can be tagged (multi-word titles have no tag form).
   const tagRe = new Map();
+  const attrTargets = new Map(); // lowercased title → target (a "Key:: …" block references page Key)
   for (const t of targets) {
     const title = plainOf(N(t).text).trim();
     if (title && /^[\p{L}\p{N}_][\p{L}\p{N}_\-/]*$/u.test(title)) {
       tagRe.set(t, new RegExp('[#@]' + title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![\\p{L}\\p{N}_\\-/])', 'u'));
     }
+    if (title) attrTargets.set(title.toLowerCase(), t);
   }
   for (const id of Object.keys(doc.nodes)) {
     const n = doc.nodes[id];
@@ -693,9 +695,20 @@ function collectLinkedRefs(targets) {
       if (t === id || seen.has(t)) continue;
       if (re.test(n.text)) { seen.add(t); add(t, { id, html: n.text }); }
     }
+    if (attrTargets.size) {
+      const am = plainOf(n.text).match(/^([\p{L}\p{N}][\p{L}\p{N} _\-/]*?)::/u);
+      const t = am && attrTargets.get(am[1].trim().toLowerCase());
+      if (t && t !== id && !seen.has(t)) { seen.add(t); add(t, { id, html: n.text }); }
+    }
   }
   return out;
 }
+
+// "Key:: value" at a block's start → { key, value }, else null (foundation for aliases + queries)
+window.parseAttribute = function parseAttribute(node) {
+  const m = plainOf(N(node).text).match(/^([\p{L}\p{N}][\p{L}\p{N} _\-/]*?)::\s?([\s\S]*)$/u);
+  return m ? { key: m[1].trim(), value: m[2].trim() } : null;
+};
 
 // grouped DOM for one target's rows; null when nothing survives the self-filter
 function buildRefGroups(target, rows) {

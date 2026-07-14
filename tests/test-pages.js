@@ -467,6 +467,30 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   const brLive = await page.evaluate(() => document.querySelector(`.item[data-id="${window.__brHost}"] a.block-ref`)?.textContent);
   assert(brLive === 'Geänderter Blocktext', `the block ref updates live when the target changes (got "${brLive}")`);
 
+  /* ---- 28. attributes: Key:: value renders a chip, parses, references its page ---- */
+  await page.evaluate(() => { setSearch(''); location.hash = '#/outline'; });
+  await sleep(350);
+  const attrId = await page.evaluate(() => { const i = opNewAt('root', 0); N(i).text = 'Priorität:: Hoch'; markDirty(); renderPage(); return i; });
+  await sleep(500);
+  await page.waitForFunction(id => !!document.querySelector(`.item[data-id="${id}"] .attr-key`), {}, attrId);
+  const attr = await page.evaluate(id => ({
+    chip: document.querySelector(`.item[data-id="${id}"] .attr-key`)?.textContent,
+    parsed: parseAttribute(id),
+    stored: N(id).text,
+  }), attrId);
+  assert(attr.chip === 'Priorität' && attr.parsed && attr.parsed.key === 'Priorität' && attr.parsed.value === 'Hoch',
+    `Key:: value renders a chip and parses (${JSON.stringify(attr.parsed)})`);
+  assert(attr.stored === 'Priorität:: Hoch', `the attribute stays plain in storage ("${attr.stored}")`);
+  await page.waitForFunction(id => !!document.querySelector(`.item[data-id="${id}"] .attr-key`), {}, attrId);
+  await page.evaluate(id => document.querySelector(`.item[data-id="${id}"] .attr-key`).click(), attrId);
+  await sleep(500);
+  const attrNav = await page.evaluate(() => ({
+    onPage: plainOf(N(state.zoom).text).trim() === 'Priorität',
+    ref: [...document.querySelectorAll('#backlinks .ref-row')].some(r => /Hoch/.test(r.textContent)),
+  }));
+  assert(attrNav.onPage, 'clicking an attribute key opens its page');
+  assert(attrNav.ref, 'the attribute page gathers blocks with that attribute as references');
+
   await browser.close();
   console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PAGES TESTS PASSED');
   process.exit(failures ? 1 : 0);

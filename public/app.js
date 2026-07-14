@@ -330,6 +330,21 @@ function decorate(html, opts = {}) {
   tpl.innerHTML = html || '';
   const terms = searchActive() ? highlightTermsOf() : null;
 
+  // rhizome: a leading "Key:: value" renders the key as an attribute chip
+  if (!opts.plain) {
+    const first = tpl.content.firstChild;
+    if (first && first.nodeType === Node.TEXT_NODE) {
+      const m = first.nodeValue.match(/^([\p{L}\p{N}][\p{L}\p{N} _\-/]*?)::(\s|$)/u);
+      if (m) {
+        const key = document.createElement('span');
+        key.className = 'attr-key';
+        key.setAttribute('data-attr', m[1]);
+        key.textContent = m[1];
+        first.replaceWith(key, document.createTextNode(first.nodeValue.slice(m[1].length)));
+      }
+    }
+  }
+
   const walk = (node, inLink) => {
     for (const child of [...node.childNodes]) {
       if (child.nodeType === Node.ELEMENT_NODE) {
@@ -3291,6 +3306,8 @@ treeEl.addEventListener('dragstart', e => e.preventDefault());
 /* ---------------- 17. clicks ---------------- */
 
 treeEl.addEventListener('click', e => {
+  const attrKey = e.target.closest('.attr-key');
+  if (attrKey) { e.preventDefault(); openTag(attrKey.dataset.attr); return; }
   const tag = e.target.closest('.tag');
   if (tag) {
     e.preventDefault();
@@ -3361,6 +3378,8 @@ treeEl.addEventListener('click', e => {
 });
 
 zoomHeadEl.addEventListener('click', e => {
+  const attrKey = e.target.closest('.attr-key');
+  if (attrKey) { e.preventDefault(); openTag(attrKey.dataset.attr); return; }
   const tag = e.target.closest('.tag');
   if (tag) { e.preventDefault(); openTag(tag.dataset.tag); }
 });

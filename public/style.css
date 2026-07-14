@@ -2097,3 +2097,7 @@ a.block-ref, .ref-row a.block-ref {
 }
 a.block-ref:hover { background: color-mix(in oklab, var(--accent) 15%, transparent); }
 a.block-ref::before, a.block-ref::after { content: none !important; }
+
+/* attribute keys: a leading "Key:: value" renders the key as an accent chip */
+.attr-key { color: var(--accent); font-weight: 600; cursor: pointer; }
+.attr-key:hover { text-decoration: underline; }
