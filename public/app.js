@@ -1513,21 +1513,24 @@ function computeSearch() {
     }
   }
 
+  // rhizome: search spans the whole outline (Roam-style), rendered grouped by
+  // page in the results view — not scoped to the current zoom
+  const scope = HOME;
   const matches = new Set();
   const open = new Set();
   const consider = id => {
-    if (id === ROOT || id === state.zoom) return;
+    if (id === ROOT || id === scope) return;
     if (nodeMatchesSegment(id, lastSeg) && passesAncestorChain(id, ancestorSegs)) matches.add(id);
   };
   if (candidates) {
-    for (const id of candidates) if (N(id) && isAncestor(state.zoom, id)) consider(id); // scope to the zoom
+    for (const id of candidates) if (N(id) && (scope === ROOT || isAncestor(scope, id))) consider(id);
   } else {
     const visit = id => { consider(id); for (const c of N(id).children) visit(c); };
-    visit(state.zoom);
+    visit(scope);
   }
   for (const id of matches) {
     let p = parentOf(id);
-    while (p && p !== state.zoom && !open.has(p)) { open.add(p); p = parentOf(p); }
+    while (p && p !== scope && !open.has(p)) { open.add(p); p = parentOf(p); }
   }
   state.matchSet = matches;
   state.openSet = open;
@@ -1922,8 +1925,12 @@ function renderPage() {
   pageEl.classList.toggle('cal-page', ['year', 'month'].includes(N(state.zoom).cal));
   const roots = kidsOf(state.zoom).filter(c => shouldShow(c, false));
   const frag = document.createDocumentFragment();
-  const specialView = window.pagesViewActive?.() ? 'pages' : window.dailyViewActive?.() ? 'daily' : null;
-  if (specialView === 'pages') {
+  // rhizome: an active search renders whole-outline results grouped by page
+  const specialView = searchActive() && window.renderSearchResults ? 'search'
+    : window.pagesViewActive?.() ? 'pages' : window.dailyViewActive?.() ? 'daily' : null;
+  if (specialView === 'search') {
+    window.renderSearchResults(frag);
+  } else if (specialView === 'pages') {
     window.renderPagesView(frag);
   } else if (specialView === 'daily') {
     window.renderDailyView(frag);
@@ -3190,6 +3197,28 @@ pageEl.addEventListener('beforeinput', e => {
   const now = Date.now();
   if (key !== burst.key || now - burst.at > 800) snapshot();
   burst = { key, at: now };
+
+  // rhizome: auto-close brackets ([ → [], [[ → [[]]) and type over the close
+  if (e.inputType === 'insertText' && fmtOf(ctx.id) !== 'codeblock') {
+    const sel = getSelection();
+    if (!sel.rangeCount || !sel.getRangeAt(0).collapsed) return;
+    if (e.data === '[') {
+      e.preventDefault();
+      const r = sel.getRangeAt(0);
+      const t = document.createTextNode('[]');
+      r.insertNode(t);
+      const caret = document.createRange();
+      caret.setStart(t, 1); caret.collapse(true);
+      sel.removeAllRanges(); sel.addRange(caret);
+      ctx.el.normalize();
+      scheduleCommit(ctx.el);
+      window.editorInputHook?.(ctx);
+    } else if (e.data === ']' && (ctx.el.textContent || '')[caretOffsetIn(ctx.el)] === ']') {
+      e.preventDefault(); // step over the auto-inserted close instead of doubling it
+      sel.modify('move', 'forward', 'character');
+      window.editorInputHook?.(ctx);
+    }
+  }
 });
 
 pageEl.addEventListener('input', e => {

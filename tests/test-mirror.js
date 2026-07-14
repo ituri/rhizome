@@ -302,11 +302,12 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   });
   await sleep(300);
   const srch = await page.evaluate(() => ({
-    origShown: !!document.querySelector(`.item[data-id="${window.__searchIds.orig}"]`),
-    mirrorShown: !!document.querySelector(`.item[data-id="${window.__searchIds.m}"]`),
+    // rhizome: search renders grouped results; a mirror instance matches and shows its transcluded content
+    resultRows: [...document.querySelectorAll('.search-results .ref-row')].filter(r => /searchable-zebra/.test(r.textContent)).length,
     bothMatched: state.matchSet?.has(window.__searchIds.orig) && state.matchSet?.has(window.__searchIds.m),
   }));
-  assert(srch.origShown && srch.mirrorShown && srch.bothMatched, 'search shows the original AND its mirror instances');
+  assert(srch.bothMatched, 'search matches the original AND its mirror instance');
+  assert(srch.resultRows >= 2, `both the original and the mirror show the matching content (${srch.resultRows} rows)`);
   await page.evaluate(() => setSearch(''));
   await sleep(200);
 

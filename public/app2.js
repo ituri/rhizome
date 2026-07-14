@@ -363,7 +363,10 @@ function pickTag(tag) {
 // creating the item if requested. Backlinks pick it up automatically.
 function pickLink(it) {
   const { ctx, start } = caretPop;
-  const caret = caretOffsetIn(ctx.el) ?? start;
+  let caret = caretOffsetIn(ctx.el) ?? start;
+  // rhizome: consume the auto-closed "]]" that sits right after the caret, so the
+  // picked link replaces the whole "[[query]]" and leaves no stray brackets
+  if ((ctx.el.textContent || '').slice(caret, caret + 2) === ']]') caret += 2;
   window.closeCaretPop();
   snapshot();
   let linkId, label;

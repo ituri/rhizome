@@ -388,6 +388,31 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   const unique = await page.evaluate(() => plainOf(N(window.__beta).text).trim());
   assert(unique === 'GammaSeite', `a non-colliding rename is kept ("${unique}")`);
 
+  /* ---- 25. brackets auto-close and type-over completes the link ---- */
+  await page.evaluate(() => { location.hash = '#/'; });
+  await sleep(450);
+  await page.evaluate(() => { window.__bk = opNewAt(findDay(todayStr()), 0); document.querySelector(`.item[data-id="${window.__bk}"] .content`).focus(); });
+  await sleep(150);
+  await page.keyboard.type('x[');
+  await sleep(150);
+  const single = await page.evaluate(() => document.querySelector(`.item[data-id="${window.__bk}"] .content`).textContent);
+  assert(single === 'x[]', `"[" auto-closes to "[]" (got "${single}")`);
+  await page.keyboard.type('[');
+  await sleep(150);
+  const dbl = await page.evaluate(() => document.querySelector(`.item[data-id="${window.__bk}"] .content`).textContent);
+  assert(dbl === 'x[[]]', `"[[" auto-closes to "[[]]" (got "${dbl}")`);
+  await page.keyboard.type('Zielort');
+  await sleep(200);
+  await page.keyboard.type(']]'); // type-over the auto-inserted close → completes the link
+  await sleep(450);
+  const linked = await page.evaluate(() => ({
+    text: N(window.__bk).text,
+    page: pagesOf().some(p => plainOf(N(p).text).trim() === 'Zielort'),
+  }));
+  assert(/href="#\/n\//.test(linked.text) && !/\[\[|\]\]/.test(linked.text),
+    `typing [[Zielort]] via auto-brackets makes a clean link (${linked.text})`);
+  assert(linked.page, 'the [[Zielort]] page was created');
+
   await browser.close();
   console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PAGES TESTS PASSED');
   process.exit(failures ? 1 : 0);

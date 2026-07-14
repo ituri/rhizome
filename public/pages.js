@@ -728,8 +728,21 @@ function buildRefGroups(target, rows) {
 // replaces the upstream flat "Linked from" list with Roam-style sections:
 // linked references grouped by their containing page, plus a lazy
 // unlinked-references scan with a one-click Link action
+// whole-outline search results, grouped by page (reuses the reference layout)
+window.renderSearchResults = function renderSearchResults(frag) {
+  const rows = [...(state.matchSet || [])]
+    .filter(id => doc.nodes[id] && plainOf(N(contentIdOf(id)).text).trim()) // skip empty rows (bare mirrors, dividers)
+    .map(id => ({ id, html: N(contentIdOf(id)).text })); // mirrors show their transcluded content
+  const built = rows.length ? buildRefGroups(null, rows) : null;
+  const view = document.createElement('div');
+  view.className = 'search-results';
+  if (built) view.append(built.el);
+  else view.innerHTML = '<div class="ref-none">Nothing matches.</div>';
+  frag.append(view);
+};
+
 window.renderBacklinks = function renderBacklinks() {
-  if (!doc || state.zoom === HOME) { backlinksEl.hidden = true; return; }
+  if (!doc || state.zoom === HOME || searchActive()) { backlinksEl.hidden = true; return; }
   const target = state.zoom;
   const rows = collectLinkedRefs(new Set([target])).get(target) || [];
   const built = buildRefGroups(target, rows);

@@ -225,7 +225,9 @@ button { font-family: inherit; }
 .save-state.offline .save-dot { background: oklch(0.6 0.18 28); }
 .save-state.saving .save-label::after { content: ""; }
 @keyframes pulse { 50% { opacity: 0.4; } }
-@media (max-width: 640px) { .save-label { display: none; } }
+.save-label { display: none; } /* the dot alone conveys saved/saving/offline */
+.save-state { gap: 0; padding: 0 4px; }
+.save-dot { width: 9px; height: 9px; }
 @media (max-width: 540px) {
   #btn-help { display: none; }
   #search { width: 120px; }
@@ -661,9 +663,13 @@ body.dragging-item .content, body.dragging-item .note { cursor: grabbing; }
 }
 .popover .seg button {
   flex: 1;
+  display: flex;
+  align-items: center;     /* center wrapping labels like "Fri, Jun 12" vertically */
   justify-content: center;
+  text-align: center;
+  line-height: 1.2;
   border: 1px solid var(--line-soft);
-  padding: 5px 0;
+  padding: 5px 4px;
   font-size: 12.5px;
 }
 .popover .seg button.active {

@@ -93,22 +93,19 @@ const caretOffset = () => `(() => {
   ok = await page.evaluate(id => editableCtx(document.activeElement)?.id === id, ids.a);
   assert(ok, 'browser Back restores focus to the item');
 
-  /* ---- 4. Esc-ing out of search keeps your place ---- */
-  await page.evaluate(id => { setCaretOffset(document.querySelector(`.item[data-id="${id}"] .content`), 4); }, ids.a);
+  /* ---- 4. search shows grouped results; Esc returns to the editable outline ---- */
   await page.evaluate(() => setSearch('child'));
-  await sleep(200);
-  // focus a matched item then press Escape from within it
-  const matched = await page.evaluate(() => {
-    const el = [...document.querySelectorAll('.tree .item .content')].find(c => c.textContent.includes('child'));
-    el.focus();
-    setCaretOffset(el, 2);
-    return editableCtx(el).id;
-  });
+  await sleep(250);
+  ok = await page.evaluate(() => !!document.querySelector('.search-results') &&
+    [...document.querySelectorAll('.search-results .ref-row')].some(r => /child/.test(r.textContent)));
+  assert(ok, 'search renders whole-outline results grouped by page'); // rhizome
+  await page.evaluate(() => document.querySelector('#search').focus());
   await page.keyboard.press('Escape');
   await sleep(250);
-  ok = await page.evaluate(id => editableCtx(document.activeElement)?.id === id, matched);
-  const so = await page.evaluate(caretOffset());
-  assert(ok && so === 2, `Esc clears search but keeps caret on the same item at offset (got ${so})`);
+  ok = await page.evaluate(() => document.querySelector('#search').value === '' &&
+    !document.querySelector('.search-results') &&
+    document.querySelectorAll('.tree .item .content').length > 0);
+  assert(ok, 'Esc clears the search and returns to the editable outline'); // rhizome
 
   /* ---- 5. ArrowDown from zoom title enters the first child ---- */
   await page.evaluate(id => { location.hash = '#/n/' + id; }, ids.a);
