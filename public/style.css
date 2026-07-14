@@ -2065,3 +2065,18 @@ html, body { font-size: 14px; line-height: 1.5; }
 
 /* page-body polish: Roam block rhythm and quiet placeholders */
 .day-empty, .empty-hint { color: #a7b6c2; font-style: normal; font-family: var(--sans); }
+
+/* multi-word tags: #[[…]] renders as a tag pill (an anchor), not a bracketed link */
+.content a.tag, .zoom-note a.tag, .note a.tag, .ref-row a.tag,
+.content a.tag:hover, .ref-row a.tag:hover {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 6px;
+  padding: 0.06em 0.4em;
+  font-size: 0.92em;
+  text-decoration: none;
+}
+.content a.tag.mention, .zoom-note a.tag.mention, .note a.tag.mention, .ref-row a.tag.mention {
+  color: var(--mention); background: var(--mention-soft);
+}
+a.tag::before, a.tag::after { content: none !important; } /* no [[ ]] brackets on tag pills */

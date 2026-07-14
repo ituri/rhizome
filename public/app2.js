@@ -367,6 +367,8 @@ function pickLink(it) {
   // rhizome: consume the auto-closed "]]" that sits right after the caret, so the
   // picked link replaces the whole "[[query]]" and leaves no stray brackets
   if ((ctx.el.textContent || '').slice(caret, caret + 2) === ']]') caret += 2;
+  const txt = ctx.el.textContent || '';
+  const sig = /[#@]/.test(txt[start - 1] || '') ? txt[start - 1] : ''; // #[[…]] / @[[…]] → tag
   window.closeCaretPop();
   snapshot();
   let linkId, label;
@@ -379,14 +381,11 @@ function pickLink(it) {
     linkId = it.linkId;
     label = plainOf(N(linkId).text).trim() || 'Untitled';
   }
-  selectPlainRange(ctx.el, start, caret);
+  selectPlainRange(ctx.el, start - (sig ? 1 : 0), caret);
   const sel = getSelection();
   const r = sel.getRangeAt(0);
   r.deleteContents();
-  const a = document.createElement('a');
-  a.setAttribute('href', '#/n/' + linkId);
-  a.setAttribute('rel', 'noopener');
-  a.textContent = label;
+  const a = window.makePageAnchor(linkId, label, sig);
   insertInlineAtCaret(sel, r, a);
   scheduleCommit(ctx.el);
   markDirty();
@@ -439,17 +438,15 @@ window.editorInputHook = function editorInputHook(ctx) {
   if (wl && wl[1].trim() && ctx.field === 'text' && fmtOf(ctx.id) !== 'codeblock' && !state.readOnly) {
     window.closeCaretPop();
     const title = wl[1].trim();
+    const bracketStart = off - wl[0].length;
+    const sig = /[#@]/.test(before[bracketStart - 1] || '') ? before[bracketStart - 1] : ''; // #[[…]] / @[[…]] → tag
     snapshot();
     const pageId = getOrCreatePage(title);
-    selectPlainRange(ctx.el, off - wl[0].length, off); // select the whole "[[title]]"
+    selectPlainRange(ctx.el, bracketStart - (sig ? 1 : 0), off); // include the sigil
     const sel = getSelection();
     const r = sel.getRangeAt(0);
     r.deleteContents();
-    const a = document.createElement('a');
-    a.setAttribute('href', '#/n/' + pageId);
-    a.setAttribute('rel', 'noopener');
-    a.textContent = title;
-    insertInlineAtCaret(sel, r, a);
+    insertInlineAtCaret(sel, r, window.makePageAnchor(pageId, title, sig));
     scheduleCommit(ctx.el);
     markDirty();
     return;

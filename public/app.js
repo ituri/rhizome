@@ -242,7 +242,12 @@ function serializeChildren(node) {
       } else if (child.tagName === 'A') {
         const href = safeHref(child.getAttribute('href'));
         const inner = serializeChildren(child);
-        out += href ? `<a href="${escAttr(href)}">${inner}</a>` : inner;
+        if (!href) { out += inner; }
+        else if (child.classList.contains('tag')) { // rhizome: keep #[[…]] tag pills (whitelisted class)
+          const cls = child.classList.contains('mention') ? 'tag mention' : 'tag';
+          const dt = child.getAttribute('data-tag');
+          out += `<a href="${escAttr(href)}" class="${cls}"${dt ? ` data-tag="${escAttr(dt)}"` : ''}>${inner}</a>`;
+        } else { out += `<a href="${escAttr(href)}">${inner}</a>`; }
       } else if (child.tagName === 'TIME' && child.getAttribute('datetime')) {
         out += `<time datetime="${escAttr(child.getAttribute('datetime'))}">${escHtml(child.textContent)}</time>`;
       } else if (child.tagName === 'SPAN') {

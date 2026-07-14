@@ -413,6 +413,33 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
     `typing [[Zielort]] via auto-brackets makes a clean link (${linked.text})`);
   assert(linked.page, 'the [[Zielort]] page was created');
 
+  /* ---- 26. multi-word tags #[[multi word]] link to their page as a tag pill ---- */
+  await page.evaluate(() => { location.hash = '#/outline'; });
+  await sleep(350);
+  await page.evaluate(() => { window.__mwt = opNewAt('root', 0); document.querySelector(`.item[data-id="${window.__mwt}"] .content`).focus(); });
+  await sleep(150);
+  await page.keyboard.type('siehe #[[Wichtiges Thema');
+  await sleep(250);
+  await page.keyboard.type(']]');
+  await sleep(400);
+  await page.evaluate(() => commitActiveText());
+  await sleep(200);
+  const mwt = await page.evaluate(() => {
+    const pid = pagesOf().find(p => plainOf(N(p).text).trim() === 'Wichtiges Thema');
+    return {
+      isTag: /class="tag"/.test(N(window.__mwt).text),
+      linksPage: pid && N(window.__mwt).text.includes('#/n/' + pid),
+      pill: document.querySelector(`.item[data-id="${window.__mwt}"] a.tag`)?.textContent,
+      pid,
+    };
+  });
+  assert(mwt.isTag && mwt.linksPage, 'typing #[[multi word]] makes a tag linking to that page');
+  assert(mwt.pill === '#Wichtiges Thema', `the tag pill shows "#Wichtiges Thema" (got "${mwt.pill}")`);
+  await page.evaluate(pid => zoomTo(pid), mwt.pid);
+  await sleep(400);
+  const mwtRef = await page.evaluate(() => [...document.querySelectorAll('#backlinks .ref-row')].some(r => /siehe/.test(r.textContent)));
+  assert(mwtRef, 'the multi-word tag page gathers its reference');
+
   await browser.close();
   console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PAGES TESTS PASSED');
   process.exit(failures ? 1 : 0);

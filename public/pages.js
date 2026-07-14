@@ -45,6 +45,21 @@ function getOrCreatePage(title) {
   return findPageByTitle(title) || createPage(title);
 }
 
+// an anchor for a page reference: a plain link, or a tag pill when a #/@ sigil is given
+window.makePageAnchor = function makePageAnchor(pageId, label, sigil) {
+  const a = document.createElement('a');
+  a.setAttribute('href', '#/n/' + pageId);
+  a.setAttribute('rel', 'noopener');
+  if (sigil) {
+    a.className = sigil === '@' ? 'tag mention' : 'tag';
+    a.setAttribute('data-tag', sigil + label);
+    a.textContent = sigil + label;
+  } else {
+    a.textContent = label;
+  }
+  return a;
+};
+
 // true when node `id` (a top-level page or a day page) now carries a title that
 // already belongs to another page — used to block a colliding rename
 window.pageTitleCollides = function pageTitleCollides(id) {
@@ -547,12 +562,11 @@ function linkifyWikiLinks(html) {
         let m, last = 0, hit = false;
         while ((m = re.exec(text))) {
           hit = true;
-          if (m.index > last) frag.append(document.createTextNode(text.slice(last, m.index)));
-          const a = document.createElement('a');
-          a.setAttribute('href', '#/n/' + getOrCreatePage(m[1].trim()));
-          a.setAttribute('rel', 'noopener');
-          a.textContent = (m[2] || m[1]).trim();
-          frag.append(a);
+          // a # / @ right before [[ makes it a (multi-word) tag rather than a plain link
+          const sig = (text[m.index - 1] === '#' || text[m.index - 1] === '@') && m.index - 1 >= last ? text[m.index - 1] : '';
+          const preEnd = sig ? m.index - 1 : m.index;
+          if (preEnd > last) frag.append(document.createTextNode(text.slice(last, preEnd)));
+          frag.append(makePageAnchor(getOrCreatePage(m[1].trim()), (m[2] || m[1]).trim(), sig));
           last = re.lastIndex;
         }
         if (hit) {
