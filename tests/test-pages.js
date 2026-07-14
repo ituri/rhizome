@@ -238,7 +238,7 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   await sleep(350);
   await page.evaluate(() => {
     const items = [...document.querySelectorAll('.caret-pop .pop-item')];
-    items.find(b => b.querySelectorAll('span')[1]?.textContent === 'Today').click();
+    items.find(b => b.querySelector('.pop-label')?.textContent === 'Today').click();
   });
   await sleep(600);
   const jl = await page.evaluate(() => {
@@ -256,7 +256,7 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   await sleep(350);
   await page.evaluate(() => {
     const items = [...document.querySelectorAll('.caret-pop .pop-item')];
-    items.find(b => b.querySelectorAll('span')[1]?.textContent === 'Current Time').click();
+    items.find(b => b.querySelector('.pop-label')?.textContent === 'Current Time').click();
   });
   await sleep(500);
   const ct = await page.evaluate(() => plainOf(N(window.__timeHost).text || ''));

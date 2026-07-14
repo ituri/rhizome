@@ -2039,3 +2039,34 @@ body.sidebar-open .sidebar { width: 232px; border-right: none; }
 
 /* lighter Roam-gray bullet dots (light theme) */
 :root:not([data-theme="dark"]) .bullet .dot { background: #a7b6c2; }
+
+/* Roam-style slash/[[/tag popup rows: label left, hint + icon right */
+.caret-pop { min-width: 320px; max-width: 400px; border-radius: 6px; }
+.caret-pop .pop-item { display: flex; align-items: center; gap: 10px; padding: 7px 12px; width: 100%; }
+.caret-pop .pop-label { flex: 1; text-align: left; }
+.caret-pop .kbd-hint { color: #8a9ba8; font-size: 12px; flex: none; }
+.caret-pop .pop-item .ic { flex: none; width: 22px; text-align: center; color: #8a9ba8; opacity: 0.85; font-size: 14px; }
+.caret-pop button.pop-item.active { background: #eef2f5; }
+[data-theme="dark"] .caret-pop button.pop-item.active { background: rgba(255, 255, 255, 0.09); }
+
+/* Roam-style date-picker calendar */
+.datepick { padding: 10px; }
+.dp { width: 258px; font-size: 13px; }
+.dp-head { display: flex; align-items: center; gap: 3px; padding: 2px 2px 8px; }
+.dp-nav { border: 0; background: none; cursor: pointer; color: #5c7080; font: inherit; font-size: 16px; padding: 2px 8px; border-radius: 4px; }
+.dp-nav:hover { background: var(--accent-softer); }
+.dp-label { font-weight: 600; color: var(--ink); padding: 0 2px; }
+.dp-step { display: inline-flex; flex-direction: column; }
+.dp-step button { border: 0; background: none; cursor: pointer; color: #8a9ba8; font-size: 8px; line-height: 1.1; padding: 0 3px; }
+.dp-step button:hover { color: var(--ink); }
+.dp-spacer { flex: 1; }
+.dp-grid { display: grid; grid-template-columns: repeat(7, 33px); gap: 2px; }
+.dp-dow { text-align: center; color: #8a9ba8; font-weight: 600; font-size: 12px; padding: 4px 0; }
+.dp-day { border: 0; background: none; cursor: pointer; text-align: center; padding: 6px 0; border-radius: 4px; color: var(--ink); font: inherit; font-size: 13px; }
+.dp-day:hover { background: #e1e8ed; }
+[data-theme="dark"] .dp-day:hover { background: rgba(255, 255, 255, 0.1); }
+.dp-day.today { background: #d3e1ec; color: #106ba3; font-weight: 600; }
+[data-theme="dark"] .dp-day.today { background: rgba(97, 165, 209, 0.25); color: #61a5d1; }
+
+/* page-body polish: Roam block rhythm and quiet placeholders */
+.day-empty, .empty-hint { color: #a7b6c2; font-style: normal; font-family: var(--sans); }

@@ -208,7 +208,8 @@ function renderCaretItems(items, onPick, emptyMsg) {
   items.forEach((it, i) => {
     const b = document.createElement('button');
     b.className = 'pop-item' + (i === 0 ? ' active' : '');
-    b.innerHTML = `<span class="ic">${it.icon || '•'}</span><span>${escHtml(it.label)}</span>${it.hint ? `<span class="kbd-hint">${escHtml(it.hint)}</span>` : ''}`;
+    // rhizome: Roam row layout — label left, keyboard hint and icon right
+    b.innerHTML = `<span class="pop-label">${escHtml(it.label)}</span>${it.hint ? `<span class="kbd-hint">${escHtml(it.hint)}</span>` : ''}<span class="ic">${it.icon || '•'}</span>`;
     b.addEventListener('mousedown', e => e.preventDefault());
     b.addEventListener('click', () => onPick(it));
     el.append(b);
@@ -494,6 +495,7 @@ const DATE_QUICK_PICKS = [['Today', 0], ['Tomorrow', 1], ['Next week', 7], ['In 
 
 // the quick-pick row + calendar input shared by both date pickers; calls onPick(iso)
 function buildDatePicker(onPick, onEscape) {
+  if (window.buildRoamCalendar) return window.buildRoamCalendar(onPick, onEscape); // rhizome
   const frag = document.createDocumentFragment();
   const quick = document.createElement('div');
   quick.className = 'quick';

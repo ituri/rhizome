@@ -344,6 +344,92 @@ window.renderSidebar = function renderSidebar() {
   }
 };
 
+/* ---------------- Roam-style date-picker calendar ---------------- */
+
+// the calendar popup Roam shows for /Date Picker: ‹ month⇅ year⇅ › steppers
+// over a Su–Sa day grid; consumed by buildDatePicker() in app2.js
+window.buildRoamCalendar = function buildRoamCalendar(onPick, onEscape) {
+  const wrap = document.createElement('div');
+  wrap.className = 'dp';
+  const view = new Date();
+  view.setDate(1);
+  const DP_DOW = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+
+  const mk = (cls, label, fn, title) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = cls;
+    b.textContent = label;
+    if (title) b.title = title;
+    b.addEventListener('mousedown', e => e.preventDefault()); // keep the editor's selection
+    b.addEventListener('click', fn);
+    return b;
+  };
+
+  const build = () => {
+    wrap.innerHTML = '';
+    const step = (unit, dir) => {
+      if (unit === 'm') view.setMonth(view.getMonth() + dir);
+      else view.setFullYear(view.getFullYear() + dir);
+      build();
+    };
+    const stepper = unit => {
+      const s = document.createElement('span');
+      s.className = 'dp-step';
+      s.append(mk('', '▴', () => step(unit, 1)), mk('', '▾', () => step(unit, -1)));
+      return s;
+    };
+    const label = txt => {
+      const s = document.createElement('span');
+      s.className = 'dp-label';
+      s.textContent = txt;
+      return s;
+    };
+
+    const head = document.createElement('div');
+    head.className = 'dp-head';
+    const spacer = document.createElement('span');
+    spacer.className = 'dp-spacer';
+    head.append(
+      mk('dp-nav', '‹', () => step('m', -1), 'Previous month'),
+      label(MONTHS_LONG[view.getMonth()]), stepper('m'),
+      spacer,
+      label(String(view.getFullYear())), stepper('y'),
+      mk('dp-nav', '›', () => step('m', 1), 'Next month'),
+    );
+    wrap.append(head);
+
+    const grid = document.createElement('div');
+    grid.className = 'dp-grid';
+    for (const d of DP_DOW) {
+      const c = document.createElement('span');
+      c.className = 'dp-dow';
+      c.textContent = d;
+      grid.append(c);
+    }
+    const firstDow = new Date(view.getFullYear(), view.getMonth(), 1).getDay(); // 0 = Su
+    const daysInMonth = new Date(view.getFullYear(), view.getMonth() + 1, 0).getDate();
+    for (let i = 0; i < firstDow; i++) {
+      const blank = document.createElement('span');
+      blank.className = 'dp-blank';
+      grid.append(blank);
+    }
+    const today = todayStr();
+    for (let d = 1; d <= daysInMonth; d++) {
+      const iso = isoOf(new Date(view.getFullYear(), view.getMonth(), d));
+      grid.append(mk('dp-day' + (iso === today ? ' today' : ''), String(d), () => onPick(iso)));
+    }
+    wrap.append(grid);
+  };
+  build();
+
+  wrap.tabIndex = -1;
+  wrap.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && onEscape) { e.preventDefault(); onEscape(); }
+  });
+  return wrap;
+};
+
 /* ---------------- Roam-style inserts: [[ page search, journal links, slash --- */
 
 // the [[ autocomplete searches pages and day pages, like Roam's page picker

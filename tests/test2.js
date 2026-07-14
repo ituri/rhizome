@@ -119,7 +119,7 @@ const focusByText = text => `(() => {
   popVisible = await page.evaluate(() => !!document.querySelector('.datepick'));
   assert(popVisible, '"!!" opens the date picker');
   await page.evaluate(() => {
-    [...document.querySelectorAll('.datepick .quick button')].find(b => b.textContent === 'Today')?.click();
+    document.querySelector('.datepick .dp-day.today')?.click();
   });
   await sleep(550);
   const dateInfo = await page.evaluate(() => {
