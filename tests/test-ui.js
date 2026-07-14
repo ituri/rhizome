@@ -97,7 +97,7 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   await page.keyboard.press('ArrowDown');
   await sleep(200);
   let ok = await page.evaluate(() => editableCtx(document.activeElement)?.field === 'text' &&
-    document.activeElement.textContent.includes('infinite outline'));
+    document.activeElement.textContent.includes('Daily Notes'));
   assert(ok, 'ArrowDown from a populated header still reaches the first bullet');
   await page.evaluate(() => { location.hash = '#/outline'; });
   await sleep(350);

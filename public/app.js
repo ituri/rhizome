@@ -2796,7 +2796,7 @@ function onKeydown(e) {
     return;
   }
   if (mod && (e.key === '/' || e.key === '?')) { e.preventDefault(); showHelp(); return; }
-  if (mod && e.key === "'") { e.preventDefault(); zoomTo(HOME); return; }
+  if (mod && e.key === "'") { e.preventDefault(); if (SHARE_TOKEN) zoomTo(HOME); else location.hash = '#/'; return; } // rhizome: home = daily notes
   if (mod && !e.shiftKey && (e.key === 'o' || e.key === 'O')) {
     e.preventDefault();
     settings.showCompleted = !settings.showCompleted;
@@ -3948,9 +3948,10 @@ const HELP = [
   ['Navigation', [
     ['Zoom in', 'Alt+→ or Alt+.'],
     ['Zoom out', 'Alt+← or Alt+,'],
-    ['Go home', "Ctrl+'"],
+    ['Daily Notes', "Ctrl+'"],
+    ['Full outline', '#/outline'],
     ['Expand / collapse', 'Ctrl+↓ / Ctrl+↑'],
-    ['Jump anywhere', 'Ctrl+K'],
+    ['Find or create a page', 'Ctrl+K'],
     ['Star this page', 'Ctrl+Shift+8'],
     ['Show / hide completed', 'Ctrl+O'],
   ]],
@@ -4217,26 +4218,28 @@ function welcomeDoc() {
     insertAt(parent, kidsOf(parent).length, id);
     return id;
   };
-  const w = add(ROOT, 'Welcome to <b>Tendril</b> 🌱');
-  add(w, 'This is an infinite outline. Every bullet can hold a whole world inside it.');
+  const w = add(ROOT, 'Welcome to <b>Rhizome</b> 🌱');
+  add(w, 'Your notes live on <b>pages</b> — this is one — and your days live in <b>Daily Notes</b>, the view you land on.');
   const basics = add(w, 'The basics', { collapsed: false });
+  add(basics, 'Write into today. Every day gets its own page; scroll down for the days before');
   add(basics, 'Press <b>Enter</b> to make a new item, <b>Tab</b> to indent, <b>Shift+Tab</b> to outdent');
   add(basics, 'Click a bullet — or press <b>Alt+→</b> — to zoom into it. <b>Alt+←</b> zooms back out');
+  add(basics, 'Type <b>[[</b> to link to a page — or create it on the spot. <b>Ctrl+K</b> finds or creates pages by name');
+  add(basics, 'Every page shows its <b>Linked References</b> below — and unlinked mentions you can link with one click');
   add(basics, 'Press <b>Shift+Enter</b> to attach a note to an item', { note: 'Notes look like this. They can run as long as you like.' });
   add(basics, 'Press <b>Ctrl+Enter</b> to complete something', { done: true });
-  add(basics, 'Drag any bullet to reorganize. Drop it deeper or shallower by moving sideways');
   const power = add(w, 'Power moves', { collapsed: true });
   add(power, 'Tag things with #tags and @people, then click a tag to filter');
-  add(power, '<b>Ctrl+K</b> jumps to any item by name');
   add(power, 'Type <b>/</b> for block types: headings, to-dos, numbered lists, boards, code, dividers…');
   add(power, 'Type a date in plain words — <b>today</b>, <b>next friday</b>, <b>oct 7</b>, <b>in 3 days</b> — then press <b>Tab</b>');
-  add(power, 'Type <b>[[</b> to link to any other item; links show up under “Linked from”');
+  add(power, 'Drag any bullet to reorganize. Drop it deeper or shallower by moving sideways');
   add(power, '<b>Ctrl+A</b> twice selects whole items — then Tab, move, complete or delete in bulk');
   add(power, 'Select text to format it — colors and highlights included');
   add(power, 'Search supports <code>"phrases"</code>, <code>-not</code>, <code>OR</code>, <code>is:complete</code>, <code>has:note</code>, <code>changed:7d</code>…');
+  add(power, 'The classic whole-tree outline is still there: open <code>#/outline</code>');
   const sample = add(ROOT, 'Try it: plan something #example', { collapsed: true });
   add(sample, 'A trip, a project, an essay…');
-  add(sample, 'Zoom in here and make it yours');
+  add(sample, 'Every top-level item is a page — this one too');
   return d;
 }
 

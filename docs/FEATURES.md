@@ -1,3 +1,11 @@
+# Features
+
+> **Rhizome fork:** this tree ships the Roam-style page layer on top of everything below —
+> Daily Notes as the start view (`#/`, infinite scroll, day-boundary guards), discrete
+> top-level pages with find-or-create via `Ctrl+K` and `[[…]]`, an All-Pages table (`#/pages`),
+> Linked References grouped by page, a lazy Unlinked References scan with one-click linking,
+> and the classic unified outline still available at `#/outline`.
+
 # Tendril — feature inventory
 
 Status as of 2026-07-13. ✅ implemented (covered by the e2e suites in [`tests/`](../tests/README.md)) · 🟡 partial · ❌ pending.
