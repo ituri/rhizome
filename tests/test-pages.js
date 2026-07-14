@@ -143,7 +143,52 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   });
   assert(cur === 'Gartenplanung', `containing page is highlighted for nested zooms ("${cur}")`);
 
-  /* ---- 10. persistence: everything survives a reload ---- */
+  /* ---- 10. #/pages renders the All Pages table ---- */
+  await page.evaluate(() => { location.hash = '#/pages'; });
+  await sleep(500);
+  const all = await page.evaluate(() => ({
+    view: state.view,
+    titles: [...document.querySelectorAll('.pages-table tbody td:first-child a')].map(a => a.textContent),
+    cols: [...document.querySelectorAll('.pages-table thead th')].map(t => t.textContent.trim().split(' ')[0]),
+    docTitle: document.title,
+    navCurrent: document.querySelector('#side-pages-link')?.classList.contains('current'),
+  }));
+  assert(all.view === 'pages', '#/pages activates the pages view');
+  assert(all.titles.includes('Gartenplanung') && all.titles.includes('Kompost'), 'table lists the pages');
+  assert(!all.titles.some(t => /Calendar/.test(t)), 'calendar container is not listed');
+  assert(all.cols.join(',') === 'Title,Created,Updated', `table has Title/Created/Updated columns (${all.cols})`);
+  assert(/All Pages/.test(all.docTitle), `document title reflects the view ("${all.docTitle}")`);
+  assert(all.navCurrent, 'sidebar highlights All Pages');
+
+  /* ---- 11. sorting: click Title header sorts A→Z ---- */
+  await page.evaluate(() => {
+    [...document.querySelectorAll('.pages-table thead th')].find(t => /Title/.test(t.textContent)).click();
+  });
+  await sleep(300);
+  const sorted = await page.evaluate(() =>
+    [...document.querySelectorAll('.pages-table tbody td:first-child a')].map(a => a.textContent));
+  const isSorted = sorted.every((t, i) => i === 0 || sorted[i - 1].localeCompare(t) <= 0);
+  assert(isSorted, `Title header sorts the table (${sorted.slice(0, 3).join(', ')}…)`);
+
+  /* ---- 12. navigating to a page from the table, then back via hash ---- */
+  await page.evaluate(() => {
+    [...document.querySelectorAll('.pages-table tbody td:first-child a')]
+      .find(a => a.textContent === 'Gartenplanung').click();
+  });
+  await sleep(450);
+  const zoomed = await page.evaluate(() => ({
+    title: document.querySelector('#zoom-title').textContent.trim(),
+    view: state.view,
+  }));
+  assert(zoomed.title === 'Gartenplanung' && zoomed.view === null, 'table row navigates into the page');
+
+  /* ---- 13. legacy #/n/root redirects to #/ ---- */
+  await page.evaluate(() => { location.hash = '#/n/root'; });
+  await sleep(400);
+  const redirected = await page.evaluate(() => ({ hash: location.hash, zoom: state.zoom }));
+  assert(redirected.hash === '#/' && redirected.zoom === 'root', `#/n/root redirects to #/ (${redirected.hash})`);
+
+  /* ---- 14. persistence: everything survives a reload ---- */
   await sleep(900);
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForSelector('.sidebar', { timeout: 5000 }).catch(() => {});

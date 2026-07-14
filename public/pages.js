@@ -74,6 +74,77 @@ function migrateDayLabels() {
   if (changed) { markDirty(); renderPage(); }
 }
 
+/* ---------------- All Pages view ---------------- */
+
+function pagesViewActive() {
+  return state.view === 'pages' && state.zoom === ROOT && !SHARE_TOKEN && !searchActive();
+}
+window.pagesViewActive = pagesViewActive;
+
+let pagesSort = { key: 'm', dir: -1 };
+
+function renderPagesView(frag) {
+  const view = document.createElement('div');
+  view.className = 'pages-view';
+  const h = document.createElement('h1');
+  h.className = 'pages-head';
+  h.textContent = 'All Pages';
+  view.append(h);
+
+  const rows = pagesOf().map(id => {
+    const cid = contentIdOf(id);
+    const n = N(cid);
+    return { id: cid, title: plainOf(n.text).trim() || 'Untitled', c: n.c ?? 0, m: n.m ?? 0 };
+  });
+  const { key, dir } = pagesSort;
+  rows.sort((a, b) => key === 'title'
+    ? a.title.localeCompare(b.title) * dir
+    : (a[key] - b[key]) * dir);
+
+  const table = document.createElement('table');
+  table.className = 'pages-table';
+  const thead = document.createElement('thead');
+  const headRow = document.createElement('tr');
+  for (const [k, label] of [['title', 'Title'], ['c', 'Created'], ['m', 'Updated']]) {
+    const th = document.createElement('th');
+    th.textContent = label + (key === k ? (dir > 0 ? ' ↑' : ' ↓') : '');
+    th.addEventListener('click', () => {
+      pagesSort = { key: k, dir: pagesSort.key === k ? -pagesSort.dir : (k === 'title' ? 1 : -1) };
+      renderPage();
+    });
+    headRow.append(th);
+  }
+  thead.append(headRow);
+  table.append(thead);
+
+  const tbody = document.createElement('tbody');
+  for (const r of rows) {
+    const tr = document.createElement('tr');
+    const tdTitle = document.createElement('td');
+    const a = document.createElement('a');
+    a.href = '#/n/' + r.id;
+    a.textContent = r.title;
+    tdTitle.append(a);
+    const tdC = document.createElement('td');
+    tdC.textContent = r.c ? roamDateLabel(isoOf(new Date(r.c))) : '—';
+    const tdM = document.createElement('td');
+    tdM.textContent = r.m ? roamDateLabel(isoOf(new Date(r.m))) : '—';
+    tr.append(tdTitle, tdC, tdM);
+    tbody.append(tr);
+  }
+  table.append(tbody);
+  view.append(table);
+
+  if (!rows.length) {
+    const hint = document.createElement('div');
+    hint.className = 'pages-empty';
+    hint.textContent = 'No pages yet — press Ctrl+K and type a name to create one.';
+    view.append(hint);
+  }
+  frag.append(view);
+}
+window.renderPagesView = renderPagesView;
+
 /* ---------------- sidebar: Daily Notes / All Pages / Shortcuts / page list --- */
 
 // replaces the upstream outline-tree sidebar (app2.js keeps its version unused)

@@ -19,6 +19,7 @@ const SHARE_TOKEN = shareMatch ? shareMatch[1] : null;
 const state = {
   version: 0,
   zoom: ROOT,
+  view: null,                    // rhizome: 'daily' | 'pages' | null — hash-derived root-level view
   search: '',
   sel: null,
   matchSet: null,
@@ -1540,7 +1541,7 @@ const searchDebounced = debounce(q => setSearch(q, { fromInput: true }), 160);
 
 function updateDocTitle() {
   document.title = state.zoom === HOME && !SHARE_TOKEN
-    ? 'Rhizome'
+    ? (state.view === 'pages' ? 'All Pages — Rhizome' : 'Daily Notes — Rhizome')
     : (plainOf(N(state.zoom).text).trim() || 'Untitled') + ' — Rhizome';
 }
 
@@ -1900,7 +1901,12 @@ function renderPage() {
   pageEl.classList.toggle('cal-page', !!N(state.zoom).cal && N(state.zoom).cal !== 'root');
   const roots = kidsOf(state.zoom).filter(c => shouldShow(c, false));
   const frag = document.createDocumentFragment();
-  if (N(state.zoom).format === 'board') {
+  const specialView = window.pagesViewActive?.() ? 'pages' : window.dailyViewActive?.() ? 'daily' : null;
+  if (specialView === 'pages') {
+    window.renderPagesView(frag);
+  } else if (specialView === 'daily') {
+    window.renderDailyView(frag);
+  } else if (N(state.zoom).format === 'board') {
     // a zoomed board stays a board: children render as full-page columns
     frag.append(buildBoardEl(state.zoom, true));
   } else {
@@ -1917,7 +1923,9 @@ function renderPage() {
   }
 
   const visibleRoots = roots.filter(id => settings.showCompleted || !N(id).done);
-  if (N(state.zoom).format === 'board') {
+  if (specialView) {
+    emptyHintEl.hidden = true;
+  } else if (N(state.zoom).format === 'board') {
     emptyHintEl.hidden = true;
   } else if (!visibleRoots.length && !searchActive()) {
     emptyHintEl.hidden = false;
@@ -2487,10 +2495,22 @@ function renderZoomView(target, leaving) {
 
 const rowContentOf = id => elById.get(id)?.querySelector(':scope > .row > .content') || null;
 
+// rhizome: which root-level view the current hash names (null → a node view)
+function parseHashView() {
+  if (SHARE_TOKEN) return null;
+  if (/^#\/pages\b/.test(location.hash)) return 'pages';
+  const m = location.hash.match(/^#\/n\/([A-Za-z0-9]+)/);
+  return m ? null : 'daily';
+}
+
 function applyHash() {
   const m = location.hash.match(/^#\/n\/([A-Za-z0-9]+)/);
+  if (!SHARE_TOKEN && m && m[1] === ROOT) { location.hash = '#/'; return; } // re-fires applyHash
+  const nextView = parseHashView();
   const target = resolveZoomTarget(m ? m[1] : HOME);
-  if (target === state.zoom) return;
+  if (target === state.zoom && nextView === state.view) return;
+  state.view = nextView;
+  window.onViewChange?.();
 
   // remember the caret in the view we're leaving (before it's torn down)
   const leaving = captureFocus();

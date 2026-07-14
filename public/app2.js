@@ -2117,11 +2117,14 @@ async function init() {
     document.body.innerHTML = `<div style="padding:40px;font-family:sans-serif">Could not load the outline. <br><br><code>${escHtml(String(err.message || err))}</code></div>`;
     return;
   }
+  if (!SHARE_TOKEN && /^#\/n\/root\b/.test(location.hash)) history.replaceState(null, '', '#/'); // rhizome: legacy root links
   const m = location.hash.match(/^#\/n\/([A-Za-z0-9]+)/);
-  if (m && doc.nodes[m[1]]) {
+  if (m && doc.nodes[m[1]] && m[1] !== ROOT) {
     const target = m[1];
     if (!SHARE_TOKEN || target === HOME || isAncestor(HOME, target)) state.zoom = target;
   }
+  state.view = state.zoom === ROOT ? parseHashView() : null; // rhizome
+  window.onViewChange?.();
   renderPage();
   setSaveUI(dirty ? 'saving' : 'saved');
   connectSSE();

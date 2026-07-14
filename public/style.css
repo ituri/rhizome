@@ -1910,3 +1910,17 @@ time[datetime].today { color: oklch(0.5 0.14 150); background: oklch(0.55 0.14 1
 a.side-nav { text-decoration: none; }
 a.side-nav.current { background: var(--accent-softer); color: var(--ink); }
 .side-page a { flex: 1; }
+.pages-view { max-width: 720px; }
+.pages-head { font-size: 26px; margin: 4px 0 18px; }
+.pages-table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+.pages-table th {
+  text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--ink-softer); font-weight: 600; padding: 6px 10px; cursor: pointer; user-select: none;
+  border-bottom: 1px solid var(--line);
+}
+.pages-table th:hover { color: var(--ink); }
+.pages-table td { padding: 8px 10px; border-bottom: 1px solid var(--line-soft, var(--line)); }
+.pages-table td a { color: var(--ink); text-decoration: none; font-weight: 500; }
+.pages-table td a:hover { color: var(--accent); }
+.pages-table td:nth-child(2), .pages-table td:nth-child(3) { color: var(--ink-softer); white-space: nowrap; width: 1%; }
+.pages-empty { color: var(--ink-softer); padding: 24px 0; }
