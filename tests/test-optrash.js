@@ -2,7 +2,7 @@
    trash ts; untrash drops the entry), so two clients build identical trash and converge
    without any whole-doc PUT.  Fresh server on 3211. */
 const puppeteer = require('puppeteer-core');
-const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
+const CHROME = process.env.CHROME || 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const URL = 'http://localhost:3211/';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 let failures = 0;

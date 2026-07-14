@@ -1,7 +1,7 @@
 /* Calendar hierarchy: Today button, Year/Month/Day nodes, navigation strip,
    day navigation, dated-items surfacing. */
 const puppeteer = require('puppeteer-core');
-const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
+const CHROME = process.env.CHROME || 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 let failures = 0;
 const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) failures++; };

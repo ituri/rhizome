@@ -1,8 +1,12 @@
-<h1 align="center">Tendril 🌱</h1>
+<h1 align="center">Rhizome 🌱</h1>
 
-<p align="center"><b>A calm, infinite outliner that's entirely yours.</b><br>
-A Workflowy-class tool you run yourself: one process, zero runtime dependencies,<br>
-and your whole outline in a single SQLite file on your own machine.</p>
+<p align="center"><b>A calm, page-based outliner that's entirely yours.</b><br>
+A Roam-flavored fork of <a href="https://github.com/SharifIsmail/tendril">Tendril</a>: daily notes first, discrete pages with
+linked &amp; unlinked references,<br>
+one process, zero runtime dependencies, and everything in a single SQLite file on your own machine.</p>
+
+<p align="center"><sub>Fork changes: Daily-Notes start view (infinite scroll) · pages instead of one unified outline ·
+find-or-create pages via <code>Ctrl+K</code> and <code>[[…]]</code> · All-Pages table · Roam-style linked/unlinked references sections</sub></p>
 
 <p align="center">
   <img alt="Node 22+" src="https://img.shields.io/badge/node-%E2%89%A5%2022-43853d">

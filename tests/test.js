@@ -1,7 +1,7 @@
 /* Tendril end-to-end smoke test — drives the real app in headless Chrome. */
 const puppeteer = require('puppeteer-core');
 
-const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
+const CHROME = process.env.CHROME || 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const URL = 'http://localhost:3211/';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 

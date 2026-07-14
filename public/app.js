@@ -1540,8 +1540,8 @@ const searchDebounced = debounce(q => setSearch(q, { fromInput: true }), 160);
 
 function updateDocTitle() {
   document.title = state.zoom === HOME && !SHARE_TOKEN
-    ? 'Tendril'
-    : (plainOf(N(state.zoom).text).trim() || 'Untitled') + ' — Tendril';
+    ? 'Rhizome'
+    : (plainOf(N(state.zoom).text).trim() || 'Untitled') + ' — Rhizome';
 }
 
 function crumbLabel(id) {

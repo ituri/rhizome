@@ -1,7 +1,7 @@
 /* Phase-2 client op-sync: two browser clients converge through the real server via
    /api/ops + the SSE op broadcast (no whole-doc transfer).  Fresh server on 3211. */
 const puppeteer = require('puppeteer-core');
-const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
+const CHROME = process.env.CHROME || 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const URL = 'http://localhost:3211/';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 let failures = 0;

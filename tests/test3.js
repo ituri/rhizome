@@ -1,7 +1,7 @@
 /* Tendril gap-coverage tests — everything not exercised by test.js/test2.js */
 const puppeteer = require('puppeteer-core');
 const fs = require('fs');
-const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
+const CHROME = process.env.CHROME || 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const URL = 'http://localhost:3211/';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 let failures = 0;
