@@ -565,6 +565,46 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   }, q);
   assert(qLive === 3, `the query re-evaluates live when a new matching block appears (${qLive})`);
 
+  /* ---- 31. right sidebar: shift-click opens pages/blocks side-by-side ---- */
+  await page.evaluate(() => { setSearch(''); state.rightbar = []; renderRightbar(); location.hash = '#/outline'; });
+  await sleep(250);
+  const rbPg = await page.evaluate(() => {
+    const pg = getOrCreatePage('Sidebar Page');
+    const c1 = opNewAt(pg, 0), c2 = opNewAt(pg, 1);
+    N(c1).text = 'first child'; N(c2).text = 'second child';
+    markDirty(); renderPage();
+    return pg;
+  });
+  await sleep(200);
+  const rbOpen = await page.evaluate(pg => {
+    openInRightbar(pg);
+    const bar = document.getElementById('right-sidebar');
+    return {
+      barOpen: document.body.classList.contains('rightbar-open'),
+      title: bar?.querySelector('.rb-title')?.textContent,
+      rows: bar ? bar.querySelectorAll('.rb-line').length : -1,
+    };
+  }, rbPg);
+  assert(rbOpen.barOpen, 'openInRightbar opens the right sidebar');
+  assert(rbOpen.title === 'Sidebar Page', 'the sidebar entry shows the page title');
+  assert(rbOpen.rows >= 2, 'the sidebar renders the page’s children read-only');
+  const rbClosed = await page.evaluate(() => {
+    document.querySelector('#right-sidebar .rb-entry .rb-x').click();
+    return document.body.classList.contains('rightbar-open');
+  });
+  assert(!rbClosed, 'removing the last entry closes the sidebar');
+  const rbShift = await page.evaluate(pg => {
+    state.rightbar = []; renderRightbar();
+    const host = opNewAt('root', 0);
+    N(host).text = 'see <a href="#/n/' + pg + '" rel="noopener">Sidebar Page</a>';
+    markDirty(); renderPage();
+    const before = state.zoom;
+    const a = document.querySelector(`.item[data-id="${host}"] a[href*="${pg}"]`);
+    a.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, shiftKey: true }));
+    return { open: document.body.classList.contains('rightbar-open'), noNav: state.zoom === before };
+  }, rbPg);
+  assert(rbShift.open && rbShift.noNav, 'shift-clicking a page link opens it in the sidebar without navigating');
+
   await browser.close();
   console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PAGES TESTS PASSED');
   process.exit(failures ? 1 : 0);

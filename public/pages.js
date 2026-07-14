@@ -429,6 +429,7 @@ window.renderSidebar = function renderSidebar() {
     row.append(a);
     pagesBox.append(row);
   }
+  window.renderRightbar?.(); // keep the side-by-side panel live with the main view
 };
 
 /* ---------------- Roam-style date-picker calendar ---------------- */
@@ -1050,9 +1051,124 @@ function migrateDatePills() {
 // init() (app2.js) is async and still awaiting the doc when this file runs.
 // One shared snapshot() wraps all migrations so recOld journals them and the ops
 // actually persist (a snapshot-less mutation emits no op → is lost under opSync).
+/* ---------------- Right sidebar: shift-click opens pages/blocks side-by-side ---------------- */
+
+const RB_KEY = 'rhizome-rightbar';
+function saveRb() { try { localStorage.setItem(RB_KEY, JSON.stringify(state.rightbar || [])); } catch { /* private mode */ } }
+
+function rbTitle(id) {
+  const n = N(id);
+  if (n && n.cd) return roamDateLabel(n.cd);
+  return plainOf(n?.text || '').trim() || 'Untitled';
+}
+
+// a read-only nested outline (decorate only — never mountItem, which would hijack elById)
+function rbTree(id, depth) {
+  const wrap = document.createElement('div');
+  wrap.className = 'rb-children';
+  for (const c of kidsOf(contentIdOf(id))) {
+    const cc = contentIdOf(c);
+    const row = document.createElement('div');
+    row.className = 'rb-item';
+    const line = document.createElement('div');
+    line.className = 'rb-line';
+    line.innerHTML = decorate(N(cc).text || '');
+    row.append(line);
+    if (depth < 6 && kidsOf(cc).length) row.append(rbTree(c, depth + 1));
+    wrap.append(row);
+  }
+  return wrap;
+}
+
+function rbEntry(id) {
+  const box = document.createElement('div');
+  box.className = 'rb-entry';
+  const head = document.createElement('div');
+  head.className = 'rb-head';
+  const title = document.createElement('a');
+  title.className = 'rb-title';
+  title.href = '#/n/' + id;
+  title.textContent = rbTitle(id);
+  const x = document.createElement('button');
+  x.className = 'rb-x';
+  x.title = 'Remove from sidebar';
+  x.textContent = '×';
+  x.addEventListener('click', () => closeInRightbar(id));
+  head.append(title, x);
+  box.append(head);
+  // a leaf block has no children to list, so show its own text
+  if (plainOf(N(id).text || '').trim() && !kidsOf(contentIdOf(id)).length) {
+    const line = document.createElement('div');
+    line.className = 'rb-line rb-self';
+    line.innerHTML = decorate(N(id).text);
+    box.append(line);
+  }
+  box.append(rbTree(id, 0));
+  return box;
+}
+
+window.openInRightbar = function openInRightbar(id) {
+  id = contentIdOf(id);
+  if (!doc.nodes[id]) return;
+  if (!Array.isArray(state.rightbar)) state.rightbar = [];
+  if (!state.rightbar.includes(id)) state.rightbar.unshift(id);
+  saveRb();
+  window.renderRightbar();
+};
+
+function closeInRightbar(id) {
+  state.rightbar = (state.rightbar || []).filter(r => r !== id);
+  saveRb();
+  window.renderRightbar();
+}
+
+window.renderRightbar = function renderRightbar() {
+  let bar = document.getElementById('right-sidebar');
+  if (!bar) {
+    bar = document.createElement('aside');
+    bar.id = 'right-sidebar';
+    bar.className = 'rightbar';
+    document.querySelector('.shell')?.append(bar);
+  }
+  const ids = (state.rightbar || []).filter(id => doc && doc.nodes[id]);
+  state.rightbar = ids;
+  const open = ids.length > 0 && !SHARE_TOKEN;
+  document.body.classList.toggle('rightbar-open', open);
+  bar.innerHTML = '';
+  if (!open) return;
+  const head = document.createElement('div');
+  head.className = 'rb-bar-head';
+  const label = document.createElement('span');
+  label.textContent = 'Sidebar';
+  const closeAll = document.createElement('button');
+  closeAll.className = 'rb-x';
+  closeAll.title = 'Close sidebar';
+  closeAll.textContent = '×';
+  closeAll.addEventListener('click', () => { state.rightbar = []; saveRb(); window.renderRightbar(); });
+  head.append(label, closeAll);
+  bar.append(head);
+  for (const id of ids) bar.append(rbEntry(id));
+};
+
+// shift-click a page link or bullet → open it in the right sidebar instead of navigating
+document.addEventListener('click', e => {
+  if (!e.shiftKey || SHARE_TOKEN || !doc) return;
+  const a = e.target.closest('a[href^="#/n/"]');
+  const bullet = e.target.closest('.bullet');
+  let id = null;
+  if (a) { const m = a.getAttribute('href').match(/#\/n\/([A-Za-z0-9]+)/); id = m && m[1]; }
+  else if (bullet) { id = bullet.closest('.item')?.dataset.id || null; }
+  if (!id || !doc.nodes[id]) return;
+  e.preventDefault();
+  e.stopPropagation();
+  window.openInRightbar(id);
+}, true);
+
 (function afterDocLoad() {
   if (!doc) { setTimeout(afterDocLoad, 100); return; }
   if (SHARE_TOKEN || state.readOnly) return;
+  try { state.rightbar = JSON.parse(localStorage.getItem(RB_KEY) || '[]').filter(id => doc.nodes[id]); } catch { state.rightbar = []; }
+  window.renderRightbar();
   snapshot();
   let changed = false;
   changed = migrateDayLabels() || changed;

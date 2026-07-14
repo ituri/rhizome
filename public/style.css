@@ -2102,6 +2102,42 @@ a.block-ref::before, a.block-ref::after { content: none !important; }
 .attr-key { color: var(--accent); font-weight: 600; cursor: pointer; }
 .attr-key:hover { text-decoration: underline; }
 
+/* right sidebar: shift-click opens pages/blocks side-by-side (read-only) */
+.rightbar {
+  flex: none;
+  width: 0;
+  overflow: hidden;
+  position: sticky;
+  top: var(--topbar-h);
+  height: calc(100dvh - var(--topbar-h));
+  transition: width 0.22s var(--ease-out);
+}
+body.rightbar-open .rightbar {
+  width: 340px;
+  border-left: 1px solid var(--line-soft);
+  overflow-y: auto;
+  padding: 10px 14px 30px;
+  background: var(--bg-soft, rgba(127, 127, 127, 0.03));
+}
+.rb-bar-head {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 11px; font-weight: 700; color: var(--ink-faint);
+  text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 10px;
+}
+.rb-entry { margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--line-soft); }
+.rb-entry:last-child { border-bottom: none; }
+.rb-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 6px; }
+.rb-title { font-weight: 600; font-size: 15px; color: var(--ink); text-decoration: none; }
+.rb-title:hover { text-decoration: underline; }
+.rb-x { border: none; background: none; color: var(--ink-faint); cursor: pointer; font-size: 16px; line-height: 1; padding: 2px 5px; border-radius: 4px; }
+.rb-x:hover { color: var(--ink); background: var(--line-soft); }
+.rb-children { margin-left: 15px; }
+.rb-item { position: relative; margin: 3px 0; }
+.rb-item::before { content: "•"; position: absolute; left: -13px; color: var(--ink-faint); font-size: 12px; }
+.rb-line { font-size: 14px; line-height: 1.5; }
+.rb-self { margin: 2px 0 8px; }
+@media (max-width: 900px) { body.rightbar-open .rightbar { width: 260px; } }
+
 /* live {{query:…}} result list, appended under the query block */
 .query-block { margin: 4px 0 10px; padding: 6px 10px; border-left: 2px solid var(--accent); background: var(--bg-soft, rgba(127,127,127,.06)); border-radius: 4px; }
 .query-head { font-size: 12px; font-weight: 600; color: var(--ink-faint); margin-bottom: 4px; }
