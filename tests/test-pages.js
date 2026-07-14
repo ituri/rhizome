@@ -287,24 +287,29 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   assert(mig.aliasText, '[[Target|Alias]] links the target but shows the alias');
   assert(mig.zielEmpty, 'the linked page is created (even empty)');
 
-  /* ---- 22. clicking a #tag shows matches across all pages, not just this one ---- */
+  /* ---- 22. a #tag is a page (Roam); its references gather every block that tags it ---- */
   await page.evaluate(() => {
     snapshot();
-    const a = getOrCreatePage('TagPageA');
-    const b = getOrCreatePage('TagPageB');
-    insertAt(a, 0, makeNode('etwas <span class="tag" data-tag="#projektx">#projektx</span>'));
-    insertAt(b, 0, makeNode('anderes <span class="tag" data-tag="#projektx">#projektx</span>'));
+    const a = getOrCreatePage('TagRefA');
+    const b = getOrCreatePage('TagRefB');
+    insertAt(a, 0, makeNode('etwas #projektx dazu'));
+    insertAt(b, 0, makeNode('anderes #projektx hier'));
     markDirty();
     zoomTo(a); // sitting on page A
   });
   await sleep(400);
   await page.evaluate(() => document.querySelector('.tree .tag[data-tag="#projektx"]').click());
-  await sleep(400);
-  const tagView = await page.evaluate(() => ({ zoomHome: state.zoom === ROOT, search: state.search, matches: state.matchCount }));
-  assert(tagView.zoomHome && /projektx/.test(tagView.search), 'clicking a tag switches to the global outline search');
-  assert(tagView.matches >= 2, `the tag search spans all pages (${tagView.matches} matches)`);
-  await page.evaluate(() => setSearch(''));
-  await sleep(120);
+  await sleep(500);
+  const tagPage = await page.evaluate(() => ({
+    onTagPage: plainOf(N(state.zoom).text).trim() === 'projektx',
+    isTopLevelPage: kidsOf(ROOT).includes(state.zoom),
+    refGroups: [...document.querySelectorAll('#backlinks .ref-group .ref-page')].map(a => a.textContent),
+    refRows: [...document.querySelectorAll('#backlinks .ref-row')].length,
+  }));
+  assert(tagPage.onTagPage && tagPage.isTopLevelPage, 'clicking a #tag opens its own page');
+  assert(tagPage.refGroups.includes('TagRefA') && tagPage.refGroups.includes('TagRefB'),
+    `the tag page gathers references from every tagging page (${JSON.stringify(tagPage.refGroups)})`);
+  assert(tagPage.refRows >= 2, 'both #projektx mentions appear as references');
 
   /* ---- 19. typing [[Title]] in full auto-links to a (possibly empty) page ---- */
   await page.evaluate(() => { location.hash = '#/'; });

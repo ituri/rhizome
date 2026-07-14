@@ -1542,15 +1542,16 @@ function setSearch(q, { fromInput = false, append = false } = {}) {
   renderPage();   // → computeSearch(): for large docs this fetches FTS candidates, then re-renders
 }
 
-// clicking a #tag shows every item that carries it across the whole outline,
-// not just within the page you're currently on
-function openTag(tag, append) {
-  if (append || SHARE_TOKEN || state.zoom === HOME) { setSearch(tag, { append }); return; }
-  history.replaceState(null, '', '#/outline'); // global scope, no extra hashchange render
-  state.zoom = HOME;
-  state.view = null;
-  window.onViewChange?.();
-  setSearch(tag);
+// rhizome: a #tag / @mention is a page (Roam-style) — clicking opens that page,
+// whose Linked References gather every block that tags it
+function openTag(tag) {
+  const name = tag.replace(/^[#@]/, '').trim();
+  if (!name || SHARE_TOKEN) return;
+  commitActiveText();
+  snapshot();
+  const page = window.getOrCreatePage(name);
+  markDirty();
+  zoomTo(page);
 }
 
 const searchDebounced = debounce(q => setSearch(q, { fromInput: true }), 160);
@@ -3234,7 +3235,7 @@ treeEl.addEventListener('click', e => {
   const tag = e.target.closest('.tag');
   if (tag) {
     e.preventDefault();
-    openTag(tag.dataset.tag, e.shiftKey || e.ctrlKey);
+    openTag(tag.dataset.tag);
     return;
   }
   const dateEl = e.target.closest('time[datetime]');
@@ -3302,7 +3303,7 @@ treeEl.addEventListener('click', e => {
 
 zoomHeadEl.addEventListener('click', e => {
   const tag = e.target.closest('.tag');
-  if (tag) { e.preventDefault(); openTag(tag.dataset.tag, e.shiftKey || e.ctrlKey); }
+  if (tag) { e.preventDefault(); openTag(tag.dataset.tag); }
 });
 
 emptyHintEl.addEventListener('click', () => {

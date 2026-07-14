@@ -31,7 +31,17 @@ function createPage(title) {
   return id;
 }
 
+// "July 14th, 2026" → "2026-07-14", else null
+function parseRoamDate(title) {
+  const m = title.trim().match(/^(January|February|March|April|May|June|July|August|September|October|November|December) (\d{1,2})(?:st|nd|rd|th), (\d{4})$/);
+  if (!m) return null;
+  const mon = MONTHS_LONG.indexOf(m[1]) + 1;
+  return `${m[3]}-${String(mon).padStart(2, '0')}-${String(Number(m[2])).padStart(2, '0')}`;
+}
+
 function getOrCreatePage(title) {
+  const iso = parseRoamDate(title);          // a date resolves to its calendar day page,
+  if (iso) return window.ensureDayId(iso);   // never a duplicate top-level page
   return findPageByTitle(title) || createPage(title);
 }
 window.getOrCreatePage = getOrCreatePage;
@@ -59,8 +69,10 @@ window.roamDateLabel = roamDateLabel;
 
 // one-time relabel of day nodes created before the fork ("Mon, Jul 14")
 const OLD_DAY_RE = new RegExp(`^(${DOW_SHORT.join('|')}), (${MONTHS_SHORT.join('|')}) \\d{1,2}$`);
+// migrations mutate the doc inside the shared afterDocLoad snapshot() (so recOld
+// journals them → ops are emitted → they actually persist) and return whether they
+// changed anything; afterDocLoad does the single markDirty()/renderPage()
 function migrateDayLabels() {
-  if (SHARE_TOKEN || state.readOnly || !doc) return;
   let changed = false;
   for (const id of Object.keys(doc.nodes)) {
     const n = doc.nodes[id];
@@ -71,7 +83,34 @@ function migrateDayLabels() {
       changed = true;
     }
   }
-  if (changed) { markDirty(); renderPage(); }
+  return changed;
+}
+
+// merge duplicate top-level pages titled like a date into their calendar day node
+// (created before getOrCreatePage became date-aware)
+function migrateDupDatePages() {
+  let changed = false;
+  for (const id of pagesOf()) {
+    const n = N(id);
+    if (n.cal) continue;
+    const iso = parseRoamDate(plainOf(n.text).trim());
+    if (!iso) continue;
+    const day = window.ensureDayId(iso);
+    if (day === id) continue;
+    recOld(id); recOld(day);
+    for (const c of [...kidsOf(id)]) moveNode(c, day, kidsOf(day).length);
+    // re-point every link that aimed at the duplicate to the real day page
+    // (match the closing quote so "#/n/abc" never clobbers "#/n/abcdef")
+    const from = `#/n/${id}"`, to = `#/n/${day}"`;
+    for (const k of Object.keys(doc.nodes)) {
+      const t = doc.nodes[k].text;
+      if (t && t.includes(from)) { recOld(k); doc.nodes[k].text = t.split(from).join(to); }
+    }
+    detach(id);
+    delete doc.nodes[id];
+    changed = true;
+  }
+  return changed;
 }
 
 /* ---------------- Daily Notes view ---------------- */
@@ -516,9 +555,11 @@ function linkifyWikiLinks(html) {
   return changed ? tpl.innerHTML : html;
 }
 
-// turn every literal [[wiki-link]] in the doc into a real link (import + first load)
+// turn every literal [[wiki-link]] in the doc into a real link. Mutates within the
+// caller's snapshot (afterDocLoad or the import handler) and returns whether it
+// changed anything; the caller markDirty()/renderPage()s.
 window.migrateWikiLinks = function migrateWikiLinks() {
-  if (SHARE_TOKEN || state.readOnly || !doc) return;
+  if (SHARE_TOKEN || state.readOnly || !doc) return false;
   let changed = false;
   for (const id of Object.keys(doc.nodes)) {
     const n = doc.nodes[id];
@@ -526,7 +567,7 @@ window.migrateWikiLinks = function migrateWikiLinks() {
     const linked = linkifyWikiLinks(n.text);
     if (linked !== n.text) { recOld(id); n.text = sanitizeHtml(linked); n.m = Date.now(); changed = true; }
   }
-  if (changed) { markDirty(); renderPage(); }
+  return changed;
 };
 
 // a link element / HTML pointing at a journal day page (creates the day)
@@ -597,6 +638,15 @@ function refGroupOf(id) {
 function collectLinkedRefs(targets) {
   const out = new Map(); // target → rows
   const add = (t, row) => { const a = out.get(t) || []; a.push(row); out.set(t, a); };
+  // Roam-style: a page also collects #tag / @mention references to its title.
+  // Only single-token titles can be tagged (multi-word titles have no tag form).
+  const tagRe = new Map();
+  for (const t of targets) {
+    const title = plainOf(N(t).text).trim();
+    if (title && /^[\p{L}\p{N}_][\p{L}\p{N}_\-/]*$/u.test(title)) {
+      tagRe.set(t, new RegExp('[#@]' + title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![\\p{L}\\p{N}_\\-/])', 'u'));
+    }
+  }
   for (const id of Object.keys(doc.nodes)) {
     const n = doc.nodes[id];
     if (n.mirror && n.mirror !== id && targets.has(n.mirror)) {
@@ -610,6 +660,10 @@ function collectLinkedRefs(targets) {
       if (t === id || seen.has(t) || !targets.has(t)) continue;
       seen.add(t);
       add(t, { id, html: n.text });
+    }
+    for (const [t, re] of tagRe) {
+      if (t === id || seen.has(t)) continue;
+      if (re.test(n.text)) { seen.add(t); add(t, { id, html: n.text }); }
     }
   }
   return out;
@@ -780,7 +834,6 @@ function linkifyMatch(nodeId, pageId, title) {
 // one-time upgrade of legacy single-date <time> pills to real day-page links
 // (date ranges keep their pill — they span days, not a single page)
 function migrateDatePills() {
-  if (SHARE_TOKEN || state.readOnly || !doc) return;
   let changed = false;
   for (const id of Object.keys(doc.nodes)) {
     const n = doc.nodes[id];
@@ -796,11 +849,20 @@ function migrateDatePills() {
     });
     if (touched) { recOld(id); n.text = sanitizeHtml(tpl.innerHTML); n.m = Date.now(); changed = true; }
   }
-  if (changed) { markDirty(); renderPage(); }
+  return changed;
 }
 
-// init() (app2.js) is async and still awaiting the doc when this file runs
+// init() (app2.js) is async and still awaiting the doc when this file runs.
+// One shared snapshot() wraps all migrations so recOld journals them and the ops
+// actually persist (a snapshot-less mutation emits no op → is lost under opSync).
 (function afterDocLoad() {
-  if (doc) { migrateDayLabels(); migrateDatePills(); migrateWikiLinks(); }
-  else setTimeout(afterDocLoad, 100);
+  if (!doc) { setTimeout(afterDocLoad, 100); return; }
+  if (SHARE_TOKEN || state.readOnly) return;
+  snapshot();
+  let changed = false;
+  changed = migrateDayLabels() || changed;
+  changed = migrateDatePills() || changed;
+  changed = migrateDupDatePages() || changed;
+  changed = migrateWikiLinks() || changed;
+  if (changed) { markDirty(); renderPage(); }
 })();
