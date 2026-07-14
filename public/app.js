@@ -3212,6 +3212,20 @@ pageEl.addEventListener('focusout', e => {
   if (!ctx) return;
   window.clearDateSuggest?.();
   commitActiveText();
+  // rhizome: a page can't be renamed onto an existing page/day title — revert if it collides
+  if (ctx.field === 'title' && titleBeforeEdit != null && window.pageTitleCollides?.(contentIdOf(ctx.id))) {
+    const node = N(contentIdOf(ctx.id));
+    recOld(node.id);
+    node.text = titleBeforeEdit;
+    touch(node.id);
+    markDirty();
+    renderZoomHead();
+    updateDocTitle();
+    showToast('A page with that title already exists — rename reverted');
+    titleBeforeEdit = null;
+    return;
+  }
+  if (ctx.field === 'title') titleBeforeEdit = null;
   if ((ctx.field === 'note' || ctx.field === 'zoom-note') && doc.nodes[ctx.id]) {
     const n = N(contentIdOf(ctx.id)); // a mirror's note lives on the target
     if (n.note === '' && document.activeElement !== ctx.el) {
@@ -4197,9 +4211,11 @@ $('#search-clear').addEventListener('click', () => { setSearch(''); searchEl.foc
 const isCoarse = matchMedia('(pointer: coarse)').matches;
 let lastItemId = null;
 
+let titleBeforeEdit = null; // the page title as it was when editing began (to revert a colliding rename)
 pageEl.addEventListener('focusin', e => {
   const ctx = editableCtx(e.target);
   if (ctx && ctx.field !== 'title' && ctx.field !== 'zoom-note') lastItemId = ctx.id;
+  if (ctx && ctx.field === 'title') titleBeforeEdit = N(contentIdOf(ctx.id))?.text ?? null;
   if (isCoarse && ctx && !state.readOnly) mobilebarEl.hidden = false;
 });
 pageEl.addEventListener('focusout', () => {

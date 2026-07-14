@@ -44,6 +44,20 @@ function getOrCreatePage(title) {
   if (iso) return window.ensureDayId(iso);   // never a duplicate top-level page
   return findPageByTitle(title) || createPage(title);
 }
+
+// true when node `id` (a top-level page or a day page) now carries a title that
+// already belongs to another page — used to block a colliding rename
+window.pageTitleCollides = function pageTitleCollides(id) {
+  const n = N(id);
+  if (!n) return false;
+  const isPage = kidsOf(ROOT).includes(id) || n.cal === 'day';
+  if (!isPage) return false;
+  const title = plainOf(n.text).trim().toLowerCase();
+  if (!title) return false;
+  const iso = parseRoamDate(title);
+  if (iso) { const day = findDay(iso); return !!day && day !== id; } // a date belongs to its day page
+  return pagesOf().some(p => p !== id && plainOf(N(p).text).trim().toLowerCase() === title);
+};
 window.getOrCreatePage = getOrCreatePage;
 
 // the page containing a node: the node itself when top-level, ROOT for ROOT

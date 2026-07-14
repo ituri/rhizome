@@ -344,6 +344,50 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
     pagesOf().filter(p => plainOf(N(p).text).trim().toLowerCase() === 'frisch angelegt').length);
   assert(dupCount === 1, `typed [[Existing]] reuses the page (count ${dupCount})`);
 
+  /* ---- 23. renaming a page onto an existing title is blocked ---- */
+  await page.evaluate(() => {
+    snapshot();
+    window.__alpha = getOrCreatePage('AlphaSeite');
+    window.__beta = getOrCreatePage('BetaSeite');
+    markDirty();
+    zoomTo(window.__beta);
+  });
+  await sleep(450);
+  await page.evaluate(() => document.querySelector('#zoom-title').focus());
+  await sleep(150);
+  await page.evaluate(() => {
+    const t = document.querySelector('#zoom-title');
+    const r = document.createRange(); r.selectNodeContents(t);
+    const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+  });
+  await page.keyboard.type('AlphaSeite');
+  await sleep(200);
+  await page.evaluate(() => document.querySelector('#zoom-title').blur());
+  await sleep(450);
+  const rename = await page.evaluate(() => ({
+    betaTitle: plainOf(N(window.__beta).text).trim(),
+    alphaCount: pagesOf().filter(p => plainOf(N(p).text).trim() === 'AlphaSeite').length,
+  }));
+  assert(rename.betaTitle === 'BetaSeite', `colliding rename reverted (title is now "${rename.betaTitle}")`);
+  assert(rename.alphaCount === 1, `no duplicate title was created (${rename.alphaCount} AlphaSeite)`);
+
+  /* ---- 24. a unique rename still goes through ---- */
+  await page.evaluate(() => zoomTo(window.__beta));
+  await sleep(300);
+  await page.evaluate(() => document.querySelector('#zoom-title').focus());
+  await sleep(150);
+  await page.evaluate(() => {
+    const t = document.querySelector('#zoom-title');
+    const r = document.createRange(); r.selectNodeContents(t);
+    const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+  });
+  await page.keyboard.type('GammaSeite');
+  await sleep(200);
+  await page.evaluate(() => document.querySelector('#zoom-title').blur());
+  await sleep(450);
+  const unique = await page.evaluate(() => plainOf(N(window.__beta).text).trim());
+  assert(unique === 'GammaSeite', `a non-colliding rename is kept ("${unique}")`);
+
   await browser.close();
   console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PAGES TESTS PASSED');
   process.exit(failures ? 1 : 0);
