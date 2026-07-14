@@ -121,21 +121,21 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
     kidsOf(window.__sortParent).some(id => doc.nodes[id].mirror === window.__dest));
   assert(ok, 'Mirror to… creates a mirror under the chosen node');
 
-  /* ---- 6. Move to Today sets a date ---- */
+  /* ---- 6. Move to Today relocates the item onto today's journal page ---- */
   await page.evaluate(() => {
     const t = makeNode('do laundry');
     insertAt('root', 0, t);
     renderPage();
     window.__dated = t;
-    setItemDate(t, todayStr());
+    moveItemToDay(t, todayStr());
   });
   await sleep(300);
   ok = await page.evaluate(() => {
-    const a = document.querySelector(`.item[data-id="${window.__dated}"] a[href^="#/n/"]`);
-    const day = a && doc.nodes[a.getAttribute('href').replace('#/n/', '')];
-    return !!day && day.cal === 'day' && day.cd === todayStr();
+    const day = parentOf(window.__dated);
+    return N(day)?.cal === 'day' && N(day)?.cd === todayStr()
+      && !kidsOf(ROOT).includes(window.__dated); // no longer at the root
   });
-  assert(ok, 'Move to Today links the item to today\'s page'); // rhizome: dates are links
+  assert(ok, 'Move to Today moves the item onto today\'s journal page'); // rhizome
 
   /* ---- 7. date format setting reformats range pills (single dates are links now) ---- */
   await page.evaluate(() => {

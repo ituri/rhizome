@@ -254,10 +254,10 @@ function slashCommands(ctx) {
       { label: 'Comment', icon: '💬', fn: () => { const it = elById.get(id); window.showComments(it?.querySelector('.content') || document.body, id); } },
       { label: 'Count items', icon: '#', fn: () => opCount(id) },
       { label: 'Move to…', icon: '→', fn: () => openNodePicker('Move to…', t => moveItemTo(id, t), subtreeOf(id)) },
-      { label: 'Move to Today', icon: '▦', fn: () => setItemDate(id, dateOffset(0)) },
-      { label: 'Move to Tomorrow', icon: '▦', fn: () => setItemDate(id, dateOffset(1)) },
-      { label: 'Move to Next Week', icon: '▦', fn: () => setItemDate(id, dateOffset(7)) },
-      { label: 'Move to Date…', icon: '📅', fn: () => pickDate(nodeAnchor(id), iso => setItemDate(id, iso)) },
+      { label: 'Move to Today', icon: '▦', fn: () => moveItemToDay(id, dateOffset(0)) },
+      { label: 'Move to Tomorrow', icon: '▦', fn: () => moveItemToDay(id, dateOffset(1)) },
+      { label: 'Move to Next Week', icon: '▦', fn: () => moveItemToDay(id, dateOffset(7)) },
+      { label: 'Move to Date…', icon: '📅', fn: () => pickDate(nodeAnchor(id), iso => moveItemToDay(id, iso)) },
       { label: 'Mirror', icon: '◇', hint: 'Alt+Shift+M', fn: () => opMirror(id) },
       { label: 'Mirror here…', icon: '◈', fn: () => mirrorHere(id) },
       { label: 'Mirror to…', icon: '◇', fn: () => openNodePicker('Mirror to…', t => mirrorItemTo(id, t), subtreeOf(id)) },
@@ -698,24 +698,6 @@ function mirrorHere(id) {
 }
 
 // sets/replaces a date pill on an item (Move to Today / Tomorrow / Next Week)
-function setItemDate(id, iso) {
-  id = contentIdOf(id); // the date reference lives in the shared text
-  commitActiveText();
-  snapshot();
-  const n = N(id);
-  recOld(id);
-  // rhizome: a date is a real link to the day page (Roam-style), not a <time> pill;
-  // strip a trailing existing date reference so re-dating replaces cleanly
-  const tpl = document.createElement('template');
-  tpl.innerHTML = n.text || '';
-  stripTrailingDateRefs(tpl.content);
-  const html = tpl.innerHTML.replace(/\s+$/, '') + ' ' + dayLinkHtml(iso);
-  n.text = sanitizeHtml(html);
-  touch(id);
-  renderPage();
-  markDirty();
-  showToast('Linked ' + roamDateLabel(iso));
-}
 
 function dateOffset(days) {
   const d = new Date();
@@ -1590,59 +1572,68 @@ async function fetchShares() {
 }
 
 function showSharePop(anchor, id) {
+  openPopover(anchor, pop => renderSharePop(pop, id));
+}
+
+// rebuilds itself in place so creating a link immediately reveals it (no reopen)
+function renderSharePop(pop, id) {
   const existing = state.shares.find(s => s.id === id);
-  openPopover(anchor, pop => {
-    pop.classList.add('share-pop');
-    const title = document.createElement('div');
-    title.className = 'pop-title';
-    title.textContent = 'Share this item';
-    pop.append(title);
-    if (existing) {
-      const linkRow = document.createElement('div');
-      linkRow.className = 'share-link-row';
-      const input = document.createElement('input');
-      input.readOnly = true;
-      input.value = location.origin + '/s/' + existing.token;
-      input.addEventListener('focus', () => input.select());
-      const copy = document.createElement('button');
-      copy.className = 'textbtn';
-      copy.textContent = 'Copy';
-      copy.addEventListener('click', async () => {
-        await navigator.clipboard?.writeText(input.value);
-        copy.textContent = 'Copied';
-        setTimeout(() => { copy.textContent = 'Copy'; }, 1200);
+  pop.className = 'popover share-pop';
+  pop.innerHTML = '';
+  const title = document.createElement('div');
+  title.className = 'pop-title';
+  title.textContent = existing ? 'Public link' : 'Create a public link';
+  pop.append(title);
+
+  if (existing) {
+    const linkRow = document.createElement('div');
+    linkRow.className = 'share-link-row';
+    const input = document.createElement('input');
+    input.readOnly = true;
+    input.value = location.origin + '/s/' + existing.token;
+    input.addEventListener('focus', () => input.select());
+    const copy = document.createElement('button');
+    copy.className = 'textbtn';
+    copy.textContent = 'Copy';
+    copy.addEventListener('click', async () => {
+      await navigator.clipboard?.writeText(input.value).catch(() => {});
+      copy.textContent = 'Copied';
+      setTimeout(() => { copy.textContent = 'Copy'; }, 1200);
+    });
+    linkRow.append(input, copy);
+    pop.append(linkRow);
+
+    const modeNote = document.createElement('div');
+    modeNote.className = 'pop-title';
+    modeNote.textContent = existing.mode === 'edit' ? 'Anyone with the link can edit' : 'Anyone with the link can view';
+    pop.append(modeNote);
+    input.focus();
+
+    pop.append(menuItem('Revoke link', '✕', async () => {
+      await fetch('/api/shares/' + existing.token, { method: 'DELETE' });
+      await fetchShares();
+      elById.get(id)?.classList.toggle('shared-ring', state.shares.some(s => s.id === id));
+      renderSharePop(pop, id);
+    }, { danger: true, keepOpen: true }));
+  } else {
+    const make = mode => async () => {
+      const res = await fetch('/api/shares', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nodeId: id, mode }),
       });
-      linkRow.append(input, copy);
-      pop.append(linkRow);
-      const modeNote = document.createElement('div');
-      modeNote.className = 'pop-title';
-      modeNote.textContent = existing.mode === 'edit' ? 'Anyone with the link can edit' : 'Anyone with the link can view';
-      pop.append(modeNote);
-      pop.append(menuItem('Revoke link', '✕', async () => {
-        await fetch('/api/shares/' + existing.token, { method: 'DELETE' });
-        await fetchShares();
-        renderPage();
-        showToast('Share link revoked');
-      }, { danger: true }));
-    } else {
-      const make = mode => async () => {
-        const res = await fetch('/api/shares', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ nodeId: id, mode }),
-        });
-        const data = await res.json();
-        await fetchShares();
-        renderPage();
-        await navigator.clipboard?.writeText(location.origin + data.url).catch(() => {});
-        showToast('Share link created and copied');
-      };
-      pop.append(
-        menuItem('Share — view only', '👁', make('view')),
-        menuItem('Share — can edit', '✎', make('edit')),
-      );
-    }
-  });
+      const data = await res.json();
+      await fetchShares();
+      elById.get(id)?.classList.add('shared-ring'); // update the indicator without a re-render (which would close the popover)
+      renderSharePop(pop, id);   // now shows the link + Copy, popover stays open
+      await navigator.clipboard?.writeText(location.origin + data.url).catch(() => {});
+      showToast('Public link created & copied');
+    };
+    pop.append(
+      menuItem('View only', '👁', make('view'), { keepOpen: true }),
+      menuItem('Can edit', '✎', make('edit'), { keepOpen: true }),
+    );
+  }
 }
 
 /* ---------------- N. attachments & AI ---------------- */
@@ -1802,10 +1793,10 @@ window.showItemMenu = function showItemMenu(anchor, id) {
       pop.append(document.createElement('hr'));
       pop.append(
         menuItem('Add date', '📅', () => openDatePop({ id, field: 'text', el: elById.get(id)?.querySelector('.content') }), { hint: '!!' }),
-        menuItem('Move to Today', '▦', () => setItemDate(id, dateOffset(0))),
-        menuItem('Move to Tomorrow', '▦', () => setItemDate(id, dateOffset(1))),
-        menuItem('Move to Next Week', '▦', () => setItemDate(id, dateOffset(7))),
-        menuItem('Move to Date…', '📅', () => pickDate(anchor, iso => setItemDate(id, iso))),
+        menuItem('Move to Today', '▦', () => moveItemToDay(id, dateOffset(0))),
+        menuItem('Move to Tomorrow', '▦', () => moveItemToDay(id, dateOffset(1))),
+        menuItem('Move to Next Week', '▦', () => moveItemToDay(id, dateOffset(7))),
+        menuItem('Move to Date…', '📅', () => pickDate(anchor, iso => moveItemToDay(id, iso))),
         document.createElement('hr'),
         menuItem('Move to…', '→', () => openNodePicker('Move to…', t => moveItemTo(id, t), subtreeOf(id)), { hint: 'Alt+Ctrl+M' }),
         menuItem('Mirror', '◇', () => opMirror(id), { hint: 'Alt+Shift+M' }),

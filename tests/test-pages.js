@@ -262,6 +262,50 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   const ct = await page.evaluate(() => plainOf(N(window.__timeHost).text || ''));
   assert(/\d{2}:\d{2}/.test(ct), `slash Current Time inserts a timestamp ("${ct}")`);
 
+  /* ---- 21. existing/imported [[Links]] in text become real links ---- */
+  await page.evaluate(() => {
+    snapshot();
+    const host = getOrCreatePage('WikiHost');
+    window.__wikiHost = makeNode('sieh [[Zielseite]] und [[Andere|Alias]] an');
+    insertAt(host, 0, window.__wikiHost);
+    markDirty();
+    migrateWikiLinks(); // the load/import migration
+  });
+  await sleep(400);
+  const mig = await page.evaluate(() => {
+    const n = N(window.__wikiHost);
+    const ziel = pagesOf().find(p => plainOf(N(p).text).trim() === 'Zielseite');
+    const andere = pagesOf().find(p => plainOf(N(p).text).trim() === 'Andere');
+    return {
+      noBrackets: !/\[\[|\]\]/.test(n.text),
+      linksZiel: ziel && n.text.includes('#/n/' + ziel),
+      aliasText: andere && new RegExp('#/n/' + andere + '"[^>]*>Alias</a>').test(n.text),
+      zielEmpty: ziel ? kidsOf(ziel).length === 0 : false,
+    };
+  });
+  assert(mig.noBrackets && mig.linksZiel, 'literal [[Link]] is converted to a real link');
+  assert(mig.aliasText, '[[Target|Alias]] links the target but shows the alias');
+  assert(mig.zielEmpty, 'the linked page is created (even empty)');
+
+  /* ---- 22. clicking a #tag shows matches across all pages, not just this one ---- */
+  await page.evaluate(() => {
+    snapshot();
+    const a = getOrCreatePage('TagPageA');
+    const b = getOrCreatePage('TagPageB');
+    insertAt(a, 0, makeNode('etwas <span class="tag" data-tag="#projektx">#projektx</span>'));
+    insertAt(b, 0, makeNode('anderes <span class="tag" data-tag="#projektx">#projektx</span>'));
+    markDirty();
+    zoomTo(a); // sitting on page A
+  });
+  await sleep(400);
+  await page.evaluate(() => document.querySelector('.tree .tag[data-tag="#projektx"]').click());
+  await sleep(400);
+  const tagView = await page.evaluate(() => ({ zoomHome: state.zoom === ROOT, search: state.search, matches: state.matchCount }));
+  assert(tagView.zoomHome && /projektx/.test(tagView.search), 'clicking a tag switches to the global outline search');
+  assert(tagView.matches >= 2, `the tag search spans all pages (${tagView.matches} matches)`);
+  await page.evaluate(() => setSearch(''));
+  await sleep(120);
+
   /* ---- 19. typing [[Title]] in full auto-links to a (possibly empty) page ---- */
   await page.evaluate(() => { location.hash = '#/'; });
   await sleep(500);

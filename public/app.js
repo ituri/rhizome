@@ -1542,6 +1542,17 @@ function setSearch(q, { fromInput = false, append = false } = {}) {
   renderPage();   // → computeSearch(): for large docs this fetches FTS candidates, then re-renders
 }
 
+// clicking a #tag shows every item that carries it across the whole outline,
+// not just within the page you're currently on
+function openTag(tag, append) {
+  if (append || SHARE_TOKEN || state.zoom === HOME) { setSearch(tag, { append }); return; }
+  history.replaceState(null, '', '#/outline'); // global scope, no extra hashchange render
+  state.zoom = HOME;
+  state.view = null;
+  window.onViewChange?.();
+  setSearch(tag);
+}
+
 const searchDebounced = debounce(q => setSearch(q, { fromInput: true }), 160);
 
 /* ---------------- 11. rendering ---------------- */
@@ -3223,7 +3234,7 @@ treeEl.addEventListener('click', e => {
   const tag = e.target.closest('.tag');
   if (tag) {
     e.preventDefault();
-    setSearch(tag.dataset.tag, { append: e.shiftKey || e.ctrlKey });
+    openTag(tag.dataset.tag, e.shiftKey || e.ctrlKey);
     return;
   }
   const dateEl = e.target.closest('time[datetime]');
@@ -3291,7 +3302,7 @@ treeEl.addEventListener('click', e => {
 
 zoomHeadEl.addEventListener('click', e => {
   const tag = e.target.closest('.tag');
-  if (tag) { e.preventDefault(); setSearch(tag.dataset.tag, { append: e.shiftKey || e.ctrlKey }); }
+  if (tag) { e.preventDefault(); openTag(tag.dataset.tag, e.shiftKey || e.ctrlKey); }
 });
 
 emptyHintEl.addEventListener('click', () => {
@@ -4114,6 +4125,7 @@ $('#import-file').addEventListener('change', async e => {
       doc = sanitizeDocTexts(incoming); // also normalizes missing children arrays
       rebuildParentMap();
       state.zoom = HOME;
+      window.migrateWikiLinks?.();
       renderPage();
       markDirty();
       showToast('Outline imported', { label: 'Undo', fn: undo });
@@ -4132,16 +4144,18 @@ $('#import-file').addEventListener('change', async e => {
       };
       let count = 0;
       for (const el of xml.querySelectorAll('body > outline')) { addOutline(el, state.zoom); count++; }
-      renderPage();
       markDirty();
+      window.migrateWikiLinks?.();
+      renderPage();
       showToast(`Imported ${count} top-level item${count === 1 ? '' : 's'} from OPML`);
     } else {
       const forest = parseIndentedText(text);
       if (!forest.length) throw new Error('no items found');
       snapshot();
       materializeForest(forest, state.zoom);
-      renderPage();
       markDirty();
+      window.migrateWikiLinks?.();
+      renderPage();
       showToast('Text outline imported');
     }
   } catch (err) {

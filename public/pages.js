@@ -463,6 +463,72 @@ window.searchPages = function searchPages(q, limit = 8) {
 // find or create a journal day node (caller must have snapshot()ed)
 window.ensureDayId = iso => findDay(iso) || ensureDay(iso);
 
+// physically relocate an item under a journal day page (Roam "move to today")
+window.moveItemToDay = function moveItemToDay(id, iso) {
+  if (state.readOnly) return;
+  commitActiveText();
+  snapshot();
+  const day = ensureDayId(iso);
+  if (day === id || isAncestor(id, day)) return; // never move a node into itself
+  moveNode(id, day, kidsOf(day).length);
+  markDirty();
+  renderPage();
+  showToast('Moved to ' + roamDateLabel(iso), { label: 'Open', fn: () => zoomTo(day) });
+};
+
+// convert literal [[Title]] / [[Target|Alias]] wiki-links in a text/HTML string
+// into real page links (creating pages), skipping code, existing links and pills.
+// Caller must have snapshot()ed. Returns the (possibly unchanged) HTML.
+function linkifyWikiLinks(html) {
+  if (!html || !html.includes('[[')) return html;
+  const tpl = document.createElement('template');
+  tpl.innerHTML = html;
+  let changed = false;
+  const walk = node => {
+    for (const child of [...node.childNodes]) {
+      if (child.nodeType === Node.TEXT_NODE) {
+        const text = child.nodeValue;
+        if (!text.includes('[[')) continue;
+        const re = /\[\[([^[\]\n|]+)(?:\|([^[\]\n]+))?\]\]/g;
+        const frag = document.createDocumentFragment();
+        let m, last = 0, hit = false;
+        while ((m = re.exec(text))) {
+          hit = true;
+          if (m.index > last) frag.append(document.createTextNode(text.slice(last, m.index)));
+          const a = document.createElement('a');
+          a.setAttribute('href', '#/n/' + getOrCreatePage(m[1].trim()));
+          a.setAttribute('rel', 'noopener');
+          a.textContent = (m[2] || m[1]).trim();
+          frag.append(a);
+          last = re.lastIndex;
+        }
+        if (hit) {
+          if (last < text.length) frag.append(document.createTextNode(text.slice(last)));
+          child.replaceWith(frag);
+          changed = true;
+        }
+      } else if (child.nodeType === Node.ELEMENT_NODE && !['A', 'CODE', 'TIME'].includes(child.tagName)) {
+        walk(child);
+      }
+    }
+  };
+  walk(tpl.content);
+  return changed ? tpl.innerHTML : html;
+}
+
+// turn every literal [[wiki-link]] in the doc into a real link (import + first load)
+window.migrateWikiLinks = function migrateWikiLinks() {
+  if (SHARE_TOKEN || state.readOnly || !doc) return;
+  let changed = false;
+  for (const id of Object.keys(doc.nodes)) {
+    const n = doc.nodes[id];
+    if (!n.text || !n.text.includes('[[')) continue;
+    const linked = linkifyWikiLinks(n.text);
+    if (linked !== n.text) { recOld(id); n.text = sanitizeHtml(linked); n.m = Date.now(); changed = true; }
+  }
+  if (changed) { markDirty(); renderPage(); }
+};
+
 // a link element / HTML pointing at a journal day page (creates the day)
 window.dayLinkEl = function dayLinkEl(iso) {
   const a = document.createElement('a');
@@ -472,25 +538,6 @@ window.dayLinkEl = function dayLinkEl(iso) {
   return a;
 };
 window.dayLinkHtml = iso => `<a href="#/n/${ensureDayId(iso)}" rel="noopener">${escHtml(roamDateLabel(iso))}</a>`;
-
-// drop a trailing date reference (legacy <time> pill or day-link) so re-dating an
-// item replaces cleanly instead of stacking references
-window.stripTrailingDateRefs = function stripTrailingDateRefs(content) {
-  for (let changed = true; changed;) {
-    changed = false;
-    let last = content.lastChild;
-    while (last && last.nodeType === Node.TEXT_NODE && !last.textContent.trim()) {
-      const prev = last.previousSibling; content.removeChild(last); last = prev; changed = true;
-    }
-    if (last && last.nodeType === Node.ELEMENT_NODE) {
-      if (last.tagName === 'TIME' && last.hasAttribute('datetime')) { content.removeChild(last); changed = true; }
-      else if (last.tagName === 'A') {
-        const m = (last.getAttribute('href') || '').match(/^#\/n\/([A-Za-z0-9]+)/);
-        if (m && N(m[1])?.cal === 'day') { content.removeChild(last); changed = true; }
-      }
-    }
-  }
-};
 
 // insert an internal link to a journal day page at the caret (creates the day)
 window.insertJournalLink = function insertJournalLink(ctx, iso, at) {
@@ -754,6 +801,6 @@ function migrateDatePills() {
 
 // init() (app2.js) is async and still awaiting the doc when this file runs
 (function afterDocLoad() {
-  if (doc) { migrateDayLabels(); migrateDatePills(); }
+  if (doc) { migrateDayLabels(); migrateDatePills(); migrateWikiLinks(); }
   else setTimeout(afterDocLoad, 100);
 })();
