@@ -944,6 +944,8 @@ async function doSave() {
       }
       pendingOps = batch.concat(pendingOps); // failed → requeue (idempotent), fall to the whole-doc PUT
     }
+    // ops journaled after this stringify are NOT in the PUT body — they must survive it
+    const opsBeforePut = pendingOps.length;
     let res = await fetch(SAVE_URL, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -967,8 +969,8 @@ async function doSave() {
     }
     if (!res.ok) throw new Error('save failed: ' + res.status);
     state.version = (await res.json()).version;
-    pendingOps = [];
-    serverHasDoc = true; // the whole doc was just sent — any queued ops are now redundant
+    pendingOps = pendingOps.slice(opsBeforePut); // drop only ops the PUT body already contained
+    serverHasDoc = true; // the whole doc was just sent — ops queued before it are now redundant
     if (changeSeq === seq) {
       dirty = false;
       setSaveUI('saved');
@@ -1541,7 +1543,7 @@ const searchDebounced = debounce(q => setSearch(q, { fromInput: true }), 160);
 
 function updateDocTitle() {
   document.title = state.zoom === HOME && !SHARE_TOKEN
-    ? (state.view === 'pages' ? 'All Pages — Rhizome' : 'Daily Notes — Rhizome')
+    ? (state.view === 'pages' ? 'All Pages — Rhizome' : state.view === 'daily' ? 'Daily Notes — Rhizome' : 'Outline — Rhizome')
     : (plainOf(N(state.zoom).text).trim() || 'Untitled') + ' — Rhizome';
 }
 
@@ -2097,6 +2099,7 @@ function opMergeBack(ctx) {
     return;
   }
   if (prevCtx.field === 'title') return; // can't merge text up into the page title
+  if (window.crossDayMerge?.(prevCtx.id, id)) return; // day sections never merge into each other
   mergeInto(prevCtx.id, id);
 }
 
@@ -2109,6 +2112,7 @@ function opMergeForward(ctx) {
   const nextCtx = editableCtx(nextEl);
   if (!nextCtx || nextCtx.field === 'title') return;
   if (isMirror(id) || isMirror(nextCtx.id)) return; // mirror rows hold no text — never merge
+  if (window.crossDayMerge?.(id, nextCtx.id)) return; // day sections never merge into each other
   mergeInto(id, nextCtx.id);
 }
 
@@ -2139,7 +2143,7 @@ function opIndent(id, focus) {
 
 function opOutdent(id, focus) {
   const p = parentOf(id);
-  if (!p || p === state.zoom) return;
+  if (!p || p === state.zoom || window.isDayBoundary?.(p)) return;
   const gp = parentOf(p);
   if (!gp) return;
   commitActiveText();
@@ -2466,7 +2470,8 @@ function resolveZoomTarget(id) {
 function zoomTo(id) {
   id = resolveZoomTarget(id);
   if (id === state.zoom) return;
-  location.hash = id === HOME ? '#/' : '#/n/' + id;
+  // rhizome: zooming out of a page lands in the full outline, not the daily view
+  location.hash = id === HOME ? (SHARE_TOKEN ? '#/' : '#/outline') : '#/n/' + id;
 }
 
 // per-view caret memory: leaving a view stores where the caret was, so
@@ -2499,6 +2504,7 @@ const rowContentOf = id => elById.get(id)?.querySelector(':scope > .row > .conte
 function parseHashView() {
   if (SHARE_TOKEN) return null;
   if (/^#\/pages\b/.test(location.hash)) return 'pages';
+  if (/^#\/outline\b/.test(location.hash)) return null; // legacy: the full root outline
   const m = location.hash.match(/^#\/n\/([A-Za-z0-9]+)/);
   return m ? null : 'daily';
 }
@@ -3293,14 +3299,16 @@ emptyHintEl.addEventListener('click', () => {
 
 pageEl.addEventListener('click', e => {
   if (e.target !== pageEl || state.readOnly) return;
-  const kids = kidsOf(state.zoom);
-  if (!kids.length) { opNewAt(state.zoom, 0); return; }
+  const container = window.newItemTarget?.() ?? state.zoom; // rhizome: daily view targets today
+  if (!container) return;
+  const kids = kidsOf(container);
+  if (!kids.length) { opNewAt(container, 0); return; }
   const last = editables().filter(x => x.classList.contains('content')).pop();
   if (last) {
     const c = editableCtx(last);
     if (c && !plainOf(N(c.id).text).length) { setCaretOffset(last, 'end'); return; }
   }
-  opNewAt(state.zoom, kids.length);
+  opNewAt(container, kids.length);
 });
 
 document.addEventListener('mousedown', e => {
@@ -3603,7 +3611,7 @@ function updateDropTarget(x, y) {
         let cur = id;
         while (true) {
           const p = parentOf(cur);
-          if (!p || p === state.zoom) break;
+          if (!p || p === state.zoom || window.isDayBoundary?.(p)) break;
           const sibs = kidsOf(p);
           if (sibs.indexOf(cur) !== sibs.length - 1) break;
           if (x >= contentLeftOf(cur) - 6) break;

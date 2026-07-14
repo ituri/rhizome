@@ -1514,7 +1514,7 @@ function navArrows(n) {
 }
 
 $('#side-today')?.addEventListener('click', () => gotoToday());
-$('#btn-calendar').addEventListener('click', () => gotoToday());  // header → today's calendar page
+$('#btn-calendar').addEventListener('click', () => { location.hash = '#/'; });  // rhizome: header → daily notes
 $('#cal-prev').addEventListener('click', () => { calMonth.setMonth(calMonth.getMonth() - 1); renderCalendar(); });
 $('#cal-next').addEventListener('click', () => { calMonth.setMonth(calMonth.getMonth() + 1); renderCalendar(); });
 $('#cal-close').addEventListener('click', () => { $('#calendar-overlay').hidden = true; });

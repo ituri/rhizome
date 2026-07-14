@@ -71,7 +71,7 @@ const FUZZ = `(${function fuzz(seed, steps) {
   const browser = await puppeteer.launch({ executablePath: CHROME, headless: true });
   const page = await browser.newPage();
   page.on('pageerror', e => { console.log('PAGEERROR:', e.message); failures++; });
-  await page.goto('http://localhost:3211/', { waitUntil: 'domcontentloaded' });
+  await page.goto('http://localhost:3211/#/outline', { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('.tree .item .content');
   await sleep(400);
 

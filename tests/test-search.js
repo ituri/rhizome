@@ -11,7 +11,7 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   const browser = await puppeteer.launch({ executablePath: CHROME, headless: true });
   const page = await browser.newPage();
   page.on('pageerror', e => { console.log('PAGEERROR:', e.message); failures++; });
-  await page.goto(URL, { waitUntil: 'domcontentloaded' });
+  await page.goto(URL + '#/outline', { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('.tree .item .content');
 
   // seed filler nodes directly (their text doesn't matter), then a marker typed the real way

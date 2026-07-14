@@ -17,7 +17,7 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   const browser = await puppeteer.launch({ executablePath: CHROME, headless: true });
   const page = await browser.newPage();
   page.on('pageerror', e => { console.log('PAGEERROR:', e.message); failures++; });
-  await page.goto('http://localhost:3212/', { waitUntil: 'domcontentloaded' });
+  await page.goto('http://localhost:3212/#/outline', { waitUntil: 'domcontentloaded' });
   await sleep(500);
   const loginShown = await page.$eval('#login-screen', el => !el.hidden);
   assert(loginShown, 'login screen shown when password required');

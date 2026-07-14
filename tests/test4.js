@@ -11,7 +11,7 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   const page = await browser.newPage();
   await page.setViewport({ width: 1380, height: 940 });
   page.on('pageerror', e => { console.log('PAGEERROR:', e.message); failures++; });
-  await page.goto('http://localhost:3211/', { waitUntil: 'domcontentloaded' });
+  await page.goto('http://localhost:3211/#/outline', { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('.tree .item .content');
   await sleep(400);
 

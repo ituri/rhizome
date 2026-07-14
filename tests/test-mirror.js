@@ -13,7 +13,7 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   const browser = await puppeteer.launch({ executablePath: CHROME, headless: true });
   const page = await browser.newPage();
   page.on('pageerror', e => { console.log('PAGEERROR:', e.message); failures++; });
-  await page.goto('http://localhost:3211/', { waitUntil: 'domcontentloaded' });
+  await page.goto('http://localhost:3211/#/outline', { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('.tree .item .content');
   await sleep(400);
 
@@ -214,7 +214,7 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   assert(probe.named && probe.hasShow, 'offscreen destination → toast names it and offers Show');
 
   // ── deep-review regression fixes ──
-  await page.evaluate(() => { location.hash = '#/'; }); // section 12 zoomed away — come home
+  await page.evaluate(() => { location.hash = '#/outline'; }); // section 12 zoomed away — come home
   await sleep(350);
 
   // 13. Tab-indent below a mirror row goes into the SHARED subtree (never buried invisibly)

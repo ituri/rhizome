@@ -74,6 +74,123 @@ function migrateDayLabels() {
   if (changed) { markDirty(); renderPage(); }
 }
 
+/* ---------------- Daily Notes view ---------------- */
+
+function dailyViewActive() {
+  return state.view === 'daily' && state.zoom === ROOT && !SHARE_TOKEN && !searchActive();
+}
+window.dailyViewActive = dailyViewActive;
+
+let dailyLoaded = 4;      // day sections currently mounted
+const DAILY_STEP = 4;
+const DAILY_CAP = 60;     // beyond this, a Load-more button bounds per-edit re-render cost
+
+// all days worth showing, newest first: any day with content, plus today
+function dailyDayList() {
+  const root = calRoot(false);
+  if (!root) return [];
+  const today = todayStr();
+  const out = [];
+  for (const y of kidsOf(root)) {
+    if (N(y).cal !== 'year') continue;
+    for (const m of kidsOf(y)) {
+      if (N(m).cal !== 'month') continue;
+      for (const d of kidsOf(m)) {
+        const n = N(d);
+        if (n.cal === 'day' && n.cd && (hasKids(d) || n.cd === today)) out.push({ id: d, cd: n.cd });
+      }
+    }
+  }
+  out.sort((a, b) => b.cd.localeCompare(a.cd));
+  return out;
+}
+
+// re-render with more sections when the sentinel scrolls into view
+const dailyObserver = new IntersectionObserver(entries => {
+  if (!entries.some(e => e.isIntersecting) || !dailyViewActive()) return;
+  if (dailyLoaded >= DAILY_CAP) return; // Load-more takes over
+  dailyLoaded += DAILY_STEP;
+  renderPage();
+});
+
+function renderDailyView(frag) {
+  dailyObserver.disconnect();
+  const days = dailyDayList();
+  const today = todayStr();
+
+  for (const { id, cd } of days.slice(0, dailyLoaded)) {
+    const sec = document.createElement('section');
+    sec.className = 'day-section';
+    sec.dataset.day = id;
+
+    // not contenteditable, so editableCtx()/editables() skip it by design
+    const h = document.createElement('h2');
+    h.className = 'day-title';
+    h.textContent = roamDateLabel(cd);
+    h.title = 'Open this day';
+    h.addEventListener('click', () => zoomTo(id));
+    sec.append(h);
+
+    const kids = kidsOf(id).filter(c => shouldShow(c, false));
+    for (const c of kids) sec.append(mountItem(c, false));
+    if (!kids.length) {
+      const ph = document.createElement('div');
+      ph.className = 'day-empty';
+      ph.textContent = cd === today
+        ? 'Click here, or press Enter, to begin today’s note.'
+        : 'Nothing here.';
+      if (!state.readOnly) ph.addEventListener('click', () => opNewAt(id, 0));
+      sec.append(ph);
+    }
+    frag.append(sec);
+  }
+
+  if (days.length > dailyLoaded) {
+    if (dailyLoaded >= DAILY_CAP) {
+      const btn = document.createElement('button');
+      btn.className = 'daily-more';
+      btn.textContent = `Load ${Math.min(30, days.length - dailyLoaded)} more days`;
+      btn.addEventListener('click', () => { dailyLoaded += 30; renderPage(); });
+      frag.append(btn);
+    } else {
+      const sentinel = document.createElement('div');
+      sentinel.id = 'daily-sentinel';
+      frag.append(sentinel);
+      // observe after it lands in the document
+      queueMicrotask(() => { const el = document.getElementById('daily-sentinel'); if (el) dailyObserver.observe(el); });
+    }
+  }
+}
+window.renderDailyView = renderDailyView;
+
+// entering the daily view guarantees today's page exists (never from renderPage —
+// that runs on every SSE echo); also resets the scroll window
+window.onViewChange = function onViewChange() {
+  if (state.view !== 'daily' || SHARE_TOKEN || state.readOnly || !doc) return;
+  dailyLoaded = DAILY_STEP;
+  if (!findDay(todayStr())) {
+    commitActiveText();
+    snapshot();
+    ensureDay(todayStr());
+    markDirty();
+  }
+};
+
+/* --- editing-op boundary guards, consulted from app.js --- */
+
+// day sections must not leak items into the calendar hierarchy around them
+window.isDayBoundary = p => dailyViewActive() && N(p)?.cal === 'day';
+
+// Backspace/Delete merges never cross from one day section into another
+window.crossDayMerge = (aId, bId) => {
+  if (!dailyViewActive()) return false;
+  const dayOf = id => { let p = id; while (p) { if (N(p)?.cal === 'day') return p; p = parentOf(p); } return null; };
+  return dayOf(aId) !== dayOf(bId);
+};
+
+// clicks on blank page space create items in today's note, not top-level pages
+window.newItemTarget = () => dailyViewActive() ? findDay(todayStr()) : null;
+
 /* ---------------- All Pages view ---------------- */
 
 function pagesViewActive() {
@@ -151,7 +268,7 @@ window.renderPagesView = renderPagesView;
 window.renderSidebar = function renderSidebar() {
   if (SHARE_TOKEN || !doc) return;
 
-  $('#side-daily')?.classList.toggle('current', state.zoom === ROOT && state.view !== 'pages');
+  $('#side-daily')?.classList.toggle('current', state.zoom === ROOT && state.view === 'daily');
   $('#side-pages-link')?.classList.toggle('current', state.view === 'pages');
 
   const starsBox = $('#side-stars');

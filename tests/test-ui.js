@@ -12,7 +12,7 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   await page.setViewport({ width: 1380, height: 940 });
   await page.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'reduce' }]); // user-like
   page.on('pageerror', e => { console.log('PAGEERROR:', e.message); failures++; });
-  await page.goto('http://localhost:3211/', { waitUntil: 'domcontentloaded' });
+  await page.goto('http://localhost:3211/#/outline', { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('.tree .item .content');
   await sleep(400);
 
@@ -85,7 +85,7 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
     'ArrowDown on an empty page header creates a bullet and focuses it');
 
   /* ---- 5. ArrowDown from header WITH children still reaches the first child ---- */
-  await page.evaluate(() => { location.hash = '#/'; });
+  await page.evaluate(() => { location.hash = '#/outline'; });
   await sleep(350);
   await page.evaluate(() => {
     const els = [...document.querySelectorAll('.tree .item')];
@@ -99,7 +99,7 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   let ok = await page.evaluate(() => editableCtx(document.activeElement)?.field === 'text' &&
     document.activeElement.textContent.includes('infinite outline'));
   assert(ok, 'ArrowDown from a populated header still reaches the first bullet');
-  await page.evaluate(() => { location.hash = '#/'; });
+  await page.evaluate(() => { location.hash = '#/outline'; });
   await sleep(350);
 
   /* ---- 6. calendar header button opens the calendar ---- */
@@ -107,9 +107,9 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   assert(ok, 'calendar button exists in the header');
   await page.click('#btn-calendar');
   await sleep(450);
-  ok = await page.evaluate(() => doc.nodes[state.zoom]?.cal === 'day' && !document.querySelector('#cal-strip').hidden);
-  assert(ok, 'header calendar button jumps to today\'s calendar page (with the day strip)');
-  await page.evaluate(() => { location.hash = '#/'; });
+  ok = await page.evaluate(() => state.view === 'daily' && !!document.querySelector('.day-section'));
+  assert(ok, 'header calendar button opens the Daily Notes view'); // rhizome
+  await page.evaluate(() => { location.hash = '#/outline'; });
   await sleep(300);
 
   /* ---- 7. date hint is explicit and clickable ---- */
@@ -189,7 +189,7 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
     isTitle: document.activeElement === document.querySelector('#zoom-title'),
   }));
   assert(del.isTitle, 'deleting the last item on a page focuses the page title');
-  await page.evaluate(() => { location.hash = '#/'; });
+  await page.evaluate(() => { location.hash = '#/outline'; });
   await sleep(300);
 
   /* ---- 7c. quick capture: Tab indents, dates convert, todo markdown survives ---- */

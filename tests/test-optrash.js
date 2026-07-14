@@ -15,8 +15,8 @@ const trashSig = () => `(doc.trash || []).map(t => t.ts + ':' + t.root).sort().j
   const A = await browser.newPage();
   const B = await browser.newPage();
   for (const p of [A, B]) p.on('pageerror', e => { console.log('PAGEERROR:', e.message); failures++; });
-  await A.goto(URL, { waitUntil: 'domcontentloaded' }); await A.waitForSelector('.tree .item .content');
-  await B.goto(URL, { waitUntil: 'domcontentloaded' }); await B.waitForSelector('.tree .item .content');
+  await A.goto(URL + '#/outline', { waitUntil: 'domcontentloaded' }); await A.waitForSelector('.tree .item .content');
+  await B.goto(URL + '#/outline', { waitUntil: 'domcontentloaded' }); await B.waitForSelector('.tree .item .content');
   await sleep(500);
 
   // A creates an item and it reaches B

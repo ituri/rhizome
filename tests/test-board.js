@@ -10,7 +10,7 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   const page = await browser.newPage();
   await page.setViewport({ width: 1380, height: 940 });
   page.on('pageerror', e => { console.log('PAGEERROR:', e.message); failures++; });
-  await page.goto('http://localhost:3211/', { waitUntil: 'domcontentloaded' });
+  await page.goto('http://localhost:3211/#/outline', { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('.tree .item .content');
   await sleep(400);
 
@@ -150,7 +150,7 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   assert(title === 'Doing', `clicking a column bullet zooms into it ("${title}")`);
 
   // 6. drag a card OUT of the board into the plain outline
-  await page.evaluate(() => { location.hash = '#/'; });
+  await page.evaluate(() => { location.hash = '#/outline'; });
   await sleep(350);
   const outDrag = await page.evaluate(() => {
     const cards = [...document.querySelectorAll('.board .item')];
@@ -305,7 +305,7 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   assert(r13.after === before13 && r13.isCard, `Enter on a column header adds a card, not a lane (cols ${before13}→${r13.after}, card=${r13.isCard})`);
 
   // 14. collapsing the board node hides its columns (inline view)
-  await page.evaluate(() => { location.hash = '#/'; });
+  await page.evaluate(() => { location.hash = '#/outline'; });
   await sleep(350);
   ok = await page.evaluate(() => {
     N(window.__board).collapsed = true; renderPage();
@@ -316,7 +316,7 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   assert(ok, 'collapsing the board node hides its columns');
 
   // 15. collapsing/expanding a board keeps the caret on it (so you can keep toggling)
-  await page.evaluate(() => { location.hash = '#/'; });
+  await page.evaluate(() => { location.hash = '#/outline'; });
   await sleep(300);
   await page.evaluate(() => focusItem(window.__board, 'text', 'end'));
   await sleep(60);
@@ -359,7 +359,7 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   assert(nav.inFirstCol && nav.expanded, `ArrowDown from a collapsed-board header opens the first column and enters it (${JSON.stringify(nav)})`);
 
   // 17. inline (un-zoomed) board: ArrowDown from the board node enters its first column too
-  await page.evaluate(() => { location.hash = '#/'; });
+  await page.evaluate(() => { location.hash = '#/outline'; });
   await sleep(300);
   await page.evaluate(() => {
     kidsOf(window.__board).forEach(c => N(c).collapsed = true);

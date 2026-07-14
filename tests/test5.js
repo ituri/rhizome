@@ -10,7 +10,7 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   const page = await browser.newPage();
   await page.setViewport({ width: 1380, height: 940 });
   page.on('pageerror', e => { console.log('PAGEERROR:', e.message); failures++; });
-  await page.goto('http://localhost:3211/', { waitUntil: 'domcontentloaded' });
+  await page.goto('http://localhost:3211/#/outline', { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('.tree .item .content');
   await sleep(400);
 
@@ -141,7 +141,7 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   ok = await page.evaluate(() => !document.querySelector('#backlinks').hidden &&
     document.querySelector('#backlinks').textContent.includes('Linked from'));
   assert(ok, 'the [[ link generates a backlink on the target');
-  await page.evaluate(() => { location.hash = '#/'; });
+  await page.evaluate(() => { location.hash = '#/outline'; });
   await sleep(300);
 
   /* ---- 7. [[ create-new option ---- */

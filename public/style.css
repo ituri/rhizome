@@ -1924,3 +1924,16 @@ a.side-nav.current { background: var(--accent-softer); color: var(--ink); }
 .pages-table td a:hover { color: var(--accent); }
 .pages-table td:nth-child(2), .pages-table td:nth-child(3) { color: var(--ink-softer); white-space: nowrap; width: 1%; }
 .pages-empty { color: var(--ink-softer); padding: 24px 0; }
+.day-section { margin-bottom: 34px; }
+.day-section + .day-section { border-top: 1px solid var(--line); padding-top: 26px; }
+.day-title {
+  font-size: 22px; font-weight: 700; margin: 0 0 10px; cursor: pointer;
+}
+.day-title:hover { color: var(--accent); }
+.day-empty { color: var(--ink-softer); padding: 4px 0 8px; cursor: text; }
+#daily-sentinel { height: 1px; }
+.daily-more {
+  display: block; margin: 8px auto 24px; padding: 8px 18px; border-radius: 8px;
+  border: 1px solid var(--line); background: none; color: var(--ink-soft); font: inherit; cursor: pointer;
+}
+.daily-more:hover { background: var(--accent-softer); color: var(--ink); }

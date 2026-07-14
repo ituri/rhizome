@@ -11,15 +11,15 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   const page = await browser.newPage();
   await page.setViewport({ width: 1380, height: 940 });
   page.on('pageerror', e => { console.log('PAGEERROR:', e.message); failures++; });
-  await page.goto('http://localhost:3211/', { waitUntil: 'domcontentloaded' });
+  await page.goto('http://localhost:3211/#/outline', { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('.tree .item .content');
   await sleep(400);
 
   const today = await page.evaluate(() => todayStr());
   const [Y, M, D] = today.split('-').map(Number);
 
-  /* ---- 1. Today button builds Calendar > Year > Month > Day and zooms in ---- */
-  await page.click('#btn-calendar');
+  /* ---- 1. gotoToday() builds Calendar > Year > Month > Day and zooms in ---- */
+  await page.evaluate(() => gotoDate(todayStr()));
   await sleep(450);
   const built = await page.evaluate(() => {
     const root = Object.values(doc.nodes).find(n => n.cal === 'root');
@@ -34,10 +34,10 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
       title: document.querySelector('#zoom-title').textContent,
     };
   });
-  assert(built && /Calendar/.test(built.rootText), 'Today creates a "Calendar" root node');
+  assert(built && /Calendar/.test(built.rootText), 'gotoToday creates a "Calendar" root node');
   assert(built.year === Y && built.month === M - 1 && built.dayIso === today,
     `Calendar › ${Y} › ${M} › ${today} hierarchy built`);
-  assert(built.zoomedDay === today, 'Today zooms into today\'s day node');
+  assert(built.zoomedDay === today, 'gotoToday zooms into today\'s day node');
   assert(/,/.test(built.title), `day title is a weekday label ("${built.title}")`);
 
   /* ---- 2. breadcrumb is Calendar › Year › Month › Day ---- */
@@ -79,7 +79,7 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   assert(navd.isDay && navd.iso > today, `clicking the next day navigates to a new day node (${navd.iso})`);
   assert(navd.nodeCount > before, 'the new day node was created on demand');
   // today's note is preserved on its own day
-  await page.click('#btn-calendar');
+  await page.evaluate(() => gotoDate(todayStr()));
   await sleep(450);
   let ok = await page.evaluate(() =>
     kidsOf(state.zoom).some(id => plainOf(doc.nodes[id].text).includes('Daily standup notes')));
@@ -106,7 +106,7 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   assert(ok, 'clicking a month tab navigates to that month node');
 
   /* ---- 6. items dated elsewhere surface under their day ---- */
-  await page.evaluate(() => { location.hash = '#/'; });
+  await page.evaluate(() => { location.hash = '#/outline'; });
   await sleep(350);
   await page.evaluate(t => {
     const n = makeNode(`Renew passport <time datetime="${t}">x</time>`);
@@ -114,7 +114,7 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
     markDirty();
   }, today);
   await sleep(200);
-  await page.click('#btn-calendar');
+  await page.evaluate(() => gotoDate(todayStr()));
   await sleep(450);
   ok = await page.evaluate(() => {
     const sec = document.querySelector('#cal-strip .cal-dated');
@@ -129,12 +129,12 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
     ![...document.querySelectorAll('#side-pages .side-item')].some(el => /Calendar/.test(el.textContent)));
   assert(ok, 'the Calendar container stays out of the sidebar page list'); // rhizome
   // navigate away, then use the topbar Today button
-  await page.evaluate(() => { location.hash = '#/'; });
+  await page.evaluate(() => { location.hash = '#/outline'; });
   await sleep(350);
   await page.click('#btn-calendar');
   await sleep(450);
-  ok = await page.evaluate(() => doc.nodes[state.zoom]?.cal === 'day' && doc.nodes[state.zoom]?.cd === todayStr());
-  assert(ok, 'the topbar Today button jumps to today');
+  ok = await page.evaluate(() => state.view === 'daily' && [...document.querySelectorAll('.day-section')].some(s => N(s.dataset.day).cd === todayStr()));
+  assert(ok, 'the topbar Today button opens Daily Notes with today on top'); // rhizome
 
   await browser.close();
   console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL CALENDAR TESTS PASSED');

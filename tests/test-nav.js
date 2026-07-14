@@ -21,7 +21,7 @@ const caretOffset = () => `(() => {
   await page.setViewport({ width: 1380, height: 940 });
   await page.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'no-preference' }]);
   page.on('pageerror', e => { console.log('PAGEERROR:', e.message); failures++; });
-  await page.goto('http://localhost:3211/', { waitUntil: 'domcontentloaded' });
+  await page.goto('http://localhost:3211/#/outline', { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('.tree .item .content');
   await sleep(400);
 
@@ -77,7 +77,7 @@ const caretOffset = () => `(() => {
   assert(ok && o2 === 6, `climbing out restores caret on child two at offset 6 (got id-match, offset ${o2})`);
 
   /* ---- 3. click bullet to zoom, then browser Back restores focus ---- */
-  await page.evaluate(() => { location.hash = '#/'; });
+  await page.evaluate(() => { location.hash = '#/outline'; });
   await sleep(300);
   await page.evaluate(id => { setCaretOffset(document.querySelector(`.item[data-id="${id}"] .content`), 3); }, ids.a);
   await page.evaluate(id => {
@@ -134,7 +134,7 @@ const caretOffset = () => `(() => {
       window.__vtCalls = 0;
       const orig = document.startViewTransition.bind(document);
       document.startViewTransition = cb => { window.__vtCalls++; return orig(cb); };
-      location.hash = '#/';
+      location.hash = '#/outline';
     });
     await sleep(400);
     await page.evaluate(id => { location.hash = '#/n/' + id; }, ids.a);
@@ -152,7 +152,7 @@ const caretOffset = () => `(() => {
   }
 
   /* ---- 8. animations toggle off → no view transition, instant + caret memory ---- */
-  await page.evaluate(() => { window.__tendrilForceAnim = false; location.hash = '#/'; });
+  await page.evaluate(() => { window.__tendrilForceAnim = false; location.hash = '#/outline'; });
   await sleep(400);
   await page.evaluate(() => { settings.animations = false; });
   // clean state: focus `a` at HOME, zoom in, confirm no VT, zoom out, confirm caret back on a

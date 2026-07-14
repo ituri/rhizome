@@ -12,7 +12,7 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   await page.setViewport({ width: 1380, height: 940 });
   page.on('pageerror', e => { console.log('PAGEERROR:', e.message); failures++; });
   await page.goto('http://localhost:3211/', { waitUntil: 'domcontentloaded' });
-  await page.waitForSelector('.tree .item .content');
+  await page.waitForSelector('.day-section');
   await sleep(400);
 
   /* ---- 1. Ctrl+K offers "Create page" for an unknown title ---- */

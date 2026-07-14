@@ -161,7 +161,7 @@ const node = (id, text, children = [], extra = {}) =>
   await page.setViewport({ width: 1380, height: 940 });
   const pageErrors = [];
   page.on('pageerror', e => pageErrors.push(e.message));
-  await page.goto(URL, { waitUntil: 'domcontentloaded' });
+  await page.goto(URL + '#/outline', { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('.tree .item .content');
   await sleep(400);
 
@@ -243,7 +243,7 @@ const node = (id, text, children = [], extra = {}) =>
   const prevMonth = await page.evaluate(() => ({ cy: N(state.zoom).cy, cm: N(state.zoom).cm }));
   assert(prevMonth.cy === 2025 && prevMonth.cm === 11,
     `‹ from January 2026 lands on December 2025 (got ${prevMonth.cy}-${prevMonth.cm + 1})`);
-  await page.evaluate(() => { location.hash = '#/'; });
+  await page.evaluate(() => { location.hash = '#/outline'; });
   await sleep(300);
 
   /* B7. month grid always renders whole weeks */

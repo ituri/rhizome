@@ -100,7 +100,7 @@ const api = async (method, path, body) => {
   const page = await browser.newPage();
   await page.setCookie({ name: 'tendril_auth', value: cookieVal, domain: 'localhost', path: '/' });
   page.on('pageerror', e => { console.log('PAGEERROR:', e.message); failures++; });
-  await page.goto(BASE + '/', { waitUntil: 'domcontentloaded' });
+  await page.goto(BASE + '/#/outline', { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('.tree .item .content');
   await sleep(500);
   const vBefore = await page.evaluate(() => state.version);

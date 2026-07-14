@@ -13,8 +13,8 @@ const hasText = t => `Object.values(doc.nodes).some(n => plainOf(n.text).include
   const A = await browser.newPage();
   const B = await browser.newPage();
   for (const p of [A, B]) { p.on('pageerror', e => { console.log('PAGEERROR:', e.message); failures++; }); }
-  await A.goto(URL, { waitUntil: 'domcontentloaded' }); await A.waitForSelector('.tree .item .content');
-  await B.goto(URL, { waitUntil: 'domcontentloaded' }); await B.waitForSelector('.tree .item .content');
+  await A.goto(URL + '#/outline', { waitUntil: 'domcontentloaded' }); await A.waitForSelector('.tree .item .content');
+  await B.goto(URL + '#/outline', { waitUntil: 'domcontentloaded' }); await B.waitForSelector('.tree .item .content');
   await sleep(500);
   // enable op delta-sync on both clients
   await A.evaluate(() => { settings.opSync = true; });

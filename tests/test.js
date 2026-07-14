@@ -18,7 +18,7 @@ const assert = (cond, msg) => {
   page.on('pageerror', e => { console.log('PAGEERROR: ' + e.message); failures++; });
   page.on('console', m => { if (m.type() === 'error') console.log('console.error: ' + m.text()); });
 
-  await page.goto(URL, { waitUntil: 'domcontentloaded' });
+  await page.goto(URL + '#/outline', { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('.tree .item .content', { timeout: 10000 });
   await sleep(300);
 
@@ -125,7 +125,7 @@ const assert = (cond, msg) => {
   await sleep(350);
   const backTitle = await page.$eval('#zoom-title', el => el.textContent);
   assert(backTitle === 'child item', 'browser back re-zooms');
-  await page.evaluate(() => { location.hash = '#/'; });
+  await page.evaluate(() => { location.hash = '#/outline'; });
   await sleep(350);
   const atRoot = await page.evaluate(() => document.querySelector('#zoom-head').style.display);
   assert(atRoot === 'none', 'navigating to #/ returns to root');
@@ -158,7 +158,7 @@ const assert = (cond, msg) => {
   await sleep(350);
   const jumpedTitle = await page.$eval('#zoom-title', el => el.textContent);
   assert(jumpedTitle.includes('Power moves'), `Enter zooms to result ("${jumpedTitle}")`);
-  await page.evaluate(() => location.hash = '#/');
+  await page.evaluate(() => location.hash = '#/outline');
   await sleep(350);
 
   // --- 12. backspace at start merges with previous item

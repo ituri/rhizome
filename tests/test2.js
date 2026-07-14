@@ -20,7 +20,7 @@ const focusByText = text => `(() => {
   const page = await browser.newPage();
   await page.setViewport({ width: 1380, height: 940 });
   page.on('pageerror', e => { console.log('PAGEERROR:', e.message); failures++; });
-  await page.goto(URL, { waitUntil: 'domcontentloaded' });
+  await page.goto(URL + '#/outline', { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('.tree .item .content');
   await sleep(400);
 
@@ -225,7 +225,7 @@ const focusByText = text => `(() => {
   ok = await page.evaluate(() => !document.querySelector('#backlinks').hidden &&
     document.querySelector('#backlinks').textContent.includes('Linked from'));
   assert(ok, 'backlinks panel lists where the item is mirrored');
-  await page.evaluate(() => { location.hash = '#/'; });
+  await page.evaluate(() => { location.hash = '#/outline'; });
   await sleep(300);
 
   /* ---- 10. comments ---- */
