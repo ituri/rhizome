@@ -199,6 +199,68 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   }));
   assert(persisted.garten && persisted.kompost, 'created pages survive a reload');
 
+  /* ---- 15. [[ searches pages only, not nested items ---- */
+  await page.evaluate(() => {
+    snapshot();
+    const lab = getOrCreatePage('SlashLab');
+    const deep = makeNode('VersteckteNotizXYZ');
+    insertAt(lab, 0, deep);
+    markDirty();
+    zoomTo(lab);
+  });
+  await sleep(450);
+  await page.evaluate(() => { const id = opNewAt(state.zoom, 1); document.querySelector(`.item[data-id="${id}"] .content`).focus(); });
+  await sleep(150);
+  await page.keyboard.type('x [[Versteckte');
+  await sleep(350);
+  const pop = await page.evaluate(() => [...document.querySelectorAll('.caret-pop .pop-item')].map(b => b.textContent));
+  assert(!pop.some(t => /VersteckteNotizXYZ/.test(t) && !/Create/.test(t)), '[[ does not offer nested items');
+  assert(pop.some(t => /Create page/.test(t)), '[[ offers page creation instead');
+  await page.keyboard.press('Escape');
+  await sleep(150);
+
+  /* ---- 16. [[ finds day pages ---- */
+  await page.evaluate(() => { const id = opNewAt(state.zoom, 1); document.querySelector(`.item[data-id="${id}"] .content`).focus(); });
+  await sleep(150);
+  const dayLabel = await page.evaluate(() => roamDateLabel(todayStr()).slice(0, 6)); // e.g. "July 1"
+  await page.keyboard.type('am [[' + dayLabel);
+  await sleep(350);
+  const dayHit = await page.evaluate(() => [...document.querySelectorAll('.caret-pop .pop-item')].some(b => /📅/.test(b.textContent)));
+  assert(dayHit, '[[ offers journal day pages');
+  await page.keyboard.press('Escape');
+  await sleep(150);
+
+  /* ---- 17. slash "Today" inserts a journal-page link ---- */
+  await page.evaluate(() => { const id = opNewAt(state.zoom, 1); document.querySelector(`.item[data-id="${id}"] .content`).focus(); window.__slashHost = id; });
+  await sleep(150);
+  await page.keyboard.type('/today');
+  await sleep(350);
+  await page.evaluate(() => {
+    const items = [...document.querySelectorAll('.caret-pop .pop-item')];
+    items.find(b => b.querySelectorAll('span')[1]?.textContent === 'Today').click();
+  });
+  await sleep(600);
+  const jl = await page.evaluate(() => {
+    const day = findDay(todayStr());
+    const n = N(window.__slashHost);
+    return { linked: !!day && (n.text || '').includes('#/n/' + day), plain: plainOf(n.text || '') };
+  });
+  assert(jl.linked, `slash Today links today's journal page ("${jl.plain}")`);
+  assert(!jl.plain.includes('/today'), 'the typed /today query was removed');
+
+  /* ---- 18. slash "Current Time" inserts HH:MM ---- */
+  await page.evaluate(() => { const id = opNewAt(state.zoom, 1); document.querySelector(`.item[data-id="${id}"] .content`).focus(); window.__timeHost = id; });
+  await sleep(150);
+  await page.keyboard.type('/current');
+  await sleep(350);
+  await page.evaluate(() => {
+    const items = [...document.querySelectorAll('.caret-pop .pop-item')];
+    items.find(b => b.querySelectorAll('span')[1]?.textContent === 'Current Time').click();
+  });
+  await sleep(500);
+  const ct = await page.evaluate(() => plainOf(N(window.__timeHost).text || ''));
+  assert(/\d{2}:\d{2}/.test(ct), `slash Current Time inserts a timestamp ("${ct}")`);
+
   await browser.close();
   console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PAGES TESTS PASSED');
   process.exit(failures ? 1 : 0);

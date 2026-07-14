@@ -1956,3 +1956,8 @@ a.side-nav.current { background: var(--accent-softer); color: var(--ink); }
 }
 .unlinked-row:hover .unlinked-link-btn { opacity: 1; }
 .unlinked-link-btn:hover { background: var(--accent-softer); }
+.day-refs { margin-top: 14px; border-top: 1px dashed var(--line); padding-top: 8px; }
+.day-refs h3 {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--ink-faint); font-weight: 600; margin: 0 0 6px;
+}

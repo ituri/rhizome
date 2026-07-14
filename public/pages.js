@@ -117,8 +117,11 @@ function renderDailyView(frag) {
   dailyObserver.disconnect();
   const days = dailyDayList();
   const today = todayStr();
+  const shown = days.slice(0, dailyLoaded);
+  // Roam parity: every day section carries its own linked references (one doc scan for all)
+  const refMap = collectLinkedRefs(new Set(shown.map(d => d.id)));
 
-  for (const { id, cd } of days.slice(0, dailyLoaded)) {
+  for (const { id, cd } of shown) {
     const sec = document.createElement('section');
     sec.className = 'day-section';
     sec.dataset.day = id;
@@ -141,6 +144,15 @@ function renderDailyView(frag) {
         : 'Nothing here.';
       if (!state.readOnly) ph.addEventListener('click', () => opNewAt(id, 0));
       sec.append(ph);
+    }
+    const built = refMap.has(id) ? buildRefGroups(id, refMap.get(id)) : null;
+    if (built) {
+      const box = document.createElement('div');
+      box.className = 'day-refs';
+      const h = document.createElement('h3');
+      h.textContent = `Linked References (${built.count})`;
+      box.append(h, built.el);
+      sec.append(box);
     }
     frag.append(sec);
   }
@@ -318,55 +330,128 @@ window.renderSidebar = function renderSidebar() {
   }
 };
 
-/* ---------------- Linked & Unlinked References ---------------- */
+/* ---------------- Roam-style inserts: [[ page search, journal links, slash --- */
 
-// replaces the upstream flat "Linked from" list with Roam-style sections:
-// linked references grouped by their containing page, plus a lazy
-// unlinked-references scan with a one-click Link action
-window.renderBacklinks = function renderBacklinks() {
-  if (!doc || state.zoom === HOME) { backlinksEl.hidden = true; return; }
-  const target = state.zoom;
-
-  // references from daily notes group under their day page, not the calendar container
-  const refGroupOf = id => {
-    let p = id;
-    while (p) { if (N(p)?.cal === 'day') return p; p = parentOf(p); }
-    return pageOf(id);
+// the [[ autocomplete searches pages and day pages, like Roam's page picker
+window.searchPages = function searchPages(q, limit = 8) {
+  const terms = q.toLowerCase().split(/\s+/).filter(Boolean);
+  const out = [];
+  const scan = (id, day) => {
+    const plain = plainOf(N(id).text).trim();
+    if (!plain) return;
+    const hay = plain.toLowerCase();
+    let score = -1;
+    if (!terms.length) score = day ? -1 : 0; // empty query: offer pages, not the whole journal
+    else if (terms.every(t => hay.includes(t))) score = 100 - hay.indexOf(terms[0]) - (day ? 20 : 0);
+    if (score >= 0) out.push({ id, plain, day, score });
   };
-
-  const groups = new Map(); // containing page (or day) → rows
-  let linkedCount = 0;
-  for (const id of Object.keys(doc.nodes)) {
-    if (id === target) continue;
-    const n = doc.nodes[id];
-    if (n.mirror === target || (n.text || '').includes('#/n/' + target)) {
-      const gid = refGroupOf(id);
-      if (gid === target) continue; // references from inside the page aren't backlinks
-      const rows = groups.get(gid) || [];
-      if (rows.length >= 30) continue;
-      if (n.mirror === target) {
-        const host = parentOf(id) || id;
-        rows.push({ id: host, label: '⧉ mirrored in ' + (plainOf(N(host)?.text || '').trim() || 'Untitled') });
-      } else {
-        rows.push({ id, html: n.text });
+  for (const id of pagesOf()) scan(contentIdOf(id), false);
+  const root = calRoot(false);
+  if (root) {
+    for (const y of kidsOf(root)) {
+      if (N(y).cal !== 'year') continue;
+      for (const m of kidsOf(y)) {
+        if (N(m).cal !== 'month') continue;
+        for (const d of kidsOf(m)) if (N(d).cal === 'day') scan(d, true);
       }
-      groups.set(gid, rows);
-      linkedCount++;
     }
   }
+  out.sort((a, b) => b.score - a.score);
+  return out.slice(0, limit);
+};
 
-  backlinksEl.hidden = false;
-  backlinksEl.innerHTML = '';
-  const head = document.createElement('h3');
-  head.textContent = `Linked References (${linkedCount})`;
-  backlinksEl.append(head);
-  if (!linkedCount) {
-    const none = document.createElement('div');
-    none.className = 'ref-none';
-    none.textContent = 'No linked references yet.';
-    backlinksEl.append(none);
+// insert an internal link to a journal day page at the caret (creates the day)
+window.insertJournalLink = function insertJournalLink(ctx, iso, at) {
+  if (state.readOnly) return;
+  snapshot();
+  const day = findDay(iso) || ensureDay(iso);
+  focusItem(ctx.id, 'text', at ?? 'end');
+  const sel = getSelection();
+  if (!sel.rangeCount) return;
+  const a = document.createElement('a');
+  a.setAttribute('href', '#/n/' + day);
+  a.setAttribute('rel', 'noopener');
+  a.textContent = roamDateLabel(iso);
+  insertInlineAtCaret(sel, sel.getRangeAt(0), a);
+  const el = elById.get(ctx.id)?.querySelector(':scope > .row > .content');
+  if (el) scheduleCommit(el);
+  markDirty();
+};
+
+// extra slash-menu entries, consumed by slashCommands() in app2.js
+window.rhizomeSlashCommands = function rhizomeSlashCommands(ctx, popStart) {
+  const at = popStart;
+  const refocus = () => focusItem(ctx.id, 'text', at ?? 'end');
+  return [
+    {
+      label: 'Page Reference', icon: '⟦⟧', hint: '[[',
+      // typing "[[" re-enters the normal autocomplete flow via the input hook
+      fn: () => { refocus(); document.execCommand('insertText', false, '[['); },
+    },
+    { label: 'Today', icon: '📅', fn: () => insertJournalLink(ctx, dateOffset(0), at) },
+    { label: 'Tomorrow', icon: '📅', fn: () => insertJournalLink(ctx, dateOffset(1), at) },
+    { label: 'Yesterday', icon: '📅', fn: () => insertJournalLink(ctx, dateOffset(-1), at) },
+    { label: 'Date Picker', icon: '📅', fn: () => pickDate(nodeAnchor(ctx.id), iso => insertJournalLink(ctx, iso, at)) },
+    {
+      label: 'Current Time', icon: '🕐',
+      fn: () => {
+        refocus();
+        const d = new Date();
+        const hhmm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+        document.execCommand('insertText', false, hhmm + ' ');
+      },
+    },
+  ];
+};
+
+/* ---------------- Linked & Unlinked References ---------------- */
+
+// references from daily notes group under their day page, not the calendar container
+function refGroupOf(id) {
+  let p = id;
+  while (p) { if (N(p)?.cal === 'day') return p; p = parentOf(p); }
+  return pageOf(id);
+}
+
+// one pass over the doc collecting linked references for every target at once
+// (the daily view asks for all visible days in a single scan)
+function collectLinkedRefs(targets) {
+  const out = new Map(); // target → rows
+  const add = (t, row) => { const a = out.get(t) || []; a.push(row); out.set(t, a); };
+  for (const id of Object.keys(doc.nodes)) {
+    const n = doc.nodes[id];
+    if (n.mirror && n.mirror !== id && targets.has(n.mirror)) {
+      const host = parentOf(id) || id;
+      add(n.mirror, { id: host, label: '⧉ mirrored in ' + (plainOf(N(host)?.text || '').trim() || 'Untitled') });
+    }
+    if (!n.text) continue;
+    const seen = new Set();
+    for (const m of n.text.matchAll(/#\/n\/([A-Za-z0-9]+)/g)) {
+      const t = m[1];
+      if (t === id || seen.has(t) || !targets.has(t)) continue;
+      seen.add(t);
+      add(t, { id, html: n.text });
+    }
   }
-  for (const [gid, rows] of groups) {
+  return out;
+}
+
+// grouped DOM for one target's rows; null when nothing survives the self-filter
+function buildRefGroups(target, rows) {
+  const groups = new Map();
+  let count = 0;
+  for (const r of rows) {
+    const gid = refGroupOf(r.id);
+    if (gid === target) continue; // references from inside the page aren't backlinks
+    const g = groups.get(gid) || [];
+    if (g.length >= 30) continue;
+    g.push(r);
+    groups.set(gid, g);
+    count++;
+  }
+  if (!count) return null;
+  const el = document.createDocumentFragment();
+  for (const [gid, gRows] of groups) {
     const gEl = document.createElement('div');
     gEl.className = 'ref-group';
     const title = document.createElement('a');
@@ -374,7 +459,7 @@ window.renderBacklinks = function renderBacklinks() {
     title.href = '#/n/' + gid;
     title.textContent = plainOf(N(gid)?.text || '').trim() || 'Untitled';
     gEl.append(title);
-    for (const r of rows) {
+    for (const r of gRows) {
       const row = document.createElement('div');
       row.className = 'ref-row';
       if (r.html != null) {
@@ -388,7 +473,32 @@ window.renderBacklinks = function renderBacklinks() {
       }
       gEl.append(row);
     }
-    backlinksEl.append(gEl);
+    el.append(gEl);
+  }
+  return { el, count };
+}
+
+// replaces the upstream flat "Linked from" list with Roam-style sections:
+// linked references grouped by their containing page, plus a lazy
+// unlinked-references scan with a one-click Link action
+window.renderBacklinks = function renderBacklinks() {
+  if (!doc || state.zoom === HOME) { backlinksEl.hidden = true; return; }
+  const target = state.zoom;
+  const rows = collectLinkedRefs(new Set([target])).get(target) || [];
+  const built = buildRefGroups(target, rows);
+
+  backlinksEl.hidden = false;
+  backlinksEl.innerHTML = '';
+  const head = document.createElement('h3');
+  head.textContent = `Linked References (${built ? built.count : 0})`;
+  backlinksEl.append(head);
+  if (!built) {
+    const none = document.createElement('div');
+    none.className = 'ref-none';
+    none.textContent = 'No linked references yet.';
+    backlinksEl.append(none);
+  } else {
+    backlinksEl.append(built.el);
   }
 
   renderUnlinkedSection(target);

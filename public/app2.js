@@ -238,6 +238,7 @@ function slashCommands(ctx) {
       fmtCmd('Bullet (reset)', '•', 'bullet'),
     );
   }
+  if (ctx.field === 'text') cmds.push(...(window.rhizomeSlashCommands?.(ctx, caretPop?.start ?? null) || []));
   cmds.push({ label: 'Date…', icon: '📅', hint: '!!', fn: () => openDatePop(ctx) });
   if (ctx.field === 'text') {
     // template inserts first, so typing "/template" ranks insertion above "Save as template"
@@ -294,11 +295,14 @@ function refreshCaretPop(query) {
       it => pickTag(it.tag), '');
     if (!all.length) window.closeCaretPop();
   } else if (caretPop.type === 'linkpop') {
-    // use the original-case `query` for the new-item title, `q` only for matching
-    const found = searchNodes(query, 8).filter(it => it.id !== caretPop.ctx.id);
-    const items = found.map(it => ({ label: it.plain.slice(0, 60), icon: '↗', linkId: it.id }));
-    if (query.trim()) items.push({ label: `Create “${query.trim().slice(0, 40)}”`, icon: '＋', create: query.trim() });
-    renderCaretItems(items, it => pickLink(it), 'Type to link to another item');
+    // rhizome: [[ searches pages and day pages like Roam (Ctrl+K links arbitrary items);
+    // use the original-case `query` for the new-page title, `q` only for matching
+    const found = searchPages(query, 8).filter(it => it.id !== caretPop.ctx.id);
+    const items = found.map(it => ({ label: it.plain.slice(0, 60), icon: it.day ? '📅' : '↗', linkId: it.id }));
+    if (query.trim() && !found.some(f => f.plain.trim().toLowerCase() === query.trim().toLowerCase())) {
+      items.push({ label: `Create page “${query.trim().slice(0, 40)}”`, icon: '＋', create: query.trim() });
+    }
+    renderCaretItems(items, it => pickLink(it), 'Search for a page — type to create one');
   }
 }
 

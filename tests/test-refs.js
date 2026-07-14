@@ -111,6 +111,30 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   }));
   assert(refs.groups.some(t => /\d{4}/.test(t)), `day page appears as a reference group (${JSON.stringify(refs.groups)})`);
 
+  /* ---- 6. the daily view shows per-day linked references ---- */
+  await page.evaluate(() => {
+    snapshot();
+    const seite = getOrCreatePage('Testseite');
+    const day = ensureDay(todayStr());
+    const b = makeNode('heute: <a href="#/n/' + day + '" rel="noopener">' + roamDateLabel(todayStr()) + '</a>');
+    insertAt(seite, 0, b);
+    markDirty();
+    location.hash = '#/';
+  });
+  await sleep(600);
+  refs = await page.evaluate(() => {
+    const todaySec = [...document.querySelectorAll('.day-section')].find(s => N(s.dataset.day).cd === todayStr());
+    const box = todaySec?.querySelector('.day-refs');
+    return {
+      head: box?.querySelector('h3')?.textContent || null,
+      group: box?.querySelector('.ref-page')?.textContent || null,
+      bullet: box?.querySelector('.ref-row')?.textContent || null,
+    };
+  });
+  assert(refs.head && /Linked References \(\d+\)/.test(refs.head), `today's day section shows references ("${refs.head}")`);
+  assert(refs.group === 'Testseite', `reference grouped under the linking page ("${refs.group}")`);
+  assert(/heute:/.test(refs.bullet || ''), 'the referencing bullet renders in the day section');
+
   await browser.close();
   console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL REFS TESTS PASSED');
   process.exit(failures ? 1 : 0);
