@@ -119,7 +119,31 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   assert(ord[0] === 'July 1st, 2026' && ord[1] === 'July 2nd, 2026' && ord[2] === 'July 3rd, 2026'
     && ord[3] === 'July 11th, 2026' && ord[4] === 'July 13th, 2026', 'ordinal suffixes (1st/2nd/3rd/11th/13th)');
 
-  /* ---- 8. persistence: everything survives a reload ---- */
+  /* ---- 8. sidebar: nav entries, page list, no calendar container ---- */
+  await page.evaluate(() => { settings.sidebar = true; document.body.classList.add('sidebar-open'); renderSidebar(); });
+  await sleep(200);
+  const side = await page.evaluate(() => ({
+    daily: document.querySelector('#side-daily span')?.textContent,
+    all: document.querySelector('#side-pages-link span')?.textContent,
+    pages: [...document.querySelectorAll('#side-pages .side-item a')].map(a => a.textContent),
+    starsTitle: document.querySelector('#side-stars-section .side-title')?.textContent,
+  }));
+  assert(side.daily === 'Daily Notes' && side.all === 'All Pages', 'sidebar has Daily Notes and All Pages entries');
+  assert(side.pages.includes('Gartenplanung') && side.pages.includes('Kompost'), 'sidebar lists created pages');
+  assert(!side.pages.some(t => /Calendar/.test(t)), 'calendar container is not a sidebar page');
+  assert(side.starsTitle === 'Shortcuts', 'stars section is titled Shortcuts');
+
+  /* ---- 9. current page is highlighted, from nested zoom too ---- */
+  const cur = await page.evaluate(() => {
+    zoomTo(window.__kid); // nested node inside Gartenplanung
+    return new Promise(r => setTimeout(() => {
+      const row = [...document.querySelectorAll('#side-pages .side-item')].find(el => el.classList.contains('current'));
+      r(row?.textContent || null);
+    }, 400));
+  });
+  assert(cur === 'Gartenplanung', `containing page is highlighted for nested zooms ("${cur}")`);
+
+  /* ---- 10. persistence: everything survives a reload ---- */
   await sleep(900);
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForSelector('.sidebar', { timeout: 5000 }).catch(() => {});

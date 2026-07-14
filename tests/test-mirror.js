@@ -66,7 +66,7 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   const side = await page.evaluate(tgt => {
     settings.sidebar = true; document.body.classList.add('with-sidebar');
     sideOpen.add(tgt); window.renderSidebar?.();
-    const labels = [...document.querySelectorAll('#side-tree .side-item a')].map(a => a.textContent);
+    const labels = [...document.querySelectorAll('#side-pages .side-item a')].map(a => a.textContent);
     return { hasPlaceholder: labels.some(l => l.includes('(mirror)')), hasTargetText: labels.some(l => l.includes('Source task xkcd')) };
   }, tgt);
   assert(!side.hasPlaceholder && side.hasTargetText, "sidebar lists a mirror by its target's text, not a placeholder");

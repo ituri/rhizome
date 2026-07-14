@@ -74,6 +74,62 @@ function migrateDayLabels() {
   if (changed) { markDirty(); renderPage(); }
 }
 
+/* ---------------- sidebar: Daily Notes / All Pages / Shortcuts / page list --- */
+
+// replaces the upstream outline-tree sidebar (app2.js keeps its version unused)
+window.renderSidebar = function renderSidebar() {
+  if (SHARE_TOKEN || !doc) return;
+
+  $('#side-daily')?.classList.toggle('current', state.zoom === ROOT && state.view !== 'pages');
+  $('#side-pages-link')?.classList.toggle('current', state.view === 'pages');
+
+  const starsBox = $('#side-stars');
+  const starsSection = $('#side-stars-section');
+  const stars = meta().stars;
+  starsSection.hidden = !stars.length;
+  starsBox.innerHTML = '';
+  stars.forEach((s, idx) => {
+    if (s.id && !doc.nodes[s.id]) return;
+    const row = document.createElement('div');
+    row.className = 'side-item';
+    const a = document.createElement('a');
+    a.href = s.id && s.id !== ROOT ? '#/n/' + s.id : '#/';
+    const title = s.id && s.id !== ROOT ? (plainOf(N(s.id).text).trim() || 'Untitled') : 'Daily Notes';
+    a.innerHTML = (s.q ? `<span class="side-star-q">“${escHtml(s.q)}”</span>` : '') + escHtml(title);
+    a.addEventListener('click', () => { setTimeout(() => setSearch(s.q || ''), 50); });
+    const rm = document.createElement('button');
+    rm.className = 'side-remove';
+    rm.title = 'Remove star';
+    rm.textContent = '×';
+    rm.addEventListener('click', () => {
+      meta().stars.splice(idx, 1);
+      markDirty();
+      window.renderSidebar();
+      window.updateStarBtn();
+    });
+    row.append(a, rm);
+    starsBox.append(row);
+  });
+
+  const pagesBox = $('#side-pages');
+  if (!pagesBox) return;
+  pagesBox.innerHTML = '';
+  const currentPage = pageOf(state.zoom);
+  for (const id of pagesOf()) {
+    const cid = contentIdOf(id); // a top-level mirror lists its target's text
+    const n = N(cid);
+    if (n.done && !settings.showCompleted) continue;
+    const row = document.createElement('div');
+    row.className = 'side-item side-page';
+    if (state.zoom !== ROOT && (currentPage === id || currentPage === cid)) row.classList.add('current');
+    const a = document.createElement('a');
+    a.href = '#/n/' + cid;
+    a.textContent = plainOf(n.text).trim() || 'Untitled';
+    row.append(a);
+    pagesBox.append(row);
+  }
+};
+
 // init() (app2.js) is async and still awaiting the doc when this file runs
 (function afterDocLoad() {
   if (doc) migrateDayLabels();

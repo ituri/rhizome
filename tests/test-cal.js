@@ -126,15 +126,15 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   await page.evaluate(() => { settings.sidebar = true; applyTheme(); renderSidebar(); });
   await sleep(200);
   ok = await page.evaluate(() =>
-    [...document.querySelectorAll('#side-tree .side-item')].some(el => /Calendar/.test(el.textContent)));
-  assert(ok, 'the Calendar node shows in the sidebar outline');
-  // navigate away, then use the sidebar Today button
+    ![...document.querySelectorAll('#side-pages .side-item')].some(el => /Calendar/.test(el.textContent)));
+  assert(ok, 'the Calendar container stays out of the sidebar page list'); // rhizome
+  // navigate away, then use the topbar Today button
   await page.evaluate(() => { location.hash = '#/'; });
   await sleep(350);
-  await page.click('#side-today');
+  await page.click('#btn-calendar');
   await sleep(450);
   ok = await page.evaluate(() => doc.nodes[state.zoom]?.cal === 'day' && doc.nodes[state.zoom]?.cd === todayStr());
-  assert(ok, 'the sidebar Today button jumps to today');
+  assert(ok, 'the topbar Today button jumps to today');
 
   await browser.close();
   console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL CALENDAR TESTS PASSED');

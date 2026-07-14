@@ -1905,3 +1905,8 @@ time[datetime].today { color: oklch(0.5 0.14 150); background: oklch(0.55 0.14 1
   .board { margin-left: 6px; }
   .attachments, .embed { margin-left: 8px; }
 }
+
+/* ================= rhizome: page-based sidebar & views ================= */
+a.side-nav { text-decoration: none; }
+a.side-nav.current { background: var(--accent-softer); color: var(--ink); }
+.side-page a { flex: 1; }

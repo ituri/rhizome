@@ -168,8 +168,8 @@ const focusByText = text => `(() => {
   ok = await page.evaluate(() =>
     document.body.classList.contains('sidebar-open') &&
     !document.querySelector('#side-stars-section').hidden &&
-    document.querySelectorAll('#side-tree .side-item').length >= 2);
-  assert(ok, 'sidebar shows starred section and outline tree');
+    document.querySelectorAll('#side-pages .side-item').length >= 1);
+  assert(ok, 'sidebar shows shortcuts section and page list'); // rhizome
   await page.evaluate(() => window.toggleStar());
   await sleep(120);
 

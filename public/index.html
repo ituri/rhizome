@@ -50,17 +50,21 @@
 
 <div class="shell">
   <nav class="sidebar" id="sidebar" aria-label="Navigation">
-    <button class="side-today" id="side-today" title="Jump to today's calendar page">
+    <a class="side-today side-nav" id="side-daily" href="#/" title="Daily notes">
       <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="4.5" width="14" height="12.5" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="3" y1="8" x2="17" y2="8" stroke="currentColor" stroke-width="1.5"/><line x1="6.5" y1="2.8" x2="6.5" y2="5.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="13.5" y1="2.8" x2="13.5" y2="5.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-      <span>Today</span>
-    </button>
+      <span>Daily Notes</span>
+    </a>
+    <a class="side-today side-nav" id="side-pages-link" href="#/pages" title="All pages">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><line x1="4" y1="5" x2="16" y2="5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="4" y1="10" x2="16" y2="10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="4" y1="15" x2="16" y2="15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      <span>All Pages</span>
+    </a>
     <div class="side-section" id="side-stars-section" hidden>
-      <div class="side-title">Starred</div>
+      <div class="side-title">Shortcuts</div>
       <div id="side-stars"></div>
     </div>
     <div class="side-section">
-      <div class="side-title">Outline</div>
-      <div id="side-tree"></div>
+      <div class="side-title">Pages</div>
+      <div id="side-pages"></div>
     </div>
   </nav>
 
