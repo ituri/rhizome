@@ -26,7 +26,11 @@ update this file whenever an endpoint is added, changed or removed.
 | POST | `/api/account/password` | `{current, next}` | 200 ok. 403 wrong current, 400 `next` < 6 chars. Session required. |
 | GET | `/api/auth` | — | legacy: `{required, totp, ok, ai}` |
 
-Login is rate-limited per IP (8 failed attempts → 10 min lockout).
+Login is rate-limited per IP (8 failed attempts → 10 min lockout) **and** per account:
+after the admin-configured threshold of consecutive failures an account is locked and further
+logins return **423** (even with the right password) until it auto-unlocks (`auto` mode) or an
+admin clears it (`manual` mode). Every attempt is written to a login-events audit log. See
+`/api/admin/security` below.
 
 ## Graphs, members & API keys (session required)
 
@@ -79,6 +83,9 @@ Access is denied with **403** for a non-member (or a key bound to another graph)
 | DELETE | `/api/admin/users/:id` | — | delete a user + their owned graphs (not yourself / the last admin). |
 | GET | `/api/admin/invite` | — | `{code}` — the effective invite code. |
 | PUT | `/api/admin/invite` | `{code}` | set/rotate the invite code (empty → fall back to the env default). |
+| GET | `/api/admin/security` | — | `{policy:{threshold,mode,minutes}, locked:[{id,username,until}], events:[{username,ip,ok,ts}]}` — lockout policy, currently-locked accounts, recent login events. |
+| PUT | `/api/admin/security` | `{threshold, mode, minutes}` | set the lockout policy. `mode` = `auto` (unlock after `minutes`) \| `manual` (admin only). |
+| POST | `/api/admin/users/:id/unlock` | — | clear a locked account's failure count + lock. |
 
 Example capture (the `r` shell command):
 ```sh

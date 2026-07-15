@@ -84,6 +84,24 @@ const cookieFrom = sc => { const m = (sc || '').match(/rz_session=([^;]+)/); ret
   r = await J('/api/admin/users/' + carolId, { method: 'DELETE', headers: { Cookie: cookie } });
   assert(r.status === 200, 'admin deletes a user');
 
+  // login security: per-account lockout + audit log
+  r = await J('/api/admin/security', { method: 'PUT', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ threshold: 2, mode: 'auto', minutes: 30 }) });
+  assert(r.status === 200, 'admin sets the lockout policy');
+  await post('/api/register', { username: 'dave', password: 'davepass', invite: 'rotated99' });
+  await post('/api/login', { username: 'dave', password: 'nope' });
+  r = await post('/api/login', { username: 'dave', password: 'nope' });
+  assert(r.status === 401, 'failed logins are rejected');
+  r = await post('/api/login', { username: 'dave', password: 'davepass' });
+  assert(r.status === 423, 'the account locks after too many failures (423), even with the right password');
+  r = await J('/api/admin/security', { headers: { Cookie: cookie } });
+  assert(r.body.locked.some(u => u.username === 'dave'), 'the locked account shows in the admin security view');
+  assert(r.body.events.length > 0, 'login attempts are recorded in the log');
+  const daveId = r.body.locked.find(u => u.username === 'dave').id;
+  r = await J(`/api/admin/users/${daveId}/unlock`, { method: 'POST', headers: { Cookie: cookie } });
+  assert(r.status === 200, 'admin unlocks the account');
+  r = await post('/api/login', { username: 'dave', password: 'davepass' });
+  assert(r.status === 200, 'the account works again after unlocking');
+
   r = await post('/api/logout', {}, cookie);
   assert(r.status === 200, 'logout ok');
   r = await J(`/api/g/${gid}/doc`, { headers: { Cookie: cookie } });

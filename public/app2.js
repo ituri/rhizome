@@ -1610,6 +1610,7 @@ async function showAdminPanel() {
     <h3>Admin panel</h3>
     <div class="admin-invite"></div>
     <div class="admin-users">Loading…</div>
+    <div class="admin-security"></div>
     <div class="acct-actions"><button class="acct-cancel">Close</button></div>
   </div>`;
   document.body.append(ov);
@@ -1659,8 +1660,41 @@ async function showAdminPanel() {
     table.append(tb);
     box.append(table);
   };
+  const loadSecurity = async () => {
+    const s = await (await fetch('/api/admin/security')).json();
+    const box = ov.querySelector('.admin-security');
+    box.innerHTML = `<h4 class="admin-h4">Login security</h4>
+      <div class="sec-policy">Lock after <input class="sec-threshold" type="number" min="0" value="${s.threshold}"> failed attempts,
+      <select class="sec-mode"><option value="auto"${s.mode === 'auto' ? ' selected' : ''}>auto-unlock after</option><option value="manual"${s.mode === 'manual' ? ' selected' : ''}>manual unlock only</option></select>
+      <input class="sec-minutes" type="number" min="1" value="${s.minutes}"${s.mode === 'manual' ? ' disabled' : ''}> min
+      <button class="acct-save sec-save">Save</button></div>
+      <div class="sec-locked"></div>
+      <details class="sec-log"><summary>Recent login attempts (${s.events.length})</summary><div class="sec-events"></div></details>`;
+    const lb = box.querySelector('.sec-locked');
+    if (s.locked.length) {
+      lb.append('Locked: ');
+      for (const u of s.locked) {
+        const chip = document.createElement('span');
+        chip.className = 'sec-chip';
+        chip.textContent = u.username + ' ';
+        const un = document.createElement('button');
+        un.className = 'key-copy'; un.textContent = 'unlock';
+        un.addEventListener('click', async () => { await fetch(`/api/admin/users/${u.id}/unlock`, { method: 'POST' }); loadSecurity(); });
+        chip.append(un);
+        lb.append(chip);
+      }
+    }
+    box.querySelector('.sec-mode').addEventListener('change', e => { box.querySelector('.sec-minutes').disabled = e.target.value === 'manual'; });
+    box.querySelector('.sec-save').addEventListener('click', async () => {
+      await fetch('/api/admin/security', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ threshold: +box.querySelector('.sec-threshold').value, mode: box.querySelector('.sec-mode').value, minutes: +box.querySelector('.sec-minutes').value }) });
+      showToast('Security settings saved'); loadSecurity();
+    });
+    box.querySelector('.sec-events').innerHTML = s.events.map(e =>
+      `<div class="${e.ok ? 'sec-ok' : 'sec-fail'}">${escHtml(fmtDate(e.ts))} · ${escHtml(e.username || '?')} · ${escHtml(e.ip || '')} · ${e.ok ? 'ok' : 'fail'}</div>`).join('');
+  };
   loadInvite();
   loadUsers();
+  loadSecurity();
 }
 
 function showChangePassword() {

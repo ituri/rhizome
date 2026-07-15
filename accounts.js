@@ -58,6 +58,14 @@ CREATE TABLE IF NOT EXISTS api_keys (
   last_used INTEGER
 );
 CREATE INDEX IF NOT EXISTS api_keys_hash ON api_keys(hash);
+CREATE TABLE IF NOT EXISTS login_events (
+  id       INTEGER PRIMARY KEY AUTOINCREMENT,
+  username TEXT,
+  ip       TEXT,
+  ok       INTEGER NOT NULL,
+  ts       INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS login_events_ts ON login_events(ts);
 `;
 
 const now = () => Date.now();
@@ -84,6 +92,8 @@ class Accounts {
     const cols = new Set(this.db.prepare('PRAGMA table_info(users)').all().map(c => c.name));
     if (!cols.has('last_login')) this.db.exec('ALTER TABLE users ADD COLUMN last_login INTEGER');
     if (!cols.has('is_admin')) this.db.exec('ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0');
+    if (!cols.has('failed_count')) this.db.exec('ALTER TABLE users ADD COLUMN failed_count INTEGER NOT NULL DEFAULT 0');
+    if (!cols.has('locked_until')) this.db.exec('ALTER TABLE users ADD COLUMN locked_until INTEGER'); // 0 = manual lock, >now = timed, null/past = open
   }
 
   /* ---------------- users ---------------- */
@@ -139,6 +149,28 @@ class Accounts {
          FROM api_keys k JOIN graphs g ON g.id = k.graph_id WHERE k.user_id = ? ORDER BY k.created`).all(userId);
   }
   deleteApiKey(id, userId) { this.db.prepare('DELETE FROM api_keys WHERE id = ? AND user_id = ?').run(id, userId); }
+
+  /* ---------------- login security (fail2ban + audit log) ---------------- */
+
+  recordLoginEvent(username, ip, ok) {
+    this.db.prepare('INSERT INTO login_events(username,ip,ok,ts) VALUES(?,?,?,?)')
+      .run(username ? String(username).slice(0, 60) : null, ip ? String(ip).slice(0, 60) : null, ok ? 1 : 0, now());
+    this.db.prepare('DELETE FROM login_events WHERE id <= (SELECT MAX(id) FROM login_events) - 2000').run();
+  }
+  recentLoginEvents(limit = 100) {
+    return this.db.prepare('SELECT username, ip, ok, ts FROM login_events ORDER BY id DESC LIMIT ?').all(Math.min(limit, 500));
+  }
+  noteLoginFailure(userId) {
+    this.db.prepare('UPDATE users SET failed_count = failed_count + 1 WHERE id = ?').run(userId);
+    return this.userById(userId).failed_count;
+  }
+  lockUser(userId, until) { this.db.prepare('UPDATE users SET locked_until = ? WHERE id = ?').run(until, userId); }
+  unlockUser(userId) { this.db.prepare('UPDATE users SET failed_count = 0, locked_until = NULL WHERE id = ?').run(userId); }
+  // locked_until: null/past = open, 0 = manual (stays until unlocked), >now = timed
+  lockedNow(user) { return !!user && (user.locked_until === 0 || (user.locked_until && user.locked_until > now())); }
+  lockedUsers() {
+    return this.db.prepare('SELECT id, username, failed_count, locked_until FROM users WHERE locked_until = 0 OR locked_until > ?').all(now());
+  }
   // resolve a plaintext key → { id, userId, graphId, scope } (and stamp last_used), or null
   resolveApiKey(plaintext) {
     if (!plaintext || !plaintext.startsWith('rzk_')) return null;

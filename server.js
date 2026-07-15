@@ -1025,11 +1025,32 @@ const server = http.createServer(async (req, res) => {
       if (url === '/api/login' && req.method === 'POST') {
         if (throttled(ip)) return send(res, 429, { error: 'too many attempts — try again in 10 minutes' });
         const body = await readJson(req);
-        const user = accounts.verifyLogin(String(body.username || ''), String(body.password || ''));
+        const username = String(body.username || '');
+        const existing = accounts.userByName(username);
+        // per-account lockout (fail2ban): a locked account can't log in even with the right password
+        if (existing && accounts.lockedNow(existing)) {
+          accounts.recordLoginEvent(username, ip, false);
+          const until = existing.locked_until;
+          return send(res, 423, { error: until ? 'account locked — try again later or ask an admin' : 'account locked — ask an admin to unlock it' });
+        }
+        const user = accounts.verifyLogin(username, String(body.password || ''));
         let ok = !!user;
         if (ok && TOTP_SECRET) ok = totpValid(TOTP_SECRET, body.code); // optional global second factor
         recordAttempt(ip, ok);
-        if (!ok) return send(res, 401, { error: user ? 'wrong code' : 'wrong username or password' });
+        accounts.recordLoginEvent(username, ip, ok);
+        if (!ok) {
+          if (existing) { // count the failure against the account and lock past the threshold
+            const n = accounts.noteLoginFailure(existing.id);
+            const threshold = parseInt(accounts.getSetting('lockout_threshold') || '5', 10);
+            if (threshold > 0 && n >= threshold) {
+              const mode = accounts.getSetting('lockout_mode') || 'auto';
+              const mins = parseInt(accounts.getSetting('lockout_minutes') || '15', 10);
+              accounts.lockUser(existing.id, mode === 'manual' ? 0 : Date.now() + mins * 60000);
+            }
+          }
+          return send(res, 401, { error: user ? 'wrong code' : 'wrong username or password' });
+        }
+        accounts.unlockUser(user.id); // success clears the failure counter + any timed lock
         accounts.setLastLogin(user.id);
         const token = accounts.newSession(user.id);
         return send(res, 200, { user: { id: user.id, username: user.username } }, { 'Set-Cookie': sessionCookie(token) });
@@ -1180,6 +1201,32 @@ const server = http.createServer(async (req, res) => {
           accounts.setSetting('invite_code', code || null); // empty → clear (falls back to the env default)
           return send(res, 200, { code: currentInviteCode() });
         }
+      }
+      // login security (Phase: fail2ban): lockout policy, locked accounts, the login log
+      if (url === '/api/admin/security') {
+        if (!requireAdmin(req)) return send(res, 403, { error: 'admin only' });
+        if (req.method === 'GET') {
+          return send(res, 200, {
+            threshold: parseInt(accounts.getSetting('lockout_threshold') || '5', 10),
+            mode: accounts.getSetting('lockout_mode') || 'auto',
+            minutes: parseInt(accounts.getSetting('lockout_minutes') || '15', 10),
+            locked: accounts.lockedUsers(),
+            events: accounts.recentLoginEvents(100),
+          });
+        }
+        if (req.method === 'PUT') {
+          const body = await readJson(req);
+          if ('threshold' in body) accounts.setSetting('lockout_threshold', String(Math.max(0, parseInt(body.threshold, 10) || 0)));
+          if ('mode' in body) accounts.setSetting('lockout_mode', body.mode === 'manual' ? 'manual' : 'auto');
+          if ('minutes' in body) accounts.setSetting('lockout_minutes', String(Math.max(1, parseInt(body.minutes, 10) || 15)));
+          return send(res, 200, { ok: true });
+        }
+      }
+      const unlockM = url.match(/^\/api\/admin\/users\/([A-Za-z0-9]+)\/unlock$/);
+      if (unlockM && req.method === 'POST') {
+        if (!requireAdmin(req)) return send(res, 403, { error: 'admin only' });
+        accounts.unlockUser(unlockM[1]);
+        return send(res, 200, { ok: true });
       }
       if (url.startsWith('/api/capture') && req.method === 'POST') {
         const token = new URL(url, 'http://x').searchParams.get('token')
