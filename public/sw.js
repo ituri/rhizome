@@ -1,4 +1,4 @@
-/* Tendril service worker — offline shell cache (network-first). */
+/* Rhizome service worker — offline shell cache (network-first). */
 'use strict';
 
 const CACHE = 'rhizome-shell-v4';

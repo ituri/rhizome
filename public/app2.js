@@ -785,7 +785,7 @@ function pickDate(anchor, cb) {
 function exportNode(id, format) {
   const stamp = new Date().toISOString().slice(0, 10);
   const base = (plainOf(N(id).text).trim().replace(/[^\w]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'item').toLowerCase();
-  const fn = `tendril-${base}-${stamp}`;
+  const fn = `rhizome-${base}-${stamp}`;
   if (format === 'txt') download(`${fn}.txt`, 'text/plain', subtreeToText(id, 0));
   else if (format === 'md') download(`${fn}.md`, 'text/plain', subtreeToMarkdown(id, 0));
   else if (format === 'opml') download(`${fn}.opml`, 'text/xml',

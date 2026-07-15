@@ -1,7 +1,7 @@
 {
-  "name": "tendril",
+  "name": "rhizome",
   "version": "1.0.0",
-  "description": "Self-hostable infinite outliner — a Workflowy-class tool you run yourself.",
+  "description": "Self-hostable, page-based outliner with daily notes and Roam-style references — a fork of Tendril.",
   "type": "commonjs",
   "main": "server.js",
   "scripts": {
