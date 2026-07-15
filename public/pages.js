@@ -344,6 +344,7 @@ function renderPagesView(frag) {
     });
     headRow.append(th);
   }
+  headRow.append(document.createElement('th')); // delete column
   thead.append(headRow);
   table.append(thead);
 
@@ -359,7 +360,20 @@ function renderPagesView(frag) {
     tdC.textContent = r.c ? roamDateLabel(isoOf(new Date(r.c))) : '—';
     const tdM = document.createElement('td');
     tdM.textContent = r.m ? roamDateLabel(isoOf(new Date(r.m))) : '—';
-    tr.append(tdTitle, tdC, tdM);
+    const tdDel = document.createElement('td');
+    const del = document.createElement('button');
+    del.className = 'pages-del';
+    del.title = 'Delete page';
+    del.textContent = '×';
+    del.addEventListener('click', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!confirm(`Delete the page “${r.title}” and everything in it? It moves to the trash.`)) return;
+      if (state.zoom === r.id) location.hash = '#/';
+      opDelete(r.id);
+    });
+    tdDel.append(del);
+    tr.append(tdTitle, tdC, tdM, tdDel);
     tbody.append(tr);
   }
   table.append(tbody);
@@ -376,6 +390,45 @@ function renderPagesView(frag) {
 window.renderPagesView = renderPagesView;
 
 /* ---------------- sidebar: Daily Notes / All Pages / Shortcuts / page list --- */
+
+// the page (top-level page or journal day) a node belongs to, for recency
+function recencyPageId(id) {
+  const chain = [...ancestorsOf(id), id]; // [root, …, id] — ancestorsOf excludes id itself
+  for (let i = chain.length - 1; i >= 1; i--) if (N(chain[i])?.cal === 'day') return chain[i];
+  const top = chain.length > 1 ? chain[1] : null;
+  return top && !isCalRoot(top) ? top : null;
+}
+
+// pageId -> most recent edit time anywhere in its subtree (uses each node's `m`)
+function pageRecency() {
+  const rec = Object.create(null);
+  for (const id in doc.nodes) {
+    if (id === ROOT) continue;
+    const pg = recencyPageId(id);
+    if (!pg) continue;
+    const m = doc.nodes[id].m || 0;
+    if (rec[pg] === undefined || m > rec[pg]) rec[pg] = m; // register even brand-new (m=0) pages
+  }
+  return rec;
+}
+
+// sidebar page list: pinned first, then most-recently-edited (pages + journal days)
+function sidebarPageList() {
+  const pins = (meta().pins || []).filter(id => doc.nodes[id]);
+  const pinnedSet = new Set(pins);
+  const rec = pageRecency();
+  const recent = Object.keys(rec).filter(id => !pinnedSet.has(id)).sort((a, b) => rec[b] - rec[a]);
+  return { list: [...pins, ...recent.slice(0, 18)], pinnedSet };
+}
+
+function togglePin(id) {
+  const m = meta();
+  const i = m.pins.indexOf(id);
+  if (i >= 0) m.pins.splice(i, 1); else m.pins.unshift(id);
+  markDirty();
+  window.renderSidebar();
+}
+window.togglePin = togglePin;
 
 // replaces the upstream outline-tree sidebar (app2.js keeps its version unused)
 window.renderSidebar = function renderSidebar() {
@@ -417,13 +470,21 @@ window.renderSidebar = function renderSidebar() {
   if (!pagesBox) return;
   pagesBox.innerHTML = '';
   const currentPage = pageOf(state.zoom);
-  for (const id of pagesOf()) {
+  const { list, pinnedSet } = sidebarPageList();
+  for (const id of list) {
     const cid = contentIdOf(id); // a top-level mirror lists its target's text
     const n = N(cid);
+    if (!n) continue;
     if (n.done && !settings.showCompleted) continue;
+    const isPinned = pinnedSet.has(id);
     const row = document.createElement('div');
-    row.className = 'side-item side-page';
+    row.className = 'side-item side-page' + (isPinned ? ' pinned' : '');
     if (state.zoom !== ROOT && (currentPage === id || currentPage === cid)) row.classList.add('current');
+    const pin = document.createElement('button');
+    pin.className = 'side-pin' + (isPinned ? ' on' : '');
+    pin.title = isPinned ? 'Unpin' : 'Pin to top';
+    pin.textContent = '📌';
+    pin.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); togglePin(id); });
     const a = document.createElement('a');
     a.href = '#/n/' + cid;
     a.textContent = plainOf(n.text).trim() || 'Untitled';
@@ -439,7 +500,7 @@ window.renderSidebar = function renderSidebar() {
       if (state.zoom === id || state.zoom === cid) location.hash = '#/'; // leave the page we're deleting
       opDelete(id);
     });
-    row.append(a, del);
+    row.append(pin, a, del);
     pagesBox.append(row);
   }
   window.renderRightbar?.(); // keep the side-by-side panel live with the main view

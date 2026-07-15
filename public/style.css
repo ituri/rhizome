@@ -1266,6 +1266,29 @@ body:not(.sidebar-open) .side-today span { display: none; }
 .side-item:hover .side-remove { opacity: 1; }
 .side-remove:hover { color: var(--accent); }
 .side-del:hover { color: #e5484d; } /* deleting a page is destructive → red */
+.side-pin {
+  flex: none;
+  order: -1; /* pin sits at the left of the row */
+  border: 0; background: none;
+  cursor: pointer;
+  padding: 2px 2px 2px 4px;
+  font-size: 10px;
+  line-height: 1;
+  opacity: 0;
+  filter: grayscale(1);
+}
+.side-item:hover .side-pin { opacity: 0.5; }
+.side-pin.on { opacity: 1; filter: none; }
+.pages-del {
+  border: 0; background: none;
+  color: var(--ink-faint);
+  cursor: pointer;
+  padding: 2px 10px;
+  font-size: 15px;
+  opacity: 0;
+}
+.pages-table tbody tr:hover .pages-del { opacity: 1; }
+.pages-del:hover { color: #e5484d; }
 
 /* graph switcher (Phase 3): the active-graph chip at the top of the sidebar */
 .graph-switcher {

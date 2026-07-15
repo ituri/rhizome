@@ -520,6 +520,7 @@ function subtreeOf(id) {
 function meta() {
   if (!doc.meta) doc.meta = {};
   if (!doc.meta.stars) doc.meta.stars = [];
+  if (!doc.meta.pins) doc.meta.pins = [];
   return doc.meta;
 }
 

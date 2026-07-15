@@ -156,7 +156,7 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   assert(all.view === 'pages', '#/pages activates the pages view');
   assert(all.titles.includes('Gartenplanung') && all.titles.includes('Kompost'), 'table lists the pages');
   assert(!all.titles.some(t => /Calendar/.test(t)), 'calendar container is not listed');
-  assert(all.cols.join(',') === 'Title,Created,Updated', `table has Title/Created/Updated columns (${all.cols})`);
+  assert(all.cols.slice(0, 3).join(',') === 'Title,Created,Updated', `table has Title/Created/Updated columns (${all.cols})`);
   assert(all.titles.some(t => /^\w+ \d{1,2}(st|nd|rd|th), \d{4}$/.test(t)), 'journal day pages are listed as pages'); // rhizome
   assert(/All Pages/.test(all.docTitle), `document title reflects the view ("${all.docTitle}")`);
   assert(all.navCurrent, 'sidebar highlights All Pages');
