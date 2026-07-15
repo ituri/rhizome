@@ -897,6 +897,14 @@ kbd {
 .acct-cancel:hover { background: var(--line-soft); }
 .acct-save { background: var(--accent); color: oklch(0.98 0.005 90); }
 
+/* share-graph dialog: member list + add-by-username row */
+.share-members { display: flex; flex-direction: column; gap: 2px; max-height: 220px; overflow-y: auto; }
+.share-member { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 14px; padding: 4px 2px; }
+.share-member .side-remove { opacity: 1; } /* always visible in the dialog (no row-hover here) */
+.share-add { display: flex; gap: 6px; }
+.share-add .share-username { flex: 1 1 auto; }
+.share-add .acct-save { flex: none; padding: 8px 14px; }
+
 /* ---------------- toasts ---------------- */
 
 .toasts {

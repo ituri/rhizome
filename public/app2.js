@@ -1458,10 +1458,60 @@ function openGraphMenu(anchor) {
     pop.append(menuItem('New graph…', '＋', () => newGraph()));
     const cur = state.graphs.find(g => g.id === state.graphId);
     if (cur && cur.role === 'owner') {
+      pop.append(menuItem('Share graph…', '🤝', () => shareGraph(cur)));
       pop.append(menuItem('Rename graph…', '✎', () => renameGraph(cur)));
       if (state.graphs.length > 1) pop.append(menuItem('Delete graph…', '✕', () => deleteGraph(cur), { danger: true }));
     }
   });
+}
+
+// share a graph with other users by username (owner-only); editors can then live-edit it
+async function shareGraph(g) {
+  const ov = document.createElement('div');
+  ov.className = 'overlay';
+  ov.innerHTML = `<div class="acct-dialog" role="dialog" aria-label="Share graph">
+    <h3>Share “${escHtml(g.name)}”</h3>
+    <div class="share-members">Loading…</div>
+    <div class="share-add"><input class="share-username" placeholder="Add a user by username" autocomplete="off" spellcheck="false"><button class="acct-save share-add-btn">Add</button></div>
+    <p class="acct-error share-error" hidden></p>
+    <div class="acct-actions"><button class="acct-cancel">Close</button></div>
+  </div>`;
+  document.body.append(ov);
+  const err = ov.querySelector('.share-error');
+  const close = () => ov.remove();
+  ov.addEventListener('mousedown', e => { if (e.target === ov) close(); });
+  ov.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
+  ov.querySelector('.acct-cancel').addEventListener('click', close);
+  const refresh = async () => {
+    const data = await (await fetch('/api/graphs/' + g.id + '/members')).json();
+    const box = ov.querySelector('.share-members');
+    box.innerHTML = '';
+    for (const m of data.members) {
+      const row = document.createElement('div');
+      row.className = 'share-member';
+      const label = document.createElement('span');
+      label.textContent = m.username + (m.role === 'owner' ? ' · owner' : '');
+      row.append(label);
+      if (data.isOwner && m.role !== 'owner') {
+        const x = document.createElement('button');
+        x.className = 'side-remove side-del'; x.textContent = '×'; x.title = 'Remove';
+        x.addEventListener('click', async () => { await fetch(`/api/graphs/${g.id}/members/${m.id}`, { method: 'DELETE' }); refresh(); });
+        row.append(x);
+      }
+      box.append(row);
+    }
+  };
+  const add = async () => {
+    err.hidden = true;
+    const username = ov.querySelector('.share-username').value.trim();
+    if (!username) return;
+    const res = await fetch('/api/graphs/' + g.id + '/members', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username }) });
+    if (res.ok) { ov.querySelector('.share-username').value = ''; refresh(); showToast('Shared with ' + username); }
+    else { err.textContent = (await res.json()).error || 'Could not add that user'; err.hidden = false; }
+  };
+  ov.querySelector('.share-add-btn').addEventListener('click', add);
+  ov.querySelector('.share-username').addEventListener('keydown', e => { if (e.key === 'Enter') add(); });
+  refresh();
 }
 
 async function newGraph() {

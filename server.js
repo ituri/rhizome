@@ -1075,6 +1075,40 @@ const server = http.createServer(async (req, res) => {
           return send(res, 200, { ok: true });
         }
       }
+      // graph members (Phase 4): list / add / remove collaborators
+      const memM = url.match(/^\/api\/graphs\/([A-Za-z0-9]+)\/members$/);
+      if (memM) {
+        const u = currentUser(req);
+        if (!u) return send(res, 401, { error: 'not signed in' });
+        const gid = memM[1];
+        const graph = accounts.graphById(gid);
+        if (!graph) return send(res, 404, { error: 'graph not found' });
+        if (!accounts.roleOf(u.id, gid)) return send(res, 403, { error: 'no access to this graph' });
+        if (req.method === 'GET') {
+          return send(res, 200, { members: accounts.membersOf(gid), isOwner: graph.owner_id === u.id });
+        }
+        if (req.method === 'POST') {
+          if (graph.owner_id !== u.id) return send(res, 403, { error: 'only the owner can share a graph' });
+          const target = accounts.userByName(String((await readJson(req)).username || '').trim());
+          if (!target) return send(res, 404, { error: 'no user with that name' });
+          if (target.id === u.id) return send(res, 400, { error: 'you already own this graph' });
+          accounts.addMember(target.id, gid, 'editor');
+          return send(res, 200, { ok: true });
+        }
+      }
+      const memDelM = url.match(/^\/api\/graphs\/([A-Za-z0-9]+)\/members\/([A-Za-z0-9]+)$/);
+      if (memDelM && req.method === 'DELETE') {
+        const u = currentUser(req);
+        if (!u) return send(res, 401, { error: 'not signed in' });
+        const gid = memDelM[1], targetId = memDelM[2];
+        const graph = accounts.graphById(gid);
+        if (!graph) return send(res, 404, { error: 'graph not found' });
+        // the owner may remove anyone; a member may remove themselves (leave)
+        if (graph.owner_id !== u.id && targetId !== u.id) return send(res, 403, { error: 'not allowed' });
+        if (targetId === graph.owner_id) return send(res, 400, { error: 'the owner cannot be removed' });
+        accounts.removeMember(targetId, gid);
+        return send(res, 200, { ok: true });
+      }
       if (url.startsWith('/api/capture') && req.method === 'POST') {
         const token = new URL(url, 'http://x').searchParams.get('token')
           || req.headers['x-capture-token'] || '';

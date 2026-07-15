@@ -48,6 +48,30 @@ const register = async name => {
   r = await J(`/api/g/${alice.gid}/doc`);
   assert(r.status === 401, 'an unauthenticated graph request is rejected (401)');
 
-  console.log(failures ? `\n${failures} FAILURE(S)` : '\nGRAPH ISOLATION TESTS PASSED');
+  /* ---- sharing (Phase 4): alice shares her graph with bob ---- */
+  r = await post(`/api/graphs/${alice.gid}/members`, { username: 'bob' }, bob.cookie);
+  assert(r.status === 403, 'a non-owner cannot add members');
+  r = await post(`/api/graphs/${alice.gid}/members`, { username: 'nobody' }, alice.cookie);
+  assert(r.status === 404, 'sharing with an unknown username fails');
+  r = await post(`/api/graphs/${alice.gid}/members`, { username: 'bob' }, alice.cookie);
+  assert(r.status === 200, 'the owner shares the graph with bob');
+  r = await J(`/api/g/${alice.gid}/doc`, { headers: { Cookie: bob.cookie } });
+  assert(r.status === 200 && JSON.stringify(r.body).includes('alice secret'), 'bob can now read the shared graph');
+  r = await J('/api/me', { headers: { Cookie: bob.cookie } });
+  assert(r.body.graphs.length === 2 && r.body.graphs.some(g => g.id === alice.gid && g.role === 'editor'),
+    "the shared graph appears in bob's list as editor");
+  // bob (editor) can write to the shared graph — collaboration
+  r = await J(`/api/g/${alice.gid}/ops`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: bob.cookie }, body: JSON.stringify({ ops: [] }) });
+  assert(r.status === 200, 'an editor can post ops to the shared graph');
+
+  /* ---- revoke ---- */
+  const members = (await J(`/api/graphs/${alice.gid}/members`, { headers: { Cookie: alice.cookie } })).body.members;
+  const bobId = members.find(m => m.username === 'bob').id;
+  r = await J(`/api/graphs/${alice.gid}/members/${bobId}`, { method: 'DELETE', headers: { Cookie: alice.cookie } });
+  assert(r.status === 200, 'the owner removes bob');
+  r = await J(`/api/g/${alice.gid}/doc`, { headers: { Cookie: bob.cookie } });
+  assert(r.status === 403, 'bob loses access after being removed (403)');
+
+  console.log(failures ? `\n${failures} FAILURE(S)` : '\nGRAPH ISOLATION + SHARING TESTS PASSED');
   process.exit(failures ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(1); });
