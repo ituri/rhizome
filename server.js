@@ -139,6 +139,11 @@ if (accounts.userCount() === 0 && ADMIN_PASSWORD) {
 // keep the configured admin flagged as admin (covers accounts created before is_admin existed)
 const adminRow = accounts.userByName(ADMIN_USER);
 if (adminRow && !adminRow.is_admin) accounts.setAdmin(adminRow.id, true);
+// every user owns at least one graph; the admin's existing single-graph data migrates into
+// theirs in the doc layer (Phase 2). Give the admin their graph up front.
+if (adminRow && accounts.graphsForUser(adminRow.id).length === 0) {
+  accounts.createGraph('Rhizome', adminRow.id);
+}
 
 /**
  * The outline's data model — one flat node map; the tree lives in the children id-arrays.
@@ -939,6 +944,7 @@ const server = http.createServer(async (req, res) => {
         const u = currentUser(req);
         return send(res, 200, {
           user: u ? { id: u.id, username: u.username, isAdmin: !!u.is_admin } : null,
+          graphs: u ? accounts.graphsForUser(u.id) : [],
           authRequired: accounts.userCount() > 0,
           inviteRequired: !!INVITE_CODE,
           ai: !!AI_KEY,
@@ -957,6 +963,7 @@ const server = http.createServer(async (req, res) => {
         if (password.length < 6) return send(res, 400, { error: 'password must be at least 6 characters' });
         if (accounts.userByName(username)) return send(res, 409, { error: 'that username is taken' });
         const user = accounts.createUser(username, password);
+        accounts.createGraph('Home', user.id); // every new user starts with their own graph
         accounts.setLastLogin(user.id);
         const token = accounts.newSession(user.id);
         recordAttempt(ip, true);
