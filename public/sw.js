@@ -1,8 +1,9 @@
 /* Rhizome service worker — offline shell cache (network-first). */
 'use strict';
 
-const CACHE = 'rhizome-shell-v4';
-const SHELL = ['/', '/index.html', '/style.css', '/app.js', '/app2.js', '/pages.js', '/serialize-worker.js'];
+const CACHE = 'rhizome-shell-v5';
+const SHELL = ['/', '/index.html', '/style.css', '/app.js', '/app2.js', '/pages.js', '/serialize-worker.js',
+  '/manifest.webmanifest', '/icon.svg', '/icon-192.png', '/icon-512.png', '/apple-touch-icon.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));

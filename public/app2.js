@@ -2348,9 +2348,10 @@ async function init() {
   state.view = state.zoom === ROOT ? parseHashView() : null; // rhizome
   window.onViewChange?.();
   renderPage();
-  setSaveUI(dirty ? 'saving' : 'saved');
+  setSaveUI(state.offline ? 'offline' : (dirty ? 'saving' : 'saved'));
   connectSSE();
-  if ('serviceWorker' in navigator && location.protocol === 'https:') {
+  // localhost is a secure context too, so the SW (and offline shell) work in dev/tests
+  if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
     navigator.serviceWorker.register('/sw.js').catch(() => {});
   }
 }

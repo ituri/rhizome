@@ -52,7 +52,8 @@ docker compose up -d
 | 🔗 **Roam-style references** | Inline **block references** `(( ))` that show a block's live text (editing the line reveals its `((id))` source); **attributes** `Key:: Value` you can click and query; live **queries** `{{query: {and:…}{or:…}{not:…}{between:…}}}`; multi-word tags `#[[…]]`; a **right sidebar** (shift-click) to view pages side-by-side |
 | 📎 **Files & media** | Attach files or paste images straight onto items; YouTube / Shorts / Loom embeds and tracking-free X link-cards |
 | 📥 **Capture from anywhere** | `Ctrl+Shift+Space` quick-capture overlay, plus a token-protected capture API for email automations and iOS Shortcuts — items land under today's journal in an `Inbox` bullet |
-| 🤝 **Sharing & sync** | Live cross-device sync (SSE) and instant cross-tab sync; offline changes are kept and retried; share any subtree by secret link — view-only or editable, revocable |
+| 🤝 **Sharing & sync** | Live cross-device sync (SSE) and instant cross-tab sync; share any subtree by secret link — view-only or editable, revocable |
+| 📲 **Installable & offline** | Installs as a PWA (home-screen icon, standalone window); cold-boots offline from a local IndexedDB cache and keeps editing — changes sync automatically the moment you reconnect |
 | 📤 **Your data is portable** | Import and export Markdown, OPML, plain text and JSON; print any page; hourly rotating backups (last 40) |
 | 🔐 **Accounts & privacy** | Self-hosted, no tracking. Optional **accounts** (username + password, invite-gated self-registration, sessions); an admin account is bootstrapped from an env password. With no accounts configured it runs fully open, single-user. Optional TOTP on login. Everything lives in one folder you can copy |
 | 🤖 **Friendly to scripts & AI** | A per-node REST API built for agents, and an optional in-app ✨ Ask AI assistant (bring your own Anthropic key) |

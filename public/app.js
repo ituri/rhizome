@@ -946,7 +946,41 @@ function graftMissing(serverDoc) {
   }
 }
 
+/* ---------------- offline cache (IndexedDB) ----------------
+   A tiny key/value store so the app boots offline: we stash the last /api/me and
+   the last-known doc per graph. A cold start with no network reads these instead
+   of failing (localStorage's ~5MB cap is too small for a large graph). Every
+   accessor resolves (never rejects) so callers can await it unguarded. */
+const idb = (() => {
+  const noStore = typeof indexedDB === 'undefined';
+  let dbp = null;
+  const open = () => dbp || (dbp = new Promise((res, rej) => {
+    const r = indexedDB.open('rhizome', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('kv');
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  }));
+  const run = (mode, fn) => open().then(db => new Promise((res, rej) => {
+    const t = db.transaction('kv', mode);
+    const req = fn(t.objectStore('kv'));
+    t.oncomplete = () => res(req && req.result);
+    t.onerror = () => rej(t.error);
+  }));
+  return {
+    get: k => noStore ? Promise.resolve(null) : run('readonly', s => s.get(k)).catch(() => null),
+    set: (k, v) => noStore ? Promise.resolve() : run('readwrite', s => s.put(v, k)).catch(() => {}),
+  };
+})();
+
+// Snapshot the current doc into the offline boot cache, tagged with the live
+// dirty flag so a cold offline start knows whether edits still need pushing.
+function cacheDoc() {
+  if (!doc || SHARE_TOKEN) return;
+  idb.set('doc:' + state.graphId, { version: state.version, doc, dirty, at: Date.now() });
+}
+
 function stashOffline() {
+  cacheDoc();
   try {
     localStorage.setItem('tendril-offline', JSON.stringify({ baseVersion: state.version, doc, at: Date.now() }));
   } catch { /* quota — best effort */ }
@@ -976,6 +1010,7 @@ async function doSave() {
         const rv = (await r.json()).version;
         if (rv > state.version) state.version = rv; // never regress if a peer broadcast already advanced us
         if (changeSeq === seq) { dirty = false; setSaveUI('saved'); localStorage.removeItem('tendril-offline'); }
+        cacheDoc(); // refresh the offline boot snapshot with the just-synced state
         return;
       }
       pendingOps = batch.concat(pendingOps); // failed → requeue (idempotent), fall to the whole-doc PUT
@@ -1013,6 +1048,7 @@ async function doSave() {
       localStorage.removeItem('tendril-offline');
       bc?.postMessage({ version: state.version }); // just a nudge — peers refetch (no whole-doc clone)
     }
+    cacheDoc(); // refresh the offline boot snapshot with the just-synced state
   } catch {
     setSaveUI('offline');
     stashOffline();
@@ -4413,7 +4449,24 @@ window.switchGraph = function switchGraph(gid) {
 };
 
 async function ensureAuth() {
-  const me = await (await fetch('/api/me')).json();
+  let me;
+  try {
+    me = await (await fetch('/api/me')).json();
+    idb.set('me', me); // remember who we are so a cold offline start can boot without the network
+  } catch {
+    // offline: boot from the last known session instead of a blank screen. First-ever
+    // login still needs the network, but a returning user gets straight to their data.
+    me = await idb.get('me');
+    if (me && (me.user || me.authRequired === false)) {
+      state.offline = true;
+      state.authRequired = me.authRequired;
+      state.aiEnabled = !!me.ai;
+      state.user = me.user || null;
+      pickActiveGraph(me);
+      return;
+    }
+    throw new Error('offline and no cached session');
+  }
   state.authRequired = me.authRequired;
   state.aiEnabled = !!me.ai;
   state.user = me.user || null;
@@ -4486,7 +4539,32 @@ async function loadDoc() {
       : 'You are editing a <b>shared outline</b> — changes save to its owner.';
     return;
   }
-  const data = await (await fetch(apiBase + '/doc')).json();
+  let data;
+  try {
+    data = await (await fetch(apiBase + '/doc')).json();
+  } catch {
+    // offline cold start: boot from the last cached doc for this graph instead of a
+    // blank/broken screen. If the cache carried unsaved edits, mark dirty so reconnect
+    // flushes them; the periodic save retry + the `online` listener pick it up.
+    state.offline = true;
+    const cached = await idb.get('doc:' + state.graphId);
+    if (cached && cached.doc && cached.doc.nodes) {
+      doc = cached.doc;
+      doc.root = doc.root || ROOT;
+      serverHasDoc = true;
+      state.version = cached.version || 0;
+      sanitizeDocTexts(doc);
+      rebuildParentMap();
+      setSaveUI('offline');
+      if (cached.dirty) { markDirty(); showToast('Offline — your changes will sync when you reconnect'); }
+      else showToast('Offline — showing your last synced data');
+    } else {
+      welcomeDoc();
+      rebuildParentMap();
+      setSaveUI('offline');
+    }
+    return;
+  }
   if (data.doc && data.doc.nodes && data.doc.nodes[data.doc.root || ROOT]) {
     doc = data.doc;
     doc.root = doc.root || ROOT;
@@ -4494,6 +4572,7 @@ async function loadDoc() {
     state.version = data.version || 0; // = the server's op-log head (seq); ops apply contiguously from here
     sanitizeDocTexts(doc);
     rebuildParentMap();
+    cacheDoc(); // seed the offline boot snapshot with the freshly loaded server doc
   } else {
     // fresh install: the server has no doc yet → the first save is a whole-doc PUT that
     // seeds the welcome outline (there are no ops to send for a doc the server lacks)
