@@ -1157,7 +1157,9 @@ function queueOps(txn) {
 }
 
 document.addEventListener('visibilitychange', async () => {
-  if (document.visibilityState !== 'visible' || dirty || !doc) return;
+  if (document.visibilityState !== 'visible' || !doc) return;
+  if (!SHARE_TOKEN && (!sse || sse.readyState === 2)) openSSE(); // revive the stream after sleep
+  if (dirty) return;
   try {
     if (SHARE_TOKEN) {
       const full = await (await fetch(SAVE_URL)).json();
@@ -1185,21 +1187,14 @@ window.addEventListener('beforeunload', () => {
   }
 });
 
-function connectSSE() {
-  if (SHARE_TOKEN) {
-    // shares poll instead (no cookie auth)
-    setInterval(async () => {
-      if (dirty || document.visibilityState !== 'visible') return;
-      try {
-        const full = await (await fetch(SAVE_URL)).json();
-        if (!dirty && full.version > state.version) adoptRemote(full.version, full.doc);
-      } catch { /* offline */ }
-    }, 20000);
-    return;
-  }
+let sse = null;
+// (re)open the live event stream; called on connect and again after the tab wakes / the
+// network returns, so a laptop opened after sleep resumes live sync without a manual refresh
+function openSSE() {
   try {
-    const es = new EventSource(apiBase + '/events');
-    es.onmessage = async e => {
+    if (sse) { try { sse.close(); } catch { /* already closed */ } }
+    sse = new EventSource(apiBase + '/events');
+    sse.onmessage = async e => {
       try {
         const data = JSON.parse(e.data);
         // our own op echo: we already applied these locally — just track the version,
@@ -1217,7 +1212,24 @@ function connectSSE() {
         }
       } catch { /* ignore */ }
     };
-  } catch { /* SSE unsupported */ }
+  } catch { sse = null; /* SSE unsupported */ }
+}
+
+function connectSSE() {
+  if (SHARE_TOKEN) {
+    // shares poll instead (no cookie auth)
+    setInterval(async () => {
+      if (dirty || document.visibilityState !== 'visible') return;
+      try {
+        const full = await (await fetch(SAVE_URL)).json();
+        if (!dirty && full.version > state.version) adoptRemote(full.version, full.doc);
+      } catch { /* offline */ }
+    }, 20000);
+    return;
+  }
+  openSSE();
+  // the network returning is a strong wake signal — reopen the stream if it died while offline
+  window.addEventListener('online', () => { if (!sse || sse.readyState === 2) openSSE(); });
 }
 
 /* ---------------- 9. text commit ---------------- */
@@ -2227,7 +2239,19 @@ function opMoveVert(id, dir, focus) {
   const arr = kidsOf(p);
   const i = arr.indexOf(id);
   const j = i + dir;
-  if (j < 0 || j >= arr.length) return;
+  if (j < 0 || j >= arr.length) {
+    // at the edge of this level → pop the item out to its parent's level (Workflowy-style),
+    // unless we'd escape the zoomed view or a day section
+    const gp = parentOf(p);
+    if (!gp || p === state.zoom || window.isDayBoundary?.(p)) return;
+    commitActiveText();
+    snapshot();
+    moveNode(id, gp, kidsOf(gp).indexOf(p) + (dir > 0 ? 1 : 0)); // down → after the parent, up → before it
+    renderPage();
+    restoreFocus(focus);
+    markDirty();
+    return;
+  }
   commitActiveText();
   snapshot();
   [arr[i], arr[j]] = [arr[j], arr[i]];
