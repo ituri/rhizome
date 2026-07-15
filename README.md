@@ -16,7 +16,7 @@ find-or-create pages via <code>Ctrl+K</code> and <code>[[…]]</code> · All-Pag
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/tendril-dark.png">
-  <img alt="Tendril showing a welcome outline with nested bullets, to-dos, tags, notes and a quote block" src="docs/screenshots/tendril-light.png">
+  <img alt="Rhizome showing a daily note with nested bullets, to-dos, tags, notes and a quote block" src="docs/screenshots/tendril-light.png">
 </picture>
 
 <p align="center"><sub>Light &amp; dark themes · 4 accent colors · 4 fonts · cozy or compact</sub></p>
@@ -24,8 +24,8 @@ find-or-create pages via <code>Ctrl+K</code> and <code>[[…]]</code> · All-Pag
 ## ⚡ Quick start
 
 ```sh
-git clone https://github.com/SharifIsmail/tendril.git
-cd tendril
+git clone https://github.com/ituri/rhizome.git
+cd rhizome
 node server.js
 ```
 
@@ -48,12 +48,13 @@ docker compose up -d
 | 🧱 **Rich blocks** | Headings, quotes, code blocks, dividers, to-do checkboxes, numbered lists and kanban boards — via markdown shortcuts (`# `, `> `, `[] `, `1. `, `---`, ```` ``` ````) or the `/` menu; bold/italic/underline/strikethrough, 8 text colors + 8 highlights |
 | 🏷️ **Tags & dates** | `#tags` and `@mentions` with autocomplete — click to filter; natural-language dates (type `next friday` or `in 3 days`, press **Tab**), date ranges, overdue/today styling; a month-grid calendar and a `Calendar › Year › Month › Day` journal with a Today button |
 | 🔍 **Search that understands you** | `"exact phrases"`, `-exclusion`, `OR`, `is:complete`, `has:note`, `changed:7d`, nested `ancestor > term` queries and more; `Ctrl+K` jumps anywhere; star your favorite pages and searches |
-| 🪞 **Reuse & review** | `[[wiki links]]` with backlinks on every page; mirrors you can edit from any instance; templates; comments; turn any node into instant presentation slides |
+| 🪞 **Reuse & review** | `[[wiki links]]` (and page **aliases** via `Aliases::`) with linked + unlinked references on every page; mirrors you can edit from any instance; templates; comments; presentation slides |
+| 🔗 **Roam-style references** | Inline **block references** `(( ))` that show a block's live text (editing the line reveals its `((id))` source); **attributes** `Key:: Value` you can click and query; live **queries** `{{query: {and:…}{or:…}{not:…}{between:…}}}`; multi-word tags `#[[…]]`; a **right sidebar** (shift-click) to view pages side-by-side |
 | 📎 **Files & media** | Attach files or paste images straight onto items; YouTube / Shorts / Loom embeds and tracking-free X link-cards |
-| 📥 **Capture from anywhere** | `Ctrl+Shift+Space` quick-capture overlay, plus a token-protected capture API for email automations and iOS Shortcuts |
+| 📥 **Capture from anywhere** | `Ctrl+Shift+Space` quick-capture overlay, plus a token-protected capture API for email automations and iOS Shortcuts — items land under today's journal in an `Inbox` bullet |
 | 🤝 **Sharing & sync** | Live cross-device sync (SSE) and instant cross-tab sync; offline changes are kept and retried; share any subtree by secret link — view-only or editable, revocable |
 | 📤 **Your data is portable** | Import and export Markdown, OPML, plain text and JSON; print any page; hourly rotating backups (last 40) |
-| 🔐 **Private by design** | Self-hosted, no accounts, no tracking; optional password login with TOTP MFA; everything lives in one folder you can copy |
+| 🔐 **Accounts & privacy** | Self-hosted, no tracking. Optional **accounts** (username + password, invite-gated self-registration, sessions); an admin account is bootstrapped from an env password. With no accounts configured it runs fully open, single-user. Optional TOTP on login. Everything lives in one folder you can copy |
 | 🤖 **Friendly to scripts & AI** | A per-node REST API built for agents, and an optional in-app ✨ Ask AI assistant (bring your own Anthropic key) |
 
 Press `Ctrl+/` in the app for the full keyboard reference. For the complete
@@ -62,22 +63,26 @@ feature inventory — including what's deliberately not built — see
 
 ## ⚙️ Configuration (environment variables)
 
-Tendril runs with zero configuration. When you want more, everything is an environment variable:
+Rhizome runs with zero configuration. When you want more, everything is an environment variable:
 
 | Variable | Default | Meaning |
 |---|---|---|
 | `PORT` | `3000` | Port to listen on |
 | `HOST` | `0.0.0.0` | Interface to bind |
-| `DATA_DIR` | `./data` | Where the outline, attachments + backups live |
-| `TENDRIL_PASSWORD` | *(unset)* | If set, the app requires this password |
+| `DATA_DIR` | `./data` | Where the outline, accounts, attachments + backups live |
+| `RHIZOME_ADMIN_USER` | `phil` | Username of the bootstrapped admin account |
+| `RHIZOME_ADMIN_PASSWORD` | *(unset)* | If set, creates the admin account on first run and requires login. Falls back to `TENDRIL_PASSWORD` |
+| `RHIZOME_INVITE_CODE` | *(unset)* | If set, self-registration requires this invite code |
+| `TENDRIL_PASSWORD` | *(unset)* | Legacy: also used as the admin password fallback |
 | `TENDRIL_TOTP_SECRET` | *(unset)* | If set (base32), login also requires a 6-digit TOTP code. Generate with `node server.js --gen-totp` |
 | `TENDRIL_CAPTURE_TOKEN` | *(unset)* | Enables `POST /api/capture?token=…` for sending items to your Inbox from anywhere (email automations, iOS Shortcuts, curl) |
 | `TENDRIL_AGENT_TOKEN` | *(unset)* | Enables the per-node REST API at `/api/v1` for scripts and AI agents (`Authorization: Bearer …` or `?token=…`) |
 | `ANTHROPIC_API_KEY` | *(unset)* | Enables the in-app ✨ Ask AI assistant |
 | `TENDRIL_AI_MODEL` | `claude-opus-4-8` | Claude model used by Ask AI |
 
-If you expose Tendril to the internet, set `TENDRIL_PASSWORD` (and ideally TOTP) and put it
-behind HTTPS — any reverse proxy (Caddy, nginx, Traefik) works; it's plain HTTP on one port.
+If you expose Rhizome to the internet, set `RHIZOME_ADMIN_PASSWORD` (and, for open sign-ups,
+`RHIZOME_INVITE_CODE`) and put it behind HTTPS — any reverse proxy (Caddy, nginx, Traefik)
+works; it's plain HTTP on one port. The full HTTP API is documented in [docs/API.md](docs/API.md).
 
 With `TENDRIL_CAPTURE_TOKEN` set, anything can drop a thought into your Inbox:
 
@@ -130,21 +135,28 @@ full-text index). Everything else sits alongside it in `data/`:
 | Path | Holds |
 |---|---|
 | `data/outline.db` | The outline itself (one row per node) |
+| `data/accounts.db` | Users, sessions, graphs and memberships |
 | `data/files/` | Attachments and pasted images |
 | `data/backups/` | Hourly rotating `.db` snapshots (last 40) |
 | `data/shares.json` | Share tokens |
 
 Copy the `data` folder and you've backed up everything.
 
-**Upgrading from an older JSON build?** On first launch Tendril imports an existing
+**Upgrading from an older JSON build?** On first launch Rhizome imports an existing
 `data/outline.json` into the database once, then renames it to `data/outline.json.migrated`.
 Nothing writes back to the JSON file after that.
+
+> **In progress:** multi-user with **isolated, shareable graphs** (each user gets their own
+> document, shareable to others for collaborative editing), offline/PWA sync, user-managed API
+> keys with scopes, and an admin panel — tracked on the `phase2-graphs` branch. See
+> [docs/API.md](docs/API.md) for the current API.
 
 ## 🛠️ Development
 
 The app is plain JS — no build step; edit and refresh. Server-side it's `server.js` plus a
-small SQLite store (`db.js`) and op-merge engine (`opsdoc.js` / `ops.js`); the client is
-`public/app.js` + `public/app2.js`.
+small SQLite store (`db.js`), an accounts store (`accounts.js`) and an op-merge engine
+(`opsdoc.js` / `ops.js`); the client is `public/app.js` + `public/app2.js`, with the
+Roam-flavored pages/daily-notes/references layer in `public/pages.js`.
 
 ```sh
 npm run lint          # eslint
