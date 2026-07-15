@@ -1,20 +1,22 @@
 /*
- * Tendril — self-hostable infinite outliner.
+ * Rhizome — self-hostable, page-based outliner (a Roam-flavored fork of Tendril).
  * Zero-dependency Node.js server: static files + JSON document API + live sync.
  *
  *   node server.js
  *   node server.js --gen-totp     # generate a TOTP secret for MFA
  *
- * Environment:
+ * Environment (RHIZOME_* preferred; the legacy TENDRIL_* names still work as fallbacks):
  *   PORT                  port to listen on            (default 3000)
  *   HOST                  interface to bind            (default 0.0.0.0)
- *   DATA_DIR              where the outline is stored  (default ./data)
- *   TENDRIL_PASSWORD      if set, the app requires this password to log in
- *   TENDRIL_TOTP_SECRET   if set (base32), login additionally requires a TOTP code
- *   TENDRIL_CAPTURE_TOKEN if set, POST /api/capture with this token appends to the Inbox
- *   TENDRIL_AGENT_TOKEN   if set, unlocks the per-node REST API at /api/v1 (Bearer or ?token=)
+ *   DATA_DIR              where data is stored          (default ./data)
+ *   RHIZOME_ADMIN_USER    bootstrapped admin username   (default phil)
+ *   RHIZOME_ADMIN_PASSWORD if set, creates the admin on first run and requires login
+ *   RHIZOME_INVITE_CODE   if set, self-registration requires this invite code
+ *   RHIZOME_TOTP_SECRET   if set (base32), login additionally requires a TOTP code
+ *   RHIZOME_CAPTURE_TOKEN if set, POST /api/capture with this token appends to today's Inbox
+ *   RHIZOME_AGENT_TOKEN   if set, unlocks the per-node REST API at /api/v1 (Bearer or ?token=)
  *   ANTHROPIC_API_KEY     if set, enables the in-app "Ask AI" assistant
- *   TENDRIL_AI_MODEL      Claude model for Ask AI      (default claude-opus-4-8)
+ *   RHIZOME_AI_MODEL      Claude model for Ask AI      (default claude-opus-4-8)
  */
 'use strict';
 
@@ -37,12 +39,13 @@ const DB_FILE = path.join(DATA_DIR, 'outline.db');
 const SHARES_FILE = path.join(DATA_DIR, 'shares.json');
 const BACKUP_DIR = path.join(DATA_DIR, 'backups');
 const FILES_DIR = path.join(DATA_DIR, 'files');
-const PASSWORD = process.env.TENDRIL_PASSWORD || '';
-const TOTP_SECRET = process.env.TENDRIL_TOTP_SECRET || '';
-const CAPTURE_TOKEN = process.env.TENDRIL_CAPTURE_TOKEN || '';
-const AGENT_TOKEN = process.env.TENDRIL_AGENT_TOKEN || '';
+// RHIZOME_* preferred; legacy TENDRIL_* names still honored as fallbacks
+const PASSWORD = process.env.RHIZOME_PASSWORD || process.env.TENDRIL_PASSWORD || '';
+const TOTP_SECRET = process.env.RHIZOME_TOTP_SECRET || process.env.TENDRIL_TOTP_SECRET || '';
+const CAPTURE_TOKEN = process.env.RHIZOME_CAPTURE_TOKEN || process.env.TENDRIL_CAPTURE_TOKEN || '';
+const AGENT_TOKEN = process.env.RHIZOME_AGENT_TOKEN || process.env.TENDRIL_AGENT_TOKEN || '';
 const AI_KEY = process.env.ANTHROPIC_API_KEY || '';
-const AI_MODEL = process.env.TENDRIL_AI_MODEL || 'claude-opus-4-8';
+const AI_MODEL = process.env.RHIZOME_AI_MODEL || process.env.TENDRIL_AI_MODEL || 'claude-opus-4-8';
 // multi-user: registration invite gate + first-run admin account
 const INVITE_CODE = process.env.RHIZOME_INVITE_CODE || '';
 const ADMIN_USER = process.env.RHIZOME_ADMIN_USER || 'phil';
@@ -117,9 +120,9 @@ if (process.argv.includes('--gen-totp')) {
     value = (value << 8) | byte; bits += 8;
     while (bits >= 5) { secret += B32[(value >>> (bits - 5)) & 31]; bits -= 5; }
   }
-  console.log('TOTP secret (set as TENDRIL_TOTP_SECRET):\n  ' + secret);
+  console.log('TOTP secret (set as RHIZOME_TOTP_SECRET):\n  ' + secret);
   console.log('\nAdd to your authenticator app with this URI:');
-  console.log(`  otpauth://totp/Tendril?secret=${secret}&issuer=Tendril`);
+  console.log(`  otpauth://totp/Rhizome?secret=${secret}&issuer=Rhizome`);
   process.exit(0);
 }
 
@@ -559,7 +562,7 @@ async function readJson(req) {
 }
 
 async function handleV1(req, res, url) {
-  if (!apiAuthed(req, url)) return send(res, 401, { error: 'unauthorized — set TENDRIL_AGENT_TOKEN and send Authorization: Bearer <token>' });
+  if (!apiAuthed(req, url)) return send(res, 401, { error: 'unauthorized — set RHIZOME_AGENT_TOKEN and send Authorization: Bearer <token>' });
   ensureDoc();
   const path = url.split('?')[0];
   const method = req.method;
@@ -567,7 +570,7 @@ async function handleV1(req, res, url) {
 
   if (path === '/api/v1' || path === '/api/v1/') {
     return send(res, 200, {
-      name: 'Tendril node API', version: store.version,
+      name: 'Rhizome node API', version: store.version,
       endpoints: [
         'GET    /api/v1/doc',
         'GET    /api/v1/version',
@@ -1107,7 +1110,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`Tendril listening on http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);
+  console.log(`Rhizome listening on http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);
   console.log(`Data directory: ${DATA_DIR}`);
   const users = accounts.userCount();
   console.log(users ? `Accounts: ${users} user(s), login required${TOTP_SECRET ? ' + TOTP MFA' : ''}${INVITE_CODE ? ', registration by invite code' : ''}` : 'Accounts: none yet — open access (set RHIZOME_ADMIN_PASSWORD to lock down)');

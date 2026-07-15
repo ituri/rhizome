@@ -66,7 +66,7 @@ curl -sS -X POST 'https://rhizome.syslinx.org/api/capture?token=<CAPTURE_TOKEN>'
 
 ## Node REST API `/api/v1` (agent token)
 
-Enabled when `TENDRIL_AGENT_TOKEN` is set. Auth: `Authorization: Bearer <token>` or `?token=`.
+Enabled when `RHIZOME_AGENT_TOKEN` is set. Auth: `Authorization: Bearer <token>` or `?token=`.
 `GET /api/v1/doc`, `GET /api/v1/version`, `GET /api/v1/search?q=&limit=`,
 `GET /api/v1/nodes/:id` (`?tree=1&depth=N`), `GET /api/v1/nodes/:id/children`,
 `POST /api/v1/nodes {parent,text,note,done,format,index}`,
@@ -78,5 +78,5 @@ Enabled when `TENDRIL_AGENT_TOKEN` is set. Auth: `Authorization: Bearer <token>`
 
 `PORT`, `HOST`, `DATA_DIR`, `RHIZOME_ADMIN_USER` (default `phil`), `RHIZOME_ADMIN_PASSWORD`
 (bootstraps the admin on first run), `RHIZOME_INVITE_CODE` (registration gate),
-`TENDRIL_CAPTURE_TOKEN`, `TENDRIL_AGENT_TOKEN`, `TENDRIL_TOTP_SECRET`, `ANTHROPIC_API_KEY`,
-`TENDRIL_AI_MODEL`.
+`RHIZOME_CAPTURE_TOKEN`, `RHIZOME_AGENT_TOKEN`, `RHIZOME_TOTP_SECRET`, `ANTHROPIC_API_KEY`,
+`RHIZOME_AI_MODEL`.

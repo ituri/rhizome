@@ -71,20 +71,21 @@ Rhizome runs with zero configuration. When you want more, everything is an envir
 | `HOST` | `0.0.0.0` | Interface to bind |
 | `DATA_DIR` | `./data` | Where the outline, accounts, attachments + backups live |
 | `RHIZOME_ADMIN_USER` | `phil` | Username of the bootstrapped admin account |
-| `RHIZOME_ADMIN_PASSWORD` | *(unset)* | If set, creates the admin account on first run and requires login. Falls back to `TENDRIL_PASSWORD` |
+| `RHIZOME_ADMIN_PASSWORD` | *(unset)* | If set, creates the admin account on first run and requires login |
 | `RHIZOME_INVITE_CODE` | *(unset)* | If set, self-registration requires this invite code |
-| `TENDRIL_PASSWORD` | *(unset)* | Legacy: also used as the admin password fallback |
-| `TENDRIL_TOTP_SECRET` | *(unset)* | If set (base32), login also requires a 6-digit TOTP code. Generate with `node server.js --gen-totp` |
-| `TENDRIL_CAPTURE_TOKEN` | *(unset)* | Enables `POST /api/capture?token=…` for sending items to your Inbox from anywhere (email automations, iOS Shortcuts, curl) |
-| `TENDRIL_AGENT_TOKEN` | *(unset)* | Enables the per-node REST API at `/api/v1` for scripts and AI agents (`Authorization: Bearer …` or `?token=…`) |
+| `RHIZOME_TOTP_SECRET` | *(unset)* | If set (base32), login also requires a 6-digit TOTP code. Generate with `node server.js --gen-totp` |
+| `RHIZOME_CAPTURE_TOKEN` | *(unset)* | Enables `POST /api/capture?token=…` for sending items to your Inbox from anywhere (email automations, iOS Shortcuts, curl) |
+| `RHIZOME_AGENT_TOKEN` | *(unset)* | Enables the per-node REST API at `/api/v1` for scripts and AI agents (`Authorization: Bearer …` or `?token=…`) |
 | `ANTHROPIC_API_KEY` | *(unset)* | Enables the in-app ✨ Ask AI assistant |
-| `TENDRIL_AI_MODEL` | `claude-opus-4-8` | Claude model used by Ask AI |
+| `RHIZOME_AI_MODEL` | `claude-opus-4-8` | Claude model used by Ask AI |
+
+> The legacy `TENDRIL_*` names (`TENDRIL_PASSWORD`, `TENDRIL_CAPTURE_TOKEN`, `TENDRIL_AGENT_TOKEN`, `TENDRIL_TOTP_SECRET`, `TENDRIL_AI_MODEL`) are still honored as fallbacks.
 
 If you expose Rhizome to the internet, set `RHIZOME_ADMIN_PASSWORD` (and, for open sign-ups,
 `RHIZOME_INVITE_CODE`) and put it behind HTTPS — any reverse proxy (Caddy, nginx, Traefik)
 works; it's plain HTTP on one port. The full HTTP API is documented in [docs/API.md](docs/API.md).
 
-With `TENDRIL_CAPTURE_TOKEN` set, anything can drop a thought into your Inbox:
+With `RHIZOME_CAPTURE_TOKEN` set, anything can drop a thought into your Inbox:
 
 ```sh
 curl -X POST "https://your-host/api/capture?token=…" -d "call mom tomorrow"
@@ -96,8 +97,8 @@ A small per-node REST API lives at `/api/v1`, designed for an AI agent collabora
 with you in real time: it reads context in one call, writes surgically by node ID
 (so it doesn't clobber what you're typing), and every write broadcasts over SSE —
 so the agent's edits appear in your open tab instantly. Authenticate with
-`Authorization: Bearer <token>` or `?token=<token>` using `TENDRIL_AGENT_TOKEN`.
-Like the rest of the app, it's open when no `TENDRIL_PASSWORD` is set — the token
+`Authorization: Bearer <token>` or `?token=<token>` using `RHIZOME_AGENT_TOKEN`.
+Like the rest of the app, it's open when no `RHIZOME_ADMIN_PASSWORD` is set — the token
 matters once the app is password-protected. `GET /api/v1` returns a self-describing
 endpoint index.
 
@@ -116,7 +117,7 @@ endpoint index.
 ```sh
 # create a node, then complete it
 curl -s -X POST localhost:3000/api/v1/nodes \
-  -H "Authorization: Bearer $TENDRIL_AGENT_TOKEN" \
+  -H "Authorization: Bearer $RHIZOME_AGENT_TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"parent":"root","text":"Drafted by the agent"}'
 ```

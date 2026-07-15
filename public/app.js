@@ -1,5 +1,5 @@
 /* ============================================================
-   Tendril — self-hostable infinite outliner (core)
+   Rhizome — self-hostable, page-based outliner (core)
    app.js  : model, rendering, editing ops, keyboard, search, sync
    app2.js : feature UIs (sidebar, menus, slash, dates, share, AI…)
    ============================================================ */
@@ -4178,18 +4178,18 @@ function exportDoc(format) {
   const stamp = new Date().toISOString().slice(0, 10);
   if (format === 'json') {
     serializeAsync(doc, 1)
-      .then(json => download(`tendril-${stamp}.json`, 'application/json', json))
-      .catch(() => download(`tendril-${stamp}.json`, 'application/json', JSON.stringify(doc, null, 1)));
+      .then(json => download(`rhizome-${stamp}.json`, 'application/json', json))
+      .catch(() => download(`rhizome-${stamp}.json`, 'application/json', JSON.stringify(doc, null, 1)));
   } else if (format === 'txt') {
-    download(`tendril-${stamp}.txt`, 'text/plain',
+    download(`rhizome-${stamp}.txt`, 'text/plain',
       kidsOf(HOME).map(id => subtreeToText(id, 0)).join(''));
   } else if (format === 'md') {
-    download(`tendril-${stamp}.md`, 'text/plain',
+    download(`rhizome-${stamp}.md`, 'text/plain',
       kidsOf(HOME).map(id => subtreeToMarkdown(id, 0)).join('\n'));
   } else if (format === 'opml') {
     const body = kidsOf(HOME).map(subtreeToOpml).join('\n');
-    download(`tendril-${stamp}.opml`, 'text/xml',
-      `<?xml version="1.0" encoding="UTF-8"?>\n<opml version="2.0"><head><title>Tendril export</title></head><body>\n${body}\n</body></opml>`);
+    download(`rhizome-${stamp}.opml`, 'text/xml',
+      `<?xml version="1.0" encoding="UTF-8"?>\n<opml version="2.0"><head><title>Rhizome export</title></head><body>\n${body}\n</body></opml>`);
   }
 }
 
