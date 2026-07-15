@@ -4370,13 +4370,23 @@ function welcomeDoc() {
 
 /* ---------------- 27. login & bootstrap (init lives in app2.js) ---------------- */
 
-// choose the active graph (no switcher yet → the first one) and point the API base at it
+// choose the active graph (the saved one, else the first) and point the API base at it
 function pickActiveGraph(me) {
   state.graphs = me.graphs || [];
-  state.graphId = state.graphs[0]?.id || 'default'; // open mode has no graphs → the default graph
+  const saved = localStorage.getItem('rhizome-active-graph');
+  const pick = state.graphs.find(g => g.id === saved) || state.graphs[0];
+  state.graphId = pick?.id || 'default'; // open mode has no graphs → the default graph
   apiBase = '/api/g/' + state.graphId;
   if (!SHARE_TOKEN) SAVE_URL = apiBase + '/doc';
 }
+
+// switch the active graph: remember it and reload so the whole app rebinds to it
+window.switchGraph = function switchGraph(gid) {
+  if (gid === state.graphId) return;
+  localStorage.setItem('rhizome-active-graph', gid);
+  location.hash = '#/';
+  location.reload();
+};
 
 async function ensureAuth() {
   const me = await (await fetch('/api/me')).json();

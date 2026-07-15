@@ -1432,6 +1432,61 @@ $('#btn-calendar').addEventListener('click', e => pickDate(e.currentTarget, iso 
 /* ---------------- account ---------------- */
 
 // self-service password change (a small modal, built on the fly)
+/* ---------------- graph switcher (Phase 3) ---------------- */
+
+// the sidebar chip showing the active graph; click opens the graph menu
+window.renderGraphSwitcher = function renderGraphSwitcher() {
+  const el = $('#graph-switcher');
+  if (!el) return;
+  if (SHARE_TOKEN || !state.user || !(state.graphs && state.graphs.length)) { el.hidden = true; return; }
+  el.hidden = false;
+  const cur = state.graphs.find(g => g.id === state.graphId);
+  el.innerHTML = `<span class="gs-name">${escHtml(cur?.name || 'Graph')}</span><span class="gs-caret" aria-hidden="true">⌄</span>`;
+  el.onclick = () => openGraphMenu(el);
+};
+
+function openGraphMenu(anchor) {
+  openPopover(anchor, pop => {
+    const title = document.createElement('div');
+    title.className = 'pop-title';
+    title.textContent = 'Graphs';
+    pop.append(title);
+    for (const g of state.graphs) {
+      pop.append(menuItem((g.id === state.graphId ? '● ' : '') + g.name, g.role === 'owner' ? '◆' : '◇', () => switchGraph(g.id)));
+    }
+    pop.append(document.createElement('hr'));
+    pop.append(menuItem('New graph…', '＋', () => newGraph()));
+    const cur = state.graphs.find(g => g.id === state.graphId);
+    if (cur && cur.role === 'owner') {
+      pop.append(menuItem('Rename graph…', '✎', () => renameGraph(cur)));
+      if (state.graphs.length > 1) pop.append(menuItem('Delete graph…', '✕', () => deleteGraph(cur), { danger: true }));
+    }
+  });
+}
+
+async function newGraph() {
+  const name = (prompt('Name for the new graph:') || '').trim();
+  if (!name) return;
+  const res = await fetch('/api/graphs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
+  if (res.ok) switchGraph((await res.json()).id);
+  else showToast((await res.json()).error || 'Could not create the graph');
+}
+
+async function renameGraph(g) {
+  const name = (prompt('Rename graph:', g.name) || '').trim();
+  if (!name || name === g.name) return;
+  const res = await fetch('/api/graphs/' + g.id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
+  if (res.ok) { g.name = name; renderGraphSwitcher(); showToast('Graph renamed'); }
+  else showToast((await res.json()).error || 'Could not rename the graph');
+}
+
+async function deleteGraph(g) {
+  if (!confirm(`Delete the graph “${g.name}” and everything in it? This cannot be undone.`)) return;
+  const res = await fetch('/api/graphs/' + g.id, { method: 'DELETE' });
+  if (res.ok) { localStorage.removeItem('rhizome-active-graph'); location.reload(); }
+  else showToast((await res.json()).error || 'Could not delete the graph');
+}
+
 function showChangePassword() {
   const ov = document.createElement('div');
   ov.className = 'overlay';

@@ -1222,6 +1222,17 @@ body:not(.sidebar-open) .side-today span { display: none; }
 .side-remove:hover { color: var(--accent); }
 .side-del:hover { color: #e5484d; } /* deleting a page is destructive → red */
 
+/* graph switcher (Phase 3): the active-graph chip at the top of the sidebar */
+.graph-switcher {
+  display: flex; align-items: center; gap: 6px; width: 100%;
+  border: 1px solid var(--line-soft); background: none; color: var(--ink);
+  border-radius: 8px; padding: 6px 10px; margin-bottom: 10px; cursor: pointer;
+  font: inherit; font-weight: 600; font-size: 13.5px; text-align: left;
+}
+.graph-switcher:hover { background: var(--accent-softer); border-color: var(--line); }
+.gs-name { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gs-caret { flex: none; color: var(--ink-faint); font-size: 11px; }
+
 #btn-star.starred .star-path { fill: var(--accent); stroke: var(--accent); }
 
 @media (max-width: 900px) {

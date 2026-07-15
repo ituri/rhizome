@@ -380,6 +380,7 @@ window.renderPagesView = renderPagesView;
 // replaces the upstream outline-tree sidebar (app2.js keeps its version unused)
 window.renderSidebar = function renderSidebar() {
   if (SHARE_TOKEN || !doc) return;
+  window.renderGraphSwitcher?.();
 
   $('#side-daily')?.classList.toggle('current', state.zoom === ROOT && state.view === 'daily');
   $('#side-pages-link')?.classList.toggle('current', state.view === 'pages');

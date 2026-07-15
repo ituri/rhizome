@@ -1042,6 +1042,39 @@ const server = http.createServer(async (req, res) => {
         accounts.setPassword(u.id, String(body.next));
         return send(res, 200, { ok: true });
       }
+      // graph management (Phase 3): create / rename / delete the signed-in user's graphs
+      if (url === '/api/graphs' && req.method === 'POST') {
+        const u = currentUser(req);
+        if (!u) return send(res, 401, { error: 'not signed in' });
+        const name = String((await readJson(req)).name || '').trim().slice(0, 60);
+        if (!name) return send(res, 400, { error: 'a graph name is required' });
+        const g = accounts.createGraph(name, u.id);
+        return send(res, 200, { id: g.id, name: g.name, role: 'owner' });
+      }
+      const graphIdM = url.match(/^\/api\/graphs\/([A-Za-z0-9]+)$/);
+      if (graphIdM) {
+        const u = currentUser(req);
+        if (!u) return send(res, 401, { error: 'not signed in' });
+        const gid = graphIdM[1];
+        const graph = accounts.graphById(gid);
+        if (!graph) return send(res, 404, { error: 'graph not found' });
+        if (graph.owner_id !== u.id) return send(res, 403, { error: 'only the owner can change a graph' });
+        if (req.method === 'PATCH') {
+          const name = String((await readJson(req)).name || '').trim().slice(0, 60);
+          if (!name) return send(res, 400, { error: 'a graph name is required' });
+          accounts.renameGraph(gid, name);
+          return send(res, 200, { ok: true });
+        }
+        if (req.method === 'DELETE') {
+          if (accounts.graphsForUser(u.id).length <= 1) return send(res, 400, { error: 'you cannot delete your only graph' });
+          accounts.deleteGraph(gid);
+          graphCache.delete(gid);
+          try { fs.rmSync(path.join(GRAPHS_DIR, gid), { recursive: true, force: true }); } catch { /* already gone */ }
+          for (const t of Object.keys(shares)) if (shares[t].graph === gid) delete shares[t];
+          persistShares();
+          return send(res, 200, { ok: true });
+        }
+      }
       if (url.startsWith('/api/capture') && req.method === 'POST') {
         const token = new URL(url, 'http://x').searchParams.get('token')
           || req.headers['x-capture-token'] || '';
