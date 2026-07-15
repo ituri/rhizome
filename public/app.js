@@ -4368,27 +4368,46 @@ function welcomeDoc() {
 /* ---------------- 27. login & bootstrap (init lives in app2.js) ---------------- */
 
 async function ensureAuth() {
-  const info = await (await fetch('/api/auth')).json();
-  state.authRequired = info.required;
-  state.aiEnabled = !!info.ai;
-  if (!info.required || info.ok) return;
+  const me = await (await fetch('/api/me')).json();
+  state.authRequired = me.authRequired;
+  state.aiEnabled = !!me.ai;
+  state.user = me.user || null;
+  if (!me.authRequired || me.user) return; // open instance, or already logged in
+
   const screen = $('#login-screen');
   screen.hidden = false;
-  if (info.totp) $('#login-code').hidden = false;
-  $('#login-password').focus();
+  const err = $('#login-error');
+  let mode = 'login'; // 'login' | 'register'
+  const setMode = m => {
+    mode = m;
+    const reg = mode === 'register';
+    $('#login-sub').textContent = reg ? 'Create your account.' : 'Sign in to your account.';
+    $('#login-submit').textContent = reg ? 'Register' : 'Sign in';
+    $('#login-invite').hidden = !(reg && me.inviteRequired);
+    $('#login-code').hidden = !(!reg && me.totp);
+    $('#login-toggle-text').textContent = reg ? 'Already have an account?' : 'No account yet?';
+    $('#login-toggle').textContent = reg ? 'Sign in' : 'Register';
+    $('#login-username').setAttribute('autocomplete', reg ? 'username' : 'username');
+    $('#login-password').setAttribute('autocomplete', reg ? 'new-password' : 'current-password');
+    err.hidden = true;
+  };
+  setMode('login');
+  $('#login-username').focus();
+  $('#login-toggle').addEventListener('click', e => { e.preventDefault(); setMode(mode === 'login' ? 'register' : 'login'); });
+
   await new Promise(resolve => {
     $('#login-form').addEventListener('submit', async e => {
       e.preventDefault();
-      const err = $('#login-error');
       err.hidden = true;
-      const res = await fetch('/api/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: $('#login-password').value, code: $('#login-code').value }),
+      const payload = { username: $('#login-username').value.trim(), password: $('#login-password').value };
+      if (mode === 'register') payload.invite = $('#login-invite').value.trim();
+      else if (me.totp) payload.code = $('#login-code').value;
+      const res = await fetch(mode === 'register' ? '/api/register' : '/api/login', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
       });
-      if (res.ok) { screen.hidden = true; resolve(); }
+      if (res.ok) { state.user = (await res.json()).user; screen.hidden = true; resolve(); }
       else {
-        err.textContent = (await res.json()).error || 'Wrong password';
+        err.textContent = (await res.json()).error || 'Something went wrong';
         err.hidden = false;
         $('#login-password').select();
       }

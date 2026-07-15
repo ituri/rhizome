@@ -28,7 +28,7 @@ const node = (id, text, children = [], extra = {}) =>
       try { await fetch(API + '/api/auth'); break; } catch { await sleep(100); }
     }
     const login = await fetch(API + '/api/login', {
-      method: 'POST', body: JSON.stringify({ password: 'pw' }),
+      method: 'POST', body: JSON.stringify({ username: 'phil', password: 'pw' }),
     });
     const cookie = (login.headers.get('set-cookie') || '').split(';')[0];
     const authed = (url, opts = {}) =>

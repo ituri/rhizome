@@ -89,16 +89,15 @@ const api = async (method, path, body) => {
   assert(doc.trash && doc.trash.some(t => t.root === errands), 'deleted node is recoverable from the trash');
 
   /* ---- live SSE pickup into an open browser tab ---- */
-  // server is password-protected, so authenticate the browser via /api/login first
+  // server has an admin account (TENDRIL_PASSWORD → admin "phil"), so authenticate the browser
   const login = await fetch(BASE + '/api/login', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ password: 'pw' }),
+    body: JSON.stringify({ username: 'phil', password: 'pw' }),
   });
-  const cookie = (login.headers.get('set-cookie') || '').split(';')[0];
-  const cookieVal = cookie.split('=')[1];
+  const cookieVal = ((login.headers.get('set-cookie') || '').match(/rz_session=([^;]+)/) || [])[1];
   const browser = await puppeteer.launch({ executablePath: CHROME, headless: true });
   const page = await browser.newPage();
-  await page.setCookie({ name: 'tendril_auth', value: cookieVal, domain: 'localhost', path: '/' });
+  await page.setCookie({ name: 'rz_session', value: cookieVal, domain: 'localhost', path: '/' });
   page.on('pageerror', e => { console.log('PAGEERROR:', e.message); failures++; });
   await page.goto(BASE + '/#/outline', { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('.tree .item .content');

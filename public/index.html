@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400;1,6..72,500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/style.css?v=21">
+<link rel="stylesheet" href="/style.css?v=22">
 </head>
 <body>
 
@@ -163,15 +163,18 @@
   </div>
 </div>
 
-<!-- login -->
+<!-- login / register -->
 <div class="login-screen" id="login-screen" hidden>
   <form class="login-card" id="login-form">
     <div class="login-brand">rhizome<span class="brand-dot">.</span></div>
-    <p class="login-sub">This outline is password protected.</p>
+    <p class="login-sub" id="login-sub">Sign in to your account.</p>
+    <input type="text" id="login-username" placeholder="Username" autocomplete="username">
     <input type="password" id="login-password" placeholder="Password" autocomplete="current-password">
     <input type="text" id="login-code" placeholder="6-digit code" autocomplete="one-time-code" inputmode="numeric" maxlength="6" hidden>
-    <button type="submit">Unlock</button>
+    <input type="text" id="login-invite" placeholder="Invite code" autocomplete="off" hidden>
+    <button type="submit" id="login-submit">Sign in</button>
     <p class="login-error" id="login-error" hidden></p>
+    <p class="login-toggle"><span id="login-toggle-text">No account yet?</span> <a href="#" id="login-toggle">Register</a></p>
   </form>
 </div>
 
@@ -191,8 +194,8 @@
 <input type="file" id="import-file" accept=".json,.opml,.xml,.txt,.md" hidden>
 <input type="file" id="attach-file" hidden>
 
-<script src="/app.js?v=21"></script>
-<script src="/app2.js?v=21"></script>
-<script src="/pages.js?v=21"></script>
+<script src="/app.js?v=22"></script>
+<script src="/app2.js?v=22"></script>
+<script src="/pages.js?v=22"></script>
 </body>
 </html>

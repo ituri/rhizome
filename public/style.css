@@ -864,6 +864,9 @@ kbd {
   cursor: pointer;
 }
 .login-error { color: oklch(0.55 0.18 28); font-size: 13px; margin: 0; }
+.login-toggle { color: var(--ink-soft); font-size: 13px; margin: 2px 0 0; text-align: center; }
+.login-toggle a { color: var(--accent); text-decoration: none; font-weight: 600; }
+.login-toggle a:hover { text-decoration: underline; }
 
 /* ---------------- toasts ---------------- */
 

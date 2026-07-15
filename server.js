@@ -25,6 +25,7 @@ const fsp = fs.promises;
 const path = require('path');
 const crypto = require('crypto');
 const { Store } = require('./db');
+const { Accounts } = require('./accounts');
 const { applyOpsToDoc } = require('./opsdoc');
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
@@ -34,7 +35,6 @@ const PUBLIC_DIR = path.join(__dirname, 'public');
 const DOC_FILE = path.join(DATA_DIR, 'outline.json');
 const DB_FILE = path.join(DATA_DIR, 'outline.db');
 const SHARES_FILE = path.join(DATA_DIR, 'shares.json');
-const SECRET_FILE = path.join(DATA_DIR, '.secret');
 const BACKUP_DIR = path.join(DATA_DIR, 'backups');
 const FILES_DIR = path.join(DATA_DIR, 'files');
 const PASSWORD = process.env.TENDRIL_PASSWORD || '';
@@ -43,6 +43,11 @@ const CAPTURE_TOKEN = process.env.TENDRIL_CAPTURE_TOKEN || '';
 const AGENT_TOKEN = process.env.TENDRIL_AGENT_TOKEN || '';
 const AI_KEY = process.env.ANTHROPIC_API_KEY || '';
 const AI_MODEL = process.env.TENDRIL_AI_MODEL || 'claude-opus-4-8';
+// multi-user: registration invite gate + first-run admin account
+const INVITE_CODE = process.env.RHIZOME_INVITE_CODE || '';
+const ADMIN_USER = process.env.RHIZOME_ADMIN_USER || 'phil';
+const ADMIN_PASSWORD = process.env.RHIZOME_ADMIN_PASSWORD || PASSWORD || '';
+const SESSION_MAX_AGE = 90 * 24 * 60 * 60 * 1000;
 const MAX_BODY = 64 * 1024 * 1024;
 const MAX_UPLOAD = 32 * 1024 * 1024;
 const BACKUP_EVERY_MS = 60 * 60 * 1000;
@@ -124,19 +129,12 @@ fs.mkdirSync(DATA_DIR, { recursive: true });
 fs.mkdirSync(BACKUP_DIR, { recursive: true });
 fs.mkdirSync(FILES_DIR, { recursive: true });
 
-function loadSecret() {
-  try {
-    return fs.readFileSync(SECRET_FILE, 'utf8').trim();
-  } catch {
-    const s = crypto.randomBytes(32).toString('hex');
-    fs.writeFileSync(SECRET_FILE, s, { mode: 0o600 });
-    return s;
-  }
-}
-const SECRET = loadSecret();
-
-function authToken() {
-  return crypto.createHmac('sha256', SECRET).update('auth:' + PASSWORD + ':' + TOTP_SECRET).digest('hex');
+// Accounts (users, sessions, graphs, memberships) — separate DB from the doc store.
+const accounts = new Accounts(path.join(DATA_DIR, 'accounts.db'));
+// first run with an admin password configured bootstraps the admin account
+if (accounts.userCount() === 0 && ADMIN_PASSWORD) {
+  const u = accounts.createUser(ADMIN_USER, ADMIN_PASSWORD);
+  console.log(`Created admin account "${u.username}"`);
 }
 
 /**
@@ -362,6 +360,15 @@ function ensureDayInDoc(doc, iso) {
 function captureText(text) {
   const doc = ensureDoc();
   const dayId = ensureDayInDoc(doc, todayIso());
+  // drop stray empty bullets (e.g. an unused daily-note placeholder) so capture never
+  // strands a blank line above the Inbox
+  for (const cid of [...doc.nodes[dayId].children]) {
+    const c = doc.nodes[cid];
+    if (c && !(c.children || []).length && !serverPlain(c.text).trim()) {
+      doc.nodes[dayId].children = doc.nodes[dayId].children.filter(x => x !== cid);
+      delete doc.nodes[cid];
+    }
+  }
   let inboxId = doc.nodes[dayId].children.find(id => {
     const t = (doc.nodes[id]?.text || '').replace(/<[^>]+>/g, '').trim().toLowerCase();
     return t === 'inbox';
@@ -697,10 +704,17 @@ function timingSafeEq(a, b) {
   return ba.length === bb.length && crypto.timingSafeEqual(ba, bb);
 }
 
-function isAuthed(req) {
-  if (!PASSWORD) return true;
-  return timingSafeEq(cookies(req).tendril_auth || '', authToken());
+// the logged-in user for a request, or null (session cookie → accounts store)
+function currentUser(req) {
+  return accounts.sessionUser(cookies(req).rz_session || '', SESSION_MAX_AGE);
 }
+// access gate: with no accounts yet (fresh install / tests) the app is open; once any
+// account exists, a valid session is required
+function isAuthed(req) {
+  if (accounts.userCount() === 0) return true;
+  return !!currentUser(req);
+}
+const sessionCookie = token => `rz_session=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${Math.floor(SESSION_MAX_AGE / 1000)}`;
 
 const attempts = new Map();
 function throttled(ip) {
@@ -912,27 +926,52 @@ const server = http.createServer(async (req, res) => {
       /* ---- auth-free endpoints ---- */
       if (url === '/api/auth' && req.method === 'GET') {
         return send(res, 200, {
-          required: !!PASSWORD,
-          totp: !!(PASSWORD && TOTP_SECRET),
+          required: accounts.userCount() > 0,
+          totp: !!TOTP_SECRET,
           ok: isAuthed(req),
           ai: !!AI_KEY,
         });
       }
+      if (url === '/api/me' && req.method === 'GET') {
+        const u = currentUser(req);
+        return send(res, 200, {
+          user: u ? { id: u.id, username: u.username } : null,
+          authRequired: accounts.userCount() > 0,
+          inviteRequired: !!INVITE_CODE,
+          ai: !!AI_KEY,
+        });
+      }
+      if (url === '/api/register' && req.method === 'POST') {
+        if (throttled(ip)) return send(res, 429, { error: 'too many attempts — try again in 10 minutes' });
+        const body = await readJson(req);
+        const username = String(body.username || '').trim();
+        const password = String(body.password || '');
+        if (INVITE_CODE && !timingSafeEq(String(body.invite || ''), INVITE_CODE)) {
+          recordAttempt(ip, false);
+          return send(res, 403, { error: 'invalid invite code' });
+        }
+        if (!/^[\w.\- ]{2,40}$/.test(username)) return send(res, 400, { error: 'username must be 2–40 chars (letters, numbers, . _ - space)' });
+        if (password.length < 6) return send(res, 400, { error: 'password must be at least 6 characters' });
+        if (accounts.userByName(username)) return send(res, 409, { error: 'that username is taken' });
+        const user = accounts.createUser(username, password);
+        const token = accounts.newSession(user.id);
+        recordAttempt(ip, true);
+        return send(res, 200, { user: { id: user.id, username: user.username } }, { 'Set-Cookie': sessionCookie(token) });
+      }
       if (url === '/api/login' && req.method === 'POST') {
         if (throttled(ip)) return send(res, 429, { error: 'too many attempts — try again in 10 minutes' });
         const body = await readJson(req);
-        let ok = !!PASSWORD && timingSafeEq(body.password || '', PASSWORD);
-        if (ok && TOTP_SECRET) ok = totpValid(TOTP_SECRET, body.code);
+        const user = accounts.verifyLogin(String(body.username || ''), String(body.password || ''));
+        let ok = !!user;
+        if (ok && TOTP_SECRET) ok = totpValid(TOTP_SECRET, body.code); // optional global second factor
         recordAttempt(ip, ok);
-        if (!ok) return send(res, 401, { error: TOTP_SECRET ? 'wrong password or code' : 'wrong password' });
-        return send(res, 200, { ok: true }, {
-          'Set-Cookie': `tendril_auth=${authToken()}; HttpOnly; SameSite=Lax; Path=/; Max-Age=31536000`,
-        });
+        if (!ok) return send(res, 401, { error: user ? 'wrong code' : 'wrong username or password' });
+        const token = accounts.newSession(user.id);
+        return send(res, 200, { user: { id: user.id, username: user.username } }, { 'Set-Cookie': sessionCookie(token) });
       }
       if (url === '/api/logout' && req.method === 'POST') {
-        return send(res, 200, { ok: true }, {
-          'Set-Cookie': 'tendril_auth=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0',
-        });
+        accounts.dropSession(cookies(req).rz_session || '');
+        return send(res, 200, { ok: true }, { 'Set-Cookie': 'rz_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0' });
       }
       if (url.startsWith('/api/capture') && req.method === 'POST') {
         const token = new URL(url, 'http://x').searchParams.get('token')
@@ -1056,7 +1095,8 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, HOST, () => {
   console.log(`Tendril listening on http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);
   console.log(`Data directory: ${DATA_DIR}`);
-  console.log(PASSWORD ? `Password protection: ON${TOTP_SECRET ? ' + TOTP MFA' : ''}` : 'Password protection: off (set TENDRIL_PASSWORD to enable)');
+  const users = accounts.userCount();
+  console.log(users ? `Accounts: ${users} user(s), login required${TOTP_SECRET ? ' + TOTP MFA' : ''}${INVITE_CODE ? ', registration by invite code' : ''}` : 'Accounts: none yet — open access (set RHIZOME_ADMIN_PASSWORD to lock down)');
   if (CAPTURE_TOKEN) console.log('Capture API: POST /api/capture?token=…');
   if (AGENT_TOKEN) console.log('Node API: /api/v1 (agent token enabled)');
   if (AI_KEY) console.log(`Ask AI: enabled (${AI_MODEL})`);

@@ -1537,6 +1537,10 @@ window.showCapture = function showCapture() {
 // captures land under today's journal in an "Inbox" bullet: today → Inbox → item(s)
 function findOrCreateInbox() {
   const day = ensureDay(todayStr());
+  // drop stray empty bullets (e.g. an unused placeholder) so capture leaves no blank line
+  for (const c of [...kidsOf(day)]) {
+    if (!kidsOf(c).length && !plainOf(N(c).text).trim()) deleteSubtree(c);
+  }
   let inbox = kidsOf(day).find(id => plainOf(N(id).text).trim().toLowerCase() === 'inbox');
   if (!inbox) {
     inbox = makeNode('Inbox');
