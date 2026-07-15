@@ -2085,17 +2085,21 @@ html, body { font-size: 14px; line-height: 1.5; }
 }
 a.tag::before, a.tag::after { content: none !important; } /* no [[ ]] brackets on tag pills */
 
-/* inline block references (( )) — a live, clickable snippet of the target block */
-a.block-ref, .ref-row a.block-ref {
+/* inline block references (( )) — a live, clickable snippet of the target block.
+   Roam-style: normal text colour on a subtle neutral highlight with a faint
+   underline, symmetric on both sides — no coloured side bar, no brackets. */
+.content a.block-ref[href^="#/n/"], .note a.block-ref[href^="#/n/"], .zoom-note a.block-ref[href^="#/n/"], .ref-row a.block-ref[href^="#/n/"] {
   color: var(--ink);
-  background: color-mix(in oklab, var(--accent) 8%, transparent);
-  box-shadow: inset 2px 0 0 color-mix(in oklab, var(--accent) 55%, transparent);
+  background: color-mix(in oklab, var(--ink) 6%, transparent);
+  border-bottom: 1px solid color-mix(in oklab, var(--ink) 20%, transparent);
   border-radius: 3px;
-  padding: 0.02em 0.34em 0.02em 0.28em;
+  padding: 0.02em 0.3em;
   text-decoration: none;
   cursor: pointer;
 }
-a.block-ref:hover { background: color-mix(in oklab, var(--accent) 15%, transparent); }
+.content a.block-ref[href^="#/n/"]:hover, .note a.block-ref[href^="#/n/"]:hover, .zoom-note a.block-ref[href^="#/n/"]:hover, .ref-row a.block-ref[href^="#/n/"]:hover {
+  background: color-mix(in oklab, var(--ink) 12%, transparent);
+}
 a.block-ref::before, a.block-ref::after { content: none !important; }
 
 /* attribute keys: a leading "Key:: value" renders the key as an accent chip */
