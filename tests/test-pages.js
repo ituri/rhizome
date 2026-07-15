@@ -138,7 +138,7 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
     zoomTo(window.__kid); // nested node inside Gartenplanung
     return new Promise(r => setTimeout(() => {
       const row = [...document.querySelectorAll('#side-pages .side-item')].find(el => el.classList.contains('current'));
-      r(row?.textContent || null);
+      r(row?.querySelector('a')?.textContent || null);
     }, 400));
   });
   assert(cur === 'Gartenplanung', `containing page is highlighted for nested zooms ("${cur}")`);
@@ -607,6 +607,25 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
     return { open: document.body.classList.contains('rightbar-open'), noNav: state.zoom === before };
   }, rbPg);
   assert(rbShift.open && rbShift.noNav, 'shift-clicking a page link opens it in the sidebar without navigating');
+
+  /* ---- 32. a page can be deleted from the sidebar (hover × → trash) ---- */
+  await page.evaluate(() => { setSearch(''); state.rightbar = []; renderRightbar(); location.hash = '#/'; });
+  await sleep(200);
+  const delPg = await page.evaluate(() => { const id = getOrCreatePage('Wegwerfseite'); markDirty(); renderPage(); return id; });
+  await sleep(200);
+  const hasDelBtn = await page.evaluate(id => {
+    const row = [...document.querySelectorAll('#side-pages .side-page')].find(r => r.querySelector('a')?.getAttribute('href') === '#/n/' + id);
+    return !!row?.querySelector('.side-del');
+  }, delPg);
+  assert(hasDelBtn, 'each sidebar page row has a delete button');
+  page.once('dialog', d => d.accept()); // the delete confirm
+  await page.evaluate(id => {
+    const row = [...document.querySelectorAll('#side-pages .side-page')].find(r => r.querySelector('a')?.getAttribute('href') === '#/n/' + id);
+    row.querySelector('.side-del').click();
+  }, delPg);
+  await sleep(400);
+  const gone = await page.evaluate(id => !pagesOf().includes(id), delPg);
+  assert(gone, 'clicking the sidebar × deletes the page (moves it to the trash)');
 
   await browser.close();
   console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PAGES TESTS PASSED');

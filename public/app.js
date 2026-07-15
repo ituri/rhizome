@@ -2534,8 +2534,8 @@ function resolveZoomTarget(id) {
 function zoomTo(id) {
   id = resolveZoomTarget(id);
   if (id === state.zoom) return;
-  // rhizome: zooming out of a page lands in the full outline, not the daily view
-  location.hash = id === HOME ? (SHARE_TOKEN ? '#/' : '#/outline') : '#/n/' + id;
+  // rhizome: zooming out of a page lands on the Daily Notes home (no unified outline)
+  location.hash = id === HOME ? '#/' : '#/n/' + id;
 }
 
 // per-view caret memory: leaving a view stores where the caret was, so
@@ -4058,7 +4058,6 @@ const HELP = [
     ['Zoom in', 'Alt+→ or Alt+.'],
     ['Zoom out', 'Alt+← or Alt+,'],
     ['Daily Notes', "Ctrl+'"],
-    ['Full outline', '#/outline'],
     ['Expand / collapse', 'Ctrl+↓ / Ctrl+↑'],
     ['Find or create a page', 'Ctrl+K'],
     ['Star this page', 'Ctrl+Shift+8'],
@@ -4360,7 +4359,6 @@ function welcomeDoc() {
   add(power, '<b>Ctrl+A</b> twice selects whole items — then Tab, move, complete or delete in bulk');
   add(power, 'Select text to format it — colors and highlights included');
   add(power, 'Search supports <code>"phrases"</code>, <code>-not</code>, <code>OR</code>, <code>is:complete</code>, <code>has:note</code>, <code>changed:7d</code>…');
-  add(power, 'The classic whole-tree outline is still there: open <code>#/outline</code>');
   const sample = add(ROOT, 'Try it: plan something #example', { collapsed: true });
   add(sample, 'A trip, a project, an essay…');
   add(sample, 'Every top-level item is a page — this one too');

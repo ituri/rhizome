@@ -426,7 +426,19 @@ window.renderSidebar = function renderSidebar() {
     const a = document.createElement('a');
     a.href = '#/n/' + cid;
     a.textContent = plainOf(n.text).trim() || 'Untitled';
-    row.append(a);
+    const del = document.createElement('button');
+    del.className = 'side-remove side-del';
+    del.title = 'Delete page';
+    del.textContent = '×';
+    del.addEventListener('click', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      const title = plainOf(n.text).trim() || 'Untitled';
+      if (!confirm(`Delete the page “${title}” and everything in it? It moves to the trash.`)) return;
+      if (state.zoom === id || state.zoom === cid) location.hash = '#/'; // leave the page we're deleting
+      opDelete(id);
+    });
+    row.append(a, del);
     pagesBox.append(row);
   }
   window.renderRightbar?.(); // keep the side-by-side panel live with the main view

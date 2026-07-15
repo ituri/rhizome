@@ -25,15 +25,21 @@ const caretOffset = () => `(() => {
   await page.waitForSelector('.tree .item .content');
   await sleep(400);
 
-  // build a known item with children to zoom into
+  // build a page holding a known item with children; zoom-out from the item returns to
+  // the page (rhizome dropped the unified root outline — zoom-out from a page goes home)
   const ids = await page.evaluate(() => {
+    const pg = makeNode('nav test page');
+    insertAt('root', 0, pg);
     const a = makeNode('alphabet soup');           // 13 chars
-    insertAt('root', 0, a);
+    insertAt(pg, 0, a);
     insertAt(a, 0, makeNode('child one'));
     insertAt(a, 1, makeNode('child two'));
     renderPage();
-    return { a };
+    location.hash = '#/n/' + pg;                    // view the page; `a` is a bullet inside it
+    window.__navPg = pg;
+    return { pg, a };
   });
+  await sleep(350);
 
   /* ---- 1. Alt+→ into a bullet, Alt+← back, caret restored ---- */
   await page.evaluate(id => { focusItem(id, 'text', 0); }, ids.a);
@@ -77,7 +83,7 @@ const caretOffset = () => `(() => {
   assert(ok && o2 === 6, `climbing out restores caret on child two at offset 6 (got id-match, offset ${o2})`);
 
   /* ---- 3. click bullet to zoom, then browser Back restores focus ---- */
-  await page.evaluate(() => { location.hash = '#/outline'; });
+  await page.evaluate(pg => { location.hash = '#/n/' + pg; }, ids.pg);
   await sleep(300);
   await page.evaluate(id => { setCaretOffset(document.querySelector(`.item[data-id="${id}"] .content`), 3); }, ids.a);
   await page.evaluate(id => {
@@ -131,7 +137,7 @@ const caretOffset = () => `(() => {
       window.__vtCalls = 0;
       const orig = document.startViewTransition.bind(document);
       document.startViewTransition = cb => { window.__vtCalls++; return orig(cb); };
-      location.hash = '#/outline';
+      location.hash = '#/n/' + window.__navPg;
     });
     await sleep(400);
     await page.evaluate(id => { location.hash = '#/n/' + id; }, ids.a);
@@ -149,10 +155,10 @@ const caretOffset = () => `(() => {
   }
 
   /* ---- 8. animations toggle off → no view transition, instant + caret memory ---- */
-  await page.evaluate(() => { window.__tendrilForceAnim = false; location.hash = '#/outline'; });
+  await page.evaluate(pg => { window.__tendrilForceAnim = false; location.hash = '#/n/' + pg; }, ids.pg);
   await sleep(400);
   await page.evaluate(() => { settings.animations = false; });
-  // clean state: focus `a` at HOME, zoom in, confirm no VT, zoom out, confirm caret back on a
+  // clean state: focus `a` in the page, zoom in, confirm no VT, zoom out, confirm caret back on a
   await page.evaluate(id => { focusItem(id, 'text', 4); }, ids.a);
   await page.evaluate(() => { window.__vtCalls = 0; });
   await page.evaluate(id => { location.hash = '#/n/' + id; }, ids.a);

@@ -1188,6 +1188,7 @@ body:not(.sidebar-open) .side-today span { display: none; }
 }
 .side-item:hover .side-remove { opacity: 1; }
 .side-remove:hover { color: var(--accent); }
+.side-del:hover { color: #e5484d; } /* deleting a page is destructive → red */
 
 #btn-star.starred .star-path { fill: var(--accent); stroke: var(--accent); }
 
