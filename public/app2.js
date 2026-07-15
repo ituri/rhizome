@@ -1429,6 +1429,40 @@ $('#side-today')?.addEventListener('click', () => gotoToday());
 // rhizome: the header calendar opens a date picker → jump to that day's journal page
 $('#btn-calendar').addEventListener('click', e => pickDate(e.currentTarget, iso => gotoDate(iso)));
 
+/* ---------------- account ---------------- */
+
+// self-service password change (a small modal, built on the fly)
+function showChangePassword() {
+  const ov = document.createElement('div');
+  ov.className = 'overlay';
+  ov.innerHTML = `<div class="acct-dialog" role="dialog" aria-label="Change password">
+    <h3>Change password</h3>
+    <input type="password" class="acct-current" placeholder="Current password" autocomplete="current-password">
+    <input type="password" class="acct-new" placeholder="New password (min 6)" autocomplete="new-password">
+    <p class="acct-error" hidden></p>
+    <div class="acct-actions"><button class="acct-cancel">Cancel</button><button class="acct-save">Change password</button></div>
+  </div>`;
+  document.body.append(ov);
+  const err = ov.querySelector('.acct-error');
+  const close = () => ov.remove();
+  ov.addEventListener('mousedown', e => { if (e.target === ov) close(); });
+  ov.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
+  ov.querySelector('.acct-cancel').addEventListener('click', close);
+  const submit = async () => {
+    err.hidden = true;
+    const current = ov.querySelector('.acct-current').value;
+    const next = ov.querySelector('.acct-new').value;
+    const res = await fetch('/api/account/password', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ current, next }),
+    });
+    if (res.ok) { close(); showToast('Password changed'); }
+    else { err.textContent = (await res.json()).error || 'Could not change password'; err.hidden = false; }
+  };
+  ov.querySelector('.acct-save').addEventListener('click', submit);
+  ov.querySelector('.acct-new').addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
+  ov.querySelector('.acct-current').focus();
+}
+
 /* ---------------- K. trash ---------------- */
 
 function showTrash() {
@@ -1999,7 +2033,14 @@ $('#btn-menu').addEventListener('click', e => {
     }
     pop.append(document.createElement('hr'));
     pop.append(menuItem('Keyboard shortcuts', '⌘', () => showHelp(), { hint: 'Ctrl+/' }));
-    if (state.authRequired && !SHARE_TOKEN) {
+    if (state.user && !SHARE_TOKEN) {
+      pop.append(document.createElement('hr'));
+      addTitle('Signed in as ' + state.user.username);
+      pop.append(
+        menuItem('Change password…', '🔑', () => showChangePassword()),
+        menuItem('Log out', '🔒', async () => { await fetch('/api/logout', { method: 'POST' }); location.reload(); }),
+      );
+    } else if (state.authRequired && !SHARE_TOKEN) {
       pop.append(menuItem('Lock (log out)', '🔒', async () => {
         await fetch('/api/logout', { method: 'POST' });
         location.reload();

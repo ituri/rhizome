@@ -978,6 +978,15 @@ const server = http.createServer(async (req, res) => {
         accounts.dropSession(cookies(req).rz_session || '');
         return send(res, 200, { ok: true }, { 'Set-Cookie': 'rz_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0' });
       }
+      if (url === '/api/account/password' && req.method === 'POST') {
+        const u = currentUser(req);
+        if (!u) return send(res, 401, { error: 'not signed in' });
+        const body = await readJson(req);
+        if (!accounts.verifyLogin(u.username, String(body.current || ''))) return send(res, 403, { error: 'current password is wrong' });
+        if (String(body.next || '').length < 6) return send(res, 400, { error: 'new password must be at least 6 characters' });
+        accounts.setPassword(u.id, String(body.next));
+        return send(res, 200, { ok: true });
+      }
       if (url.startsWith('/api/capture') && req.method === 'POST') {
         const token = new URL(url, 'http://x').searchParams.get('token')
           || req.headers['x-capture-token'] || '';

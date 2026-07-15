@@ -35,6 +35,18 @@ const cookieFrom = sc => { const m = (sc || '').match(/rz_session=([^;]+)/); ret
   r = await J('/api/doc', { headers: { Cookie: cookie } });
   assert(r.status === 200, 'doc accessible with a session');
 
+  // self-service password change
+  r = await post('/api/account/password', { current: 'wrong', next: 'newpass' }, cookie);
+  assert(r.status === 403, 'password change rejects a wrong current password');
+  r = await post('/api/account/password', { current: 'adminpw', next: 'sk' }, cookie);
+  assert(r.status === 400, 'password change rejects a too-short new password');
+  r = await post('/api/account/password', { current: 'adminpw', next: 'newadminpw' }, cookie);
+  assert(r.status === 200, 'password change succeeds with the right current password');
+  r = await post('/api/login', { username: 'phil', password: 'adminpw' });
+  assert(r.status === 401, 'the old password no longer works');
+  r = await post('/api/login', { username: 'phil', password: 'newadminpw' });
+  assert(r.status === 200, 'the new password works');
+
   r = await post('/api/register', { username: 'bob', password: 'sekret' });
   assert(r.status === 403, 'register without invite rejected');
   r = await post('/api/register', { username: 'bob', password: 'sk', invite: 'letmein' });
