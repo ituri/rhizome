@@ -2288,6 +2288,21 @@ function opMoveVert(id, dir, focus) {
     markDirty();
     return;
   }
+  // if the neighbour we're moving toward is an expanded parent, descend INTO it instead of
+  // swapping past it (Workflowy-style): up → become its last child, down → its first child.
+  // Its last child is the row directly above us and its first child the row directly below,
+  // so this is still a one-row move — just one that enters the nested level.
+  const sib = arr[j];
+  const sc = contentIdOf(sib);
+  if (!N(sib).collapsed && kidsOf(sc).length) {
+    commitActiveText();
+    snapshot();
+    moveNode(id, sc, dir > 0 ? 0 : kidsOf(sc).length);
+    renderPage();
+    restoreFocus(focus);
+    markDirty();
+    return;
+  }
   commitActiveText();
   snapshot();
   [arr[i], arr[j]] = [arr[j], arr[i]];
