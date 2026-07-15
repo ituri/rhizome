@@ -311,8 +311,9 @@ function refreshCaretPop(query) {
   }
 }
 
-// (( inline block reference: insert a live reference to a single block. Stored as
-// an empty <a class="block-ref">; decorate fills the target's current text.
+// (( inline block reference: insert a live reference to a single block. The line is
+// being edited, so insert the raw ((id)) source; on blur decorate fills it with the
+// target's current text. Stored (via serialize) as an empty <a class="block-ref">.
 function pickBlockRef(it) {
   const { ctx, start } = caretPop;
   let caret = caretOffsetIn(ctx.el) ?? start;
@@ -324,13 +325,8 @@ function pickBlockRef(it) {
   const sel = getSelection();
   const r = sel.getRangeAt(0);
   r.deleteContents();
-  const a = document.createElement('a');
-  a.setAttribute('href', '#/n/' + it.blockId);
-  a.setAttribute('rel', 'noopener');
-  a.className = 'block-ref';
-  a.setAttribute('contenteditable', 'false');
-  a.textContent = plainOf(N(it.blockId).text).trim().slice(0, 120) || 'Untitled';
-  insertInlineAtCaret(sel, r, a);
+  const src = document.createTextNode('((' + it.blockId + '))');
+  insertInlineAtCaret(sel, r, src);
   scheduleCommit(ctx.el);
   markDirty();
 }

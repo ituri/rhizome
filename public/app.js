@@ -234,7 +234,8 @@ function serializeChildren(node) {
   let out = '';
   for (const child of node.childNodes) {
     if (child.nodeType === Node.TEXT_NODE) {
-      out += escHtml(child.nodeValue.replace(/ /g, ' '));
+      out += escHtml(child.nodeValue.replace(/ /g, " "))
+        .replace(/\(\(([A-Za-z0-9]+)\)\)/g, (m, id) => doc.nodes[id] ? `<a href="#/n/${id}" class="block-ref"></a>` : m);
     } else if (child.nodeType === Node.ELEMENT_NODE) {
       const tag = INLINE[child.tagName];
       if (child.tagName === 'BR') {
@@ -348,9 +349,11 @@ function decorate(html, opts = {}) {
   const walk = (node, inLink) => {
     for (const child of [...node.childNodes]) {
       if (child.nodeType === Node.ELEMENT_NODE) {
-        // rhizome: a block reference shows the target block's CURRENT text, live
+        // rhizome: a block reference shows the target block's CURRENT text, live —
+        // but while its line is being edited it reverts to its raw ((id)) source
         if (child.tagName === 'A' && child.classList.contains('block-ref')) {
           const m = (child.getAttribute('href') || '').match(/#\/n\/([A-Za-z0-9]+)/);
+          if (opts.editing) { child.replaceWith(document.createTextNode(m ? `((${m[1]}))` : '')); continue; }
           const t = m && doc.nodes[m[1]];
           child.textContent = t ? (plainOf(t.text).trim().slice(0, 140) || 'Untitled') : '(deleted block)';
           child.setAttribute('contenteditable', 'false');
@@ -1252,7 +1255,10 @@ function commitPending(redecorateOk = false) {
       syncMirrorRows(node.id);
     }
     if (redecorateOk && document.activeElement === el && !composing && !window.caretPopOpen?.()) {
-      const display = displayHtml(node);
+      // the line is focused → keep block refs as their raw ((id)) source while editing
+      const display = ctx.field === 'text'
+        ? decorate(node.text, { plain: node.format === 'codeblock', editing: true })
+        : displayHtml(node);
       if (display !== el.innerHTML) {
         const off = caretOffsetIn(el);
         const selLen = getSelection().rangeCount ? getSelection().toString().length : 0;
@@ -3288,6 +3294,11 @@ pageEl.addEventListener('focusout', e => {
     return;
   }
   if (ctx.field === 'title') titleBeforeEdit = null;
+  // rhizome: leaving a line renders its block refs back to the live target text
+  if (ctx.field === 'text' && doc.nodes[ctx.id] && document.activeElement !== ctx.el) {
+    const display = displayHtml(N(contentIdOf(ctx.id)));
+    if (ctx.el.innerHTML !== display) ctx.el.innerHTML = display;
+  }
   if ((ctx.field === 'note' || ctx.field === 'zoom-note') && doc.nodes[ctx.id]) {
     const n = N(contentIdOf(ctx.id)); // a mirror's note lives on the target
     if (n.note === '' && document.activeElement !== ctx.el) {
@@ -4281,8 +4292,18 @@ const isCoarse = matchMedia('(pointer: coarse)').matches;
 let lastItemId = null;
 
 let titleBeforeEdit = null; // the page title as it was when editing began (to revert a colliding rename)
+// while a line is edited its block refs show their raw ((id)) source (Roam-style),
+// so they can be selected, edited or removed; on blur they render back to live text
+function blockRefsToSource(el) {
+  for (const a of el.querySelectorAll('a.block-ref')) {
+    const m = (a.getAttribute('href') || '').match(/#\/n\/([A-Za-z0-9]+)/);
+    a.replaceWith(document.createTextNode(m ? `((${m[1]}))` : ''));
+  }
+}
+
 pageEl.addEventListener('focusin', e => {
   const ctx = editableCtx(e.target);
+  if (ctx && ctx.field === 'text') blockRefsToSource(ctx.el);
   if (ctx && ctx.field !== 'title' && ctx.field !== 'zoom-note') lastItemId = ctx.id;
   if (ctx && ctx.field === 'title') titleBeforeEdit = N(contentIdOf(ctx.id))?.text ?? null;
   if (isCoarse && ctx && !state.readOnly) mobilebarEl.hidden = false;

@@ -453,15 +453,18 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   await sleep(350);
   await page.evaluate(() => { const it = [...document.querySelectorAll('.caret-pop .pop-item')].find(x => /Referenzierter Block/.test(x.textContent)); it && it.click(); });
   await sleep(400);
-  await page.evaluate(() => commitActiveText());
-  await sleep(200);
+  // while editing, the ref shows its raw ((id)) source; leaving the line renders the widget
+  const brEditing = await page.evaluate(() => document.querySelector(`.item[data-id="${window.__brHost}"] .content`).textContent);
+  await page.evaluate(() => { document.querySelector(`.item[data-id="${window.__brHost}"] .content`).blur(); });
+  await sleep(300);
   const br = await page.evaluate(t => ({
     empty: /class="block-ref"><\/a>/.test(N(window.__brHost).text),
     refs: N(window.__brHost).text.includes('#/n/' + t),
     shown: document.querySelector(`.item[data-id="${window.__brHost}"] a.block-ref`)?.textContent,
   }), brTarget);
+  assert(/\(\([A-Za-z0-9]+\)\)/.test(brEditing), `an edited line shows the ref's raw ((id)) source (got "${brEditing}")`);
   assert(br.empty && br.refs, 'a (( )) block reference is stored empty and links the target');
-  assert(br.shown === 'Referenzierter Block XYZ', `the block ref shows the target's live text (got "${br.shown}")`);
+  assert(br.shown === 'Referenzierter Block XYZ', `the block ref shows the target's live text on blur (got "${br.shown}")`);
   await page.evaluate(t => { snapshot(); recOld(t); N(t).text = 'Geänderter Blocktext'; touch(t); markDirty(); renderPage(); }, brTarget);
   await sleep(300);
   const brLive = await page.evaluate(() => document.querySelector(`.item[data-id="${window.__brHost}"] a.block-ref`)?.textContent);
