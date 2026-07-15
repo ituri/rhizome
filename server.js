@@ -291,9 +291,9 @@ function trashSubtreeInDoc(doc, id, parent, ts) {
 
 const uid = () => Date.now().toString(36).slice(-6) + crypto.randomBytes(4).toString('hex').slice(0, 6);
 
-/** @param {string} text @returns {Node} */
-function makeNode(text) {
-  return { id: uid(), text, note: null, done: false, collapsed: false, children: [], m: Date.now() };
+/** @param {string} text @param {object} [extra] @returns {Node} */
+function makeNode(text, extra) {
+  return { id: uid(), text, note: null, done: false, collapsed: false, children: [], m: Date.now(), ...(extra || {}) };
 }
 
 /** @param {Doc} doc @param {string} rootId @returns {string[]} */
@@ -316,18 +316,57 @@ function escHtml(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+/* ---------- server-side calendar (mirrors the client's ensureDay, app2.js:1352) ---------- */
+
+const MONTHS_LONG = ['January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'];
+const pad2 = n => String(n).padStart(2, '0');
+function todayIso() { const d = new Date(); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; }
+function ordinal(n) { const h = n % 100, t = n % 10; return n + (h >= 11 && h <= 13 ? 'th' : t === 1 ? 'st' : t === 2 ? 'nd' : t === 3 ? 'rd' : 'th'); }
+function roamDateLabel(iso) { const [y, m, d] = iso.split('-').map(Number); return `${MONTHS_LONG[m - 1]} ${ordinal(d)}, ${y}`; }
+
+function calSortKey(doc, id) { const n = doc.nodes[id]; return n.cal === 'year' ? n.cy : n.cal === 'month' ? n.cm : n.cal === 'day' ? n.cd : 0; }
+function sortCalChildren(doc, parent) {
+  doc.nodes[parent].children.sort((a, b) => { const ka = calSortKey(doc, a), kb = calSortKey(doc, b); return ka < kb ? -1 : ka > kb ? 1 : 0; });
+}
+function addChild(doc, parent, node) { doc.nodes[node.id] = node; doc.nodes[parent].children.push(node.id); return node.id; }
+function ensureCalChild(doc, parent, pred, make) {
+  const found = doc.nodes[parent].children.find(pred);
+  if (found) return found;
+  const id = addChild(doc, parent, make());
+  sortCalChildren(doc, parent);
+  return id;
+}
+function calRootInDoc(doc) {
+  if (!doc.meta) doc.meta = {};
+  let id = doc.meta.calendar;
+  if (id && doc.nodes[id] && doc.nodes[id].cal === 'root') return id;
+  id = Object.keys(doc.nodes).find(k => doc.nodes[k].cal === 'root');
+  if (id) { doc.meta.calendar = id; return id; }
+  id = addChild(doc, doc.root, makeNode('📅 Calendar', { cal: 'root' }));
+  doc.meta.calendar = id;
+  return id;
+}
+// find-or-create today's journal day node in the calendar subtree (same layout as the client)
+function ensureDayInDoc(doc, iso) {
+  const [y, m] = iso.split('-').map(Number);
+  const yr = ensureCalChild(doc, calRootInDoc(doc), id => doc.nodes[id].cal === 'year' && doc.nodes[id].cy === y,
+    () => makeNode(String(y), { cal: 'year', cy: y }));
+  const mo = ensureCalChild(doc, yr, id => doc.nodes[id].cal === 'month' && doc.nodes[id].cm === m - 1,
+    () => makeNode(MONTHS_LONG[m - 1], { cal: 'month', cy: y, cm: m - 1 }));
+  return ensureCalChild(doc, mo, id => doc.nodes[id].cal === 'day' && doc.nodes[id].cd === iso,
+    () => makeNode(roamDateLabel(iso), { cal: 'day', cd: iso }));
+}
+
+// quick-capture lands under today's journal in an "Inbox" bullet: today → Inbox → line(s)
 function captureText(text) {
   const doc = ensureDoc();
-  let inboxId = doc.nodes.root.children.find(id => {
+  const dayId = ensureDayInDoc(doc, todayIso());
+  let inboxId = doc.nodes[dayId].children.find(id => {
     const t = (doc.nodes[id]?.text || '').replace(/<[^>]+>/g, '').trim().toLowerCase();
     return t === 'inbox';
   });
-  if (!inboxId) {
-    const inbox = makeNode('Inbox');
-    doc.nodes[inbox.id] = inbox;
-    doc.nodes.root.children.unshift(inbox.id);
-    inboxId = inbox.id;
-  }
+  if (!inboxId) inboxId = addChild(doc, dayId, makeNode('Inbox'));
   const lines = String(text).replace(/\r/g, '').split('\n').filter(l => l.trim());
   let count = 0;
   // indentation-aware: tabs/2-spaces nest under the previous shallower line

@@ -5,11 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Rhizome</title>
 <meta name="description" content="An infinite outliner you host yourself.">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='7' fill='%23c2563a'/%3E%3Ccircle cx='16' cy='16' r='12.5' fill='none' stroke='%23c2563a' stroke-opacity='.35' stroke-width='3'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='10' cy='9' r='3.2' fill='%23c2563a'/%3E%3Cpath d='M10.4 12.1 C10 15 9 17 8 20 M11.6 11.6 C14 13 16 15 17.6 18' fill='none' stroke='%23c2563a' stroke-width='1.5' stroke-linecap='round'/%3E%3Ccircle cx='8' cy='20' r='1.7' fill='%23c2563a'/%3E%3Ccircle cx='17.6' cy='18' r='1.7' fill='%23c2563a'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400;1,6..72,500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/style.css?v=19">
+<link rel="stylesheet" href="/style.css?v=20">
 </head>
 <body>
 
@@ -18,9 +18,8 @@
     <button class="iconbtn" id="btn-sidebar" title="Sidebar" aria-label="Toggle sidebar">
       <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="4" width="15" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="7.5" y1="4.5" x2="7.5" y2="15.5" stroke="currentColor" stroke-width="1.5"/></svg>
     </button>
-    <!-- brand logo — candidate V (node with two rooted offshoots). Alternative X (sprout + linked bud):
-         <svg class="brand-logo" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 21 C11 17 10 15 12 12.4 C13.4 10.5 15.5 10.4 16.6 8.2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M12 12.8 C9.6 12.8 8.2 10.8 8.2 8.4 C10.9 8.4 12 10.5 12 12.8Z" fill="currentColor"/><circle cx="17" cy="7.4" r="1.7" fill="currentColor"/></svg> -->
-    <a class="brand" href="#/" title="Daily Notes"><svg class="brand-logo" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="9" r="3.2" fill="currentColor"/><path d="M10.4 12.1 C10 15 9 17 8 20 M11.6 11.6 C14 13 16 15 17.6 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="8" cy="20" r="1.7" fill="currentColor"/><circle cx="17.6" cy="18" r="1.7" fill="currentColor"/></svg>rhizome<span class="brand-dot">.</span></a>
+    <!-- brand logo now lives only in the favicon; the topbar shows the wordmark alone -->
+    <a class="brand" href="#/" title="Daily Notes">rhizome<span class="brand-dot">.</span></a>
   </div>
   <div class="topbar-right">
     <div class="searchbox" id="searchbox">
@@ -192,8 +191,8 @@
 <input type="file" id="import-file" accept=".json,.opml,.xml,.txt,.md" hidden>
 <input type="file" id="attach-file" hidden>
 
-<script src="/app.js?v=19"></script>
-<script src="/app2.js?v=19"></script>
-<script src="/pages.js?v=19"></script>
+<script src="/app.js?v=20"></script>
+<script src="/app2.js?v=20"></script>
+<script src="/pages.js?v=20"></script>
 </body>
 </html>

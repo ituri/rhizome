@@ -224,7 +224,8 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   await page.keyboard.down('Control'); await page.keyboard.press('Enter'); await page.keyboard.up('Control');
   await sleep(400);
   const captured = await page.evaluate(() => {
-    const inbox = kidsOf('root').find(id => plainOf(doc.nodes[id].text).trim() === 'Inbox');
+    const day = findDay(todayStr());
+    const inbox = day && kidsOf(day).find(id => plainOf(doc.nodes[id].text).trim() === 'Inbox');
     const kids = kidsOf(inbox).map(id => doc.nodes[id]);
     const trip = kids.find(n => plainOf(n.text).includes('plan trip'));
     const todo = kids.find(n => plainOf(n.text).includes('pack bags'));

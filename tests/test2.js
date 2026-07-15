@@ -287,12 +287,13 @@ const focusByText = text => `(() => {
   await page.keyboard.down('Control'); await page.keyboard.press('Enter'); await page.keyboard.up('Control');
   await sleep(300);
   ok = await page.evaluate(() => {
-    const inbox = kidsOf('root').find(id => plainOf(doc.nodes[id].text).trim() === 'Inbox');
+    const day = findDay(todayStr());
+    const inbox = day && kidsOf(day).find(id => plainOf(doc.nodes[id].text).trim() === 'Inbox');
     if (!inbox) return false;
     const kid = kidsOf(inbox).find(id => plainOf(doc.nodes[id].text).includes('call the bank'));
     return kid && kidsOf(kid).length === 1;
   });
-  assert(ok, 'capture creates nested items under Inbox');
+  assert(ok, "capture creates nested items under today's journal Inbox");
 
   /* ---- 13. capture API + SSE live sync ---- */
   await sleep(900); // let save settle
@@ -304,10 +305,11 @@ const focusByText = text => `(() => {
   assert(cap.captured === 1, 'capture API accepts items');
   await sleep(1500);
   ok = await page.evaluate(() => {
-    const inbox = kidsOf('root').find(id => plainOf(doc.nodes[id].text).trim() === 'Inbox');
-    return state.version > 0 && kidsOf(inbox).some(id => plainOf(doc.nodes[id].text).includes('from the API'));
+    const day = findDay(todayStr());
+    const inbox = day && kidsOf(day).find(id => plainOf(doc.nodes[id].text).trim() === 'Inbox');
+    return state.version > 0 && inbox && kidsOf(inbox).some(id => plainOf(doc.nodes[id].text).includes('from the API'));
   });
-  assert(ok, `SSE pushes API-captured items into the open tab (v${before}→${await page.evaluate(() => state.version)})`);
+  assert(ok, `SSE pushes API-captured items into today's Inbox (v${before}→${await page.evaluate(() => state.version)})`);
 
   /* ---- 14. share links: view + edit ---- */
   const share = await page.evaluate(async () => {

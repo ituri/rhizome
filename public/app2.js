@@ -1534,11 +1534,13 @@ window.showCapture = function showCapture() {
   captureInput.focus();
 };
 
+// captures land under today's journal in an "Inbox" bullet: today → Inbox → item(s)
 function findOrCreateInbox() {
-  let inbox = kidsOf(ROOT).find(id => plainOf(N(id).text).trim().toLowerCase() === 'inbox');
+  const day = ensureDay(todayStr());
+  let inbox = kidsOf(day).find(id => plainOf(N(id).text).trim().toLowerCase() === 'inbox');
   if (!inbox) {
     inbox = makeNode('Inbox');
-    insertAt(ROOT, 0, inbox);
+    insertAt(day, kidsOf(day).length, inbox);
   }
   return inbox;
 }
