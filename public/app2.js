@@ -1537,6 +1537,71 @@ async function deleteGraph(g) {
   else showToast((await res.json()).error || 'Could not delete the graph');
 }
 
+// per-graph API keys the user manages (for the r capture command, scripts, agents)
+async function showApiKeys() {
+  const ov = document.createElement('div');
+  ov.className = 'overlay';
+  ov.innerHTML = `<div class="acct-dialog admin-panel" role="dialog" aria-label="API keys">
+    <h3>API keys</h3>
+    <p class="keys-note">Keys let scripts (like the <code>r</code> capture command) reach one graph. The full key is shown once — copy it now.</p>
+    <div class="keys-list">Loading…</div>
+    <div class="key-created" hidden></div>
+    <div class="keys-new">
+      <input class="key-name" placeholder="Key name" autocomplete="off" spellcheck="false">
+      <select class="key-graph"></select>
+      <select class="key-scope"><option value="read">read</option><option value="write">write</option></select>
+      <button class="acct-save key-add">Create</button>
+    </div>
+    <p class="acct-error keys-error" hidden></p>
+    <div class="acct-actions"><button class="acct-cancel">Close</button></div>
+  </div>`;
+  document.body.append(ov);
+  const err = ov.querySelector('.keys-error');
+  const close = () => ov.remove();
+  ov.addEventListener('mousedown', e => { if (e.target === ov) close(); });
+  ov.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
+  ov.querySelector('.acct-cancel').addEventListener('click', close);
+  const gsel = ov.querySelector('.key-graph');
+  for (const g of state.graphs) { const o = document.createElement('option'); o.value = g.id; o.textContent = g.name; gsel.append(o); }
+  gsel.value = state.graphId;
+  const fmtDate = t => t ? new Date(t).toLocaleDateString() : 'never';
+  const load = async () => {
+    const { keys } = await (await fetch('/api/keys')).json();
+    const box = ov.querySelector('.keys-list');
+    box.innerHTML = keys.length ? '' : '<div class="ref-none">No keys yet.</div>';
+    for (const k of keys) {
+      const row = document.createElement('div');
+      row.className = 'share-member';
+      const label = document.createElement('span');
+      label.textContent = `${k.name} · ${k.graphName} · ${k.scope} · used ${fmtDate(k.lastUsed)}`;
+      row.append(label);
+      const x = document.createElement('button');
+      x.className = 'side-remove side-del'; x.textContent = '×'; x.title = 'Revoke key';
+      x.addEventListener('click', async () => { await fetch('/api/keys/' + k.id, { method: 'DELETE' }); load(); });
+      row.append(x);
+      box.append(row);
+    }
+  };
+  ov.querySelector('.key-add').addEventListener('click', async () => {
+    err.hidden = true;
+    const name = ov.querySelector('.key-name').value.trim() || 'API key';
+    const res = await fetch('/api/keys', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, graphId: gsel.value, scope: ov.querySelector('.key-scope').value }),
+    });
+    if (res.ok) {
+      const { key } = await res.json();
+      const box = ov.querySelector('.key-created');
+      box.hidden = false;
+      box.innerHTML = `Your new key (copy it now):<br><code class="admin-code key-value">${escHtml(key)}</code> <button class="key-copy">Copy</button>`;
+      box.querySelector('.key-copy').addEventListener('click', () => { navigator.clipboard?.writeText(key); showToast('Key copied'); });
+      ov.querySelector('.key-name').value = '';
+      load();
+    } else { err.textContent = (await res.json()).error || 'Could not create the key'; err.hidden = false; }
+  });
+  load();
+}
+
 // admin-only: list users with stats, delete users, view/rotate the invite code
 async function showAdminPanel() {
   const ov = document.createElement('div');
@@ -2203,6 +2268,7 @@ $('#btn-menu').addEventListener('click', e => {
       pop.append(document.createElement('hr'));
       addTitle('Signed in as ' + state.user.username);
       pop.append(menuItem('Change password…', '🔑', () => showChangePassword()));
+      pop.append(menuItem('API keys…', '🗝', () => showApiKeys()));
       if (state.user.isAdmin) pop.append(menuItem('Admin panel…', '🛠', () => showAdminPanel()));
       pop.append(menuItem('Log out', '🔒', async () => { await fetch('/api/logout', { method: 'POST' }); location.reload(); }));
     } else if (state.authRequired && !SHARE_TOKEN) {

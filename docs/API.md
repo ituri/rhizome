@@ -10,10 +10,10 @@ update this file whenever an endpoint is added, changed or removed.
 - With **no accounts yet** (fresh install) the instance is open; once any account exists,
   authenticated endpoints require a valid session.
 
-> **Phase 2 (in progress, branch `phase2-graphs`):** the document endpoints move under a
-> per-graph prefix `/api/g/:graphId/...` (doc, ops, events, version, search, shares, upload,
-> capture, ai). Account-level endpoints below stay unprefixed. This section will be updated
-> when that lands.
+> **Multi-graph:** every user owns one or more isolated graphs. Document endpoints are
+> **scoped per graph** under `/api/g/:graphId/...`; the client picks the active graph from
+> `/api/me` (`graphs[0]` by default, remembered in localStorage). Account-level endpoints
+> (login, graphs, keys, admin) stay unprefixed. Files and share links are global.
 
 ## Auth & account
 
@@ -28,16 +28,37 @@ update this file whenever an endpoint is added, changed or removed.
 
 Login is rate-limited per IP (8 failed attempts → 10 min lockout).
 
-## Document (session required)
+## Graphs, members & API keys (session required)
 
 | Method | Path | Body | Result |
 |---|---|---|---|
-| GET | `/api/doc` | — | `{version, doc}` — the full document (`doc.nodes` map + `doc.root`). |
-| GET | `/api/version` | — | `{version}` |
-| PUT/POST | `/api/doc` | `{doc, baseVersion?, device?}` | `{version}`. 409 + `{version,doc}` if `baseVersion` is stale. Whole-doc save. |
-| POST | `/api/ops` | `{ops:[…], device}` | `{version, applied}`. Delta sync — the preferred save path. Ops are idempotent by `op.id`. |
-| GET | `/api/events` | — | **SSE** stream. Each message: `{version, ops?, origin}`. On an op-batch commit, `ops` is the applied batch tagged with the originating `device` (ignore your own echo); otherwise refetch `/api/doc`. Heartbeat `:hb` every 25s. |
-| GET | `/api/search?q=` | — | `{ids:[…]}` — FTS5-backed, up to 500. |
+| POST | `/api/graphs` | `{name}` | `{id, name, role}` — create a graph you own. |
+| PATCH | `/api/graphs/:id` | `{name}` | rename (owner only). |
+| DELETE | `/api/graphs/:id` | — | delete a graph + its data/shares (owner only; not your last one). |
+| GET | `/api/graphs/:id/members` | — | `{members:[{id,username,role}], isOwner}` |
+| POST | `/api/graphs/:id/members` | `{username}` | add an editor by username (owner only). |
+| DELETE | `/api/graphs/:id/members/:userId` | — | remove a member (owner removes anyone; a member can leave). |
+| GET | `/api/keys` | — | `{keys:[{id,name,graphId,graphName,scope,created,lastUsed}]}` |
+| POST | `/api/keys` | `{name, graphId, scope}` | `{id, key}` — **the plaintext `rzk_…` key is returned once**. `scope` = `read`\|`write`. |
+| DELETE | `/api/keys/:id` | — | revoke a key. |
+
+**API-key auth:** pass a key as `Authorization: Bearer rzk_…` or `?token=rzk_…`. It grants access
+to its bound graph only, at its scope (`read` → GET, `write` → all). Sessions take precedence.
+
+## Document — scoped per graph, at `/api/g/:graphId/…` (member or valid key required)
+
+| Method | Path | Body | Result |
+|---|---|---|---|
+| GET | `/api/g/:g/doc` | — | `{version, doc}` — the full document (`doc.nodes` map + `doc.root`). |
+| GET | `/api/g/:g/version` | — | `{version}` |
+| PUT/POST | `/api/g/:g/doc` | `{doc, baseVersion?, device?}` | `{version}`. 409 + `{version,doc}` if `baseVersion` is stale. |
+| POST | `/api/g/:g/ops` | `{ops:[…], device}` | `{version, applied}`. Delta sync — the preferred save path. Idempotent by `op.id`. |
+| GET | `/api/g/:g/events` | — | **SSE** stream. Message: `{version, ops?, origin}`; ignore your own `origin` echo, else replay `ops` or refetch. Heartbeat `:hb` every 25s. |
+| GET | `/api/g/:g/search?q=` | — | `{ids:[…]}` — FTS5-backed, up to 500. |
+| GET/POST/DELETE | `/api/g/:g/shares[/:token]` | `{nodeId, mode}` | share a subtree by secret link (see below). |
+| POST | `/api/g/:g/capture` | `{text}` or raw | `{ok, captured}` — capture into this graph. |
+
+Access is denied with **403** for a non-member (or a key bound to another graph), **401** when unauthenticated.
 
 **Data model:** one flat node map. `doc.nodes[id] = {id, text, note, done, collapsed, children:[ids], format?, mirror?, c, m, …}`; the tree is the `children` id-arrays; `doc.root` is the root id. Pages are children of root; the calendar subtree (`cal:'day'` nodes with `cd:'YYYY-MM-DD'`) holds daily notes.
 
@@ -47,8 +68,17 @@ Login is rate-limited per IP (8 failed attempts → 10 min lockout).
 |---|---|---|---|
 | POST | `/api/upload?name=<file>` | raw bytes | `{url:"/files/…", name, size}` (max 32 MB). |
 | GET | `/files/<name>` | — | the uploaded file (private unless inside a shared subtree). |
-| POST | `/api/capture?token=<CAPTURE_TOKEN>` | `{text}` or raw text | `{ok, captured}`. Auth via the capture token **or** a session. Lands under today's journal → `Inbox`. Indentation (tabs / 2 spaces) nests. |
+| POST | `/api/capture?token=<token>` | `{text}` or raw text | `{ok, captured}`. Auth via a session, the global capture token, or a **write API key** (`rzk_…`). Session → your first graph; API key → its graph; global token → the admin graph. Lands under today's journal → `Inbox`; indentation (tabs / 2 spaces) nests. |
 | POST | `/api/ai` | `{prompt, context?}` | `{text}` (only if `ANTHROPIC_API_KEY` is set). |
+
+## Admin (admin session required)
+
+| Method | Path | Body | Result |
+|---|---|---|---|
+| GET | `/api/admin/users` | — | `{users:[{id,username,isAdmin,lastLogin,created,graphs,notes,bytes}]}` |
+| DELETE | `/api/admin/users/:id` | — | delete a user + their owned graphs (not yourself / the last admin). |
+| GET | `/api/admin/invite` | — | `{code}` — the effective invite code. |
+| PUT | `/api/admin/invite` | `{code}` | set/rotate the invite code (empty → fall back to the env default). |
 
 Example capture (the `r` shell command):
 ```sh

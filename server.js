@@ -283,12 +283,6 @@ function commitOps(g, ops, origin) {
   return g.store.version;
 }
 
-// resolve which graph a request targets, checking membership. Returns the GraphContext or null.
-function graphForUser(user, graphId) {
-  if (!user || !graphId) return null;
-  if (!accounts.roleOf(user.id, graphId)) return null; // not a member → no access
-  return getGraph(graphId);
-}
 // the admin's first graph — target for the capture token and the /api/v1 agent API.
 // falls back to a fixed 'default' graph in open mode (no accounts configured).
 function defaultGraphId() {
@@ -594,12 +588,18 @@ function apiSearch(doc, q, limit) {
   return out.slice(0, limit || 50);
 }
 
+// the bearer/query/header token on a request (used for the agent token and user API keys)
+function reqToken(req, url) {
+  const bearer = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+  return bearer || new URL(url, 'http://x').searchParams.get('token') || req.headers['x-agent-token'] || req.headers['x-capture-token'] || '';
+}
+// resolve a request's token to a user API key context { id, userId, graphId, scope } or null
+function apiKeyFor(req, url) { return accounts.resolveApiKey(reqToken(req, url)); }
+
 function apiAuthed(req, url) {
   if (isAuthed(req)) return true;
   if (!AGENT_TOKEN) return false;
-  const bearer = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
-  const qtoken = new URL(url, 'http://x').searchParams.get('token') || req.headers['x-agent-token'] || '';
-  return timingSafeEq(bearer || qtoken, AGENT_TOKEN);
+  return timingSafeEq(reqToken(req, url), AGENT_TOKEN);
 }
 
 async function readJson(req) {
@@ -1114,6 +1114,27 @@ const server = http.createServer(async (req, res) => {
         accounts.removeMember(targetId, gid);
         return send(res, 200, { ok: true });
       }
+      // API keys: per-graph scoped tokens the user creates/deletes (plaintext shown once)
+      if (url === '/api/keys' && req.method === 'GET') {
+        const u = currentUser(req);
+        if (!u) return send(res, 401, { error: 'not signed in' });
+        return send(res, 200, { keys: accounts.listApiKeys(u.id) });
+      }
+      if (url === '/api/keys' && req.method === 'POST') {
+        const u = currentUser(req);
+        if (!u) return send(res, 401, { error: 'not signed in' });
+        const body = await readJson(req);
+        const gid = String(body.graphId || '');
+        if (!accounts.roleOf(u.id, gid)) return send(res, 403, { error: 'no access to that graph' });
+        return send(res, 200, accounts.createApiKey(u.id, gid, String(body.name || 'API key'), body.scope));
+      }
+      const keyDelM = url.match(/^\/api\/keys\/([A-Za-z0-9]+)$/);
+      if (keyDelM && req.method === 'DELETE') {
+        const u = currentUser(req);
+        if (!u) return send(res, 401, { error: 'not signed in' });
+        accounts.deleteApiKey(keyDelM[1], u.id);
+        return send(res, 200, { ok: true });
+      }
       // admin panel (Phase 5): user list with stats, delete users, manage the invite code
       if (url === '/api/admin/users' && req.method === 'GET') {
         if (!requireAdmin(req)) return send(res, 403, { error: 'admin only' });
@@ -1164,10 +1185,11 @@ const server = http.createServer(async (req, res) => {
         const token = new URL(url, 'http://x').searchParams.get('token')
           || req.headers['x-capture-token'] || '';
         const user = currentUser(req);
-        const allowed = (CAPTURE_TOKEN && timingSafeEq(token, CAPTURE_TOKEN)) || !!user || accounts.userCount() === 0;
+        const key = user ? null : apiKeyFor(req, url); // a write-scoped API key captures into its graph
+        const allowed = (CAPTURE_TOKEN && timingSafeEq(token, CAPTURE_TOKEN)) || !!user || (key && key.scope === 'write') || accounts.userCount() === 0;
         if (!allowed) return send(res, 401, { error: 'unauthorized' });
-        // a session captures into its own first graph; the capture token targets the admin's graph
-        const gid = user ? accounts.graphsForUser(user.id)[0]?.id : defaultGraphId();
+        // a session captures into its own first graph; an API key into its graph; the capture token → admin graph
+        const gid = user ? accounts.graphsForUser(user.id)[0]?.id : (key ? key.graphId : defaultGraphId());
         const g = gid && getGraph(gid);
         if (!g) return send(res, 400, { error: 'no graph to capture into' });
         const raw = (await readBody(req, 1024 * 1024)).toString('utf8');
@@ -1180,12 +1202,17 @@ const server = http.createServer(async (req, res) => {
       /* ---- graph-scoped endpoints: /api/g/:graphId/… (membership required) ---- */
       const gm = url.match(/^\/api\/g\/([A-Za-z0-9]+)\/([a-z]+)(\/[a-f0-9]+)?(?:\?.*)?$/);
       if (gm) {
-        const user = currentUser(req);
+        const gid = gm[1], seg = gm[2], method = req.method;
         const open = accounts.userCount() === 0;
-        if (!open && !user) return send(res, 401, { error: 'unauthorized' });
-        const g = open ? getGraph(gm[1]) : graphForUser(user, gm[1]);
+        const user = currentUser(req);
+        const key = user ? null : apiKeyFor(req, url); // a session takes precedence over a key
+        if (!open && !user && !key) return send(res, 401, { error: 'unauthorized' });
+        let g = null, readonly = false;
+        if (open) g = getGraph(gid);
+        else if (user) { if (accounts.roleOf(user.id, gid)) g = getGraph(gid); }
+        else if (key && key.graphId === gid) { g = getGraph(gid); readonly = key.scope !== 'write'; }
         if (!g) return send(res, 403, { error: 'no access to this graph' });
-        const seg = gm[2], method = req.method;
+        if (readonly && method !== 'GET') return send(res, 403, { error: 'this API key is read-only' });
         if (seg === 'doc' && method === 'GET') return send(res, 200, g.store);
         if (seg === 'version' && method === 'GET') return send(res, 200, { version: g.store.version });
         if (seg === 'search' && method === 'GET') {

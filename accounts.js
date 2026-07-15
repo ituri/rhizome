@@ -47,6 +47,17 @@ CREATE TABLE IF NOT EXISTS sessions (
   seen    INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS settings (k TEXT PRIMARY KEY, v TEXT);
+CREATE TABLE IF NOT EXISTS api_keys (
+  id        TEXT PRIMARY KEY,
+  user_id   TEXT NOT NULL REFERENCES users(id),
+  graph_id  TEXT NOT NULL REFERENCES graphs(id),
+  name      TEXT NOT NULL,
+  hash      TEXT NOT NULL,
+  scope     TEXT NOT NULL DEFAULT 'read',
+  created   INTEGER NOT NULL,
+  last_used INTEGER
+);
+CREATE INDEX IF NOT EXISTS api_keys_hash ON api_keys(hash);
 `;
 
 const now = () => Date.now();
@@ -92,6 +103,7 @@ class Accounts {
   setLastLogin(userId) { this.db.prepare('UPDATE users SET last_login = ? WHERE id = ?').run(now(), userId); }
   setAdmin(userId, on) { this.db.prepare('UPDATE users SET is_admin = ? WHERE id = ?').run(on ? 1 : 0, userId); }
   deleteUser(userId) {
+    this.db.prepare('DELETE FROM api_keys WHERE user_id = ?').run(userId);
     this.db.prepare('DELETE FROM sessions WHERE user_id = ?').run(userId);
     this.db.prepare('DELETE FROM memberships WHERE user_id = ?').run(userId);
     this.db.prepare('DELETE FROM users WHERE id = ?').run(userId);
@@ -108,6 +120,33 @@ class Accounts {
   setSetting(k, v) {
     if (v == null) this.db.prepare('DELETE FROM settings WHERE k = ?').run(k);
     else this.db.prepare('INSERT INTO settings(k,v) VALUES(?,?) ON CONFLICT(k) DO UPDATE SET v = excluded.v').run(k, String(v));
+  }
+
+  /* ---------------- API keys (per-graph, scoped) ---------------- */
+
+  // returns { id, key } — the plaintext key is shown once; only its sha256 is stored
+  createApiKey(userId, graphId, name, scope) {
+    const plaintext = 'rzk_' + crypto.randomBytes(24).toString('hex');
+    const hash = crypto.createHash('sha256').update(plaintext).digest('hex');
+    const id = uid();
+    this.db.prepare('INSERT INTO api_keys(id,user_id,graph_id,name,hash,scope,created) VALUES(?,?,?,?,?,?,?)')
+      .run(id, userId, graphId, String(name).slice(0, 60), hash, scope === 'write' ? 'write' : 'read', now());
+    return { id, key: plaintext };
+  }
+  listApiKeys(userId) {
+    return this.db.prepare(
+      `SELECT k.id, k.name, k.graph_id AS graphId, g.name AS graphName, k.scope, k.created, k.last_used AS lastUsed
+         FROM api_keys k JOIN graphs g ON g.id = k.graph_id WHERE k.user_id = ? ORDER BY k.created`).all(userId);
+  }
+  deleteApiKey(id, userId) { this.db.prepare('DELETE FROM api_keys WHERE id = ? AND user_id = ?').run(id, userId); }
+  // resolve a plaintext key → { id, userId, graphId, scope } (and stamp last_used), or null
+  resolveApiKey(plaintext) {
+    if (!plaintext || !plaintext.startsWith('rzk_')) return null;
+    const hash = crypto.createHash('sha256').update(plaintext).digest('hex');
+    const r = this.db.prepare('SELECT id, user_id AS userId, graph_id AS graphId, scope FROM api_keys WHERE hash = ?').get(hash);
+    if (!r) return null;
+    this.db.prepare('UPDATE api_keys SET last_used = ? WHERE id = ?').run(now(), r.id);
+    return r;
   }
 
   // returns the user row on success, null on wrong username/password (constant-time compare)
@@ -157,6 +196,7 @@ class Accounts {
   graphById(id) { return this.db.prepare('SELECT * FROM graphs WHERE id = ?').get(id); }
   renameGraph(id, name) { this.db.prepare('UPDATE graphs SET name = ? WHERE id = ?').run(String(name), id); }
   deleteGraph(id) {
+    this.db.prepare('DELETE FROM api_keys WHERE graph_id = ?').run(id);
     this.db.prepare('DELETE FROM memberships WHERE graph_id = ?').run(id);
     this.db.prepare('DELETE FROM graphs WHERE id = ?').run(id);
   }

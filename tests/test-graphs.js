@@ -72,6 +72,31 @@ const register = async name => {
   r = await J(`/api/g/${alice.gid}/doc`, { headers: { Cookie: bob.cookie } });
   assert(r.status === 403, 'bob loses access after being removed (403)');
 
-  console.log(failures ? `\n${failures} FAILURE(S)` : '\nGRAPH ISOLATION + SHARING TESTS PASSED');
+  /* ---- API keys (scoped, per-graph) ---- */
+  let kr = await post('/api/keys', { name: 'writer', graphId: alice.gid, scope: 'write' }, alice.cookie);
+  assert(kr.status === 200 && (kr.body.key || '').startsWith('rzk_'), 'alice creates a write API key');
+  const wkey = kr.body.key;
+  const bearer = k => ({ Authorization: 'Bearer ' + k });
+  r = await J(`/api/g/${alice.gid}/doc`, { headers: bearer(wkey) });
+  assert(r.status === 200 && JSON.stringify(r.body).includes('alice secret'), 'a write key reads its graph');
+  r = await J(`/api/g/${alice.gid}/ops`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...bearer(wkey) }, body: JSON.stringify({ ops: [] }) });
+  assert(r.status === 200, 'a write key can post ops');
+  r = await J('/api/capture?token=' + wkey, { method: 'POST', body: 'via key' });
+  assert(r.status === 200 && r.body.captured === 1, 'a write key captures into its graph');
+  kr = await post('/api/keys', { name: 'reader', graphId: alice.gid, scope: 'read' }, alice.cookie);
+  const rkey = kr.body.key;
+  r = await J(`/api/g/${alice.gid}/doc`, { headers: bearer(rkey) });
+  assert(r.status === 200, 'a read key can GET');
+  r = await J(`/api/g/${alice.gid}/ops`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...bearer(rkey) }, body: JSON.stringify({ ops: [] }) });
+  assert(r.status === 403, 'a read key is denied writes (403)');
+  r = await J(`/api/g/${bob.gid}/doc`, { headers: bearer(wkey) });
+  assert(r.status === 403, "a key bound to alice's graph cannot reach bob's (403)");
+  const keys = (await J('/api/keys', { headers: { Cookie: alice.cookie } })).body.keys;
+  assert(keys.length === 2, 'alice lists her two keys');
+  await J('/api/keys/' + keys[0].id, { method: 'DELETE', headers: { Cookie: alice.cookie } });
+  r = await J(`/api/g/${alice.gid}/doc`, { headers: bearer(wkey) });
+  assert(r.status === 401 || r.status === 403, 'a revoked key no longer works');
+
+  console.log(failures ? `\n${failures} FAILURE(S)` : '\nGRAPH ISOLATION + SHARING + KEYS TESTS PASSED');
   process.exit(failures ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(1); });
