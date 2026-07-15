@@ -55,7 +55,7 @@ docker compose up -d
 | 🤝 **Sharing & sync** | Live cross-device sync (SSE) and instant cross-tab sync; share any subtree by secret link — view-only or editable, revocable |
 | 📲 **Installable & offline** | Installs as a PWA (home-screen icon, standalone window); cold-boots offline from a local IndexedDB cache and keeps editing — changes sync automatically the moment you reconnect |
 | 📤 **Your data is portable** | Import and export Markdown, OPML, plain text and JSON; print any page; hourly rotating backups (last 40) |
-| 🔐 **Accounts & privacy** | Self-hosted, no tracking. Optional **accounts** (username + password, invite-gated self-registration, sessions); an admin account is bootstrapped from an env password. With no accounts configured it runs fully open, single-user. Optional TOTP on login. Everything lives in one folder you can copy |
+| 🔐 **Accounts & privacy** | Self-hosted, no tracking. Optional **accounts** (username + password, invite-gated self-registration, sessions); an admin account is bootstrapped from an env password. With no accounts configured it runs fully open, single-user. Optional TOTP on login; optional per-account lockout after repeated failed logins. Optional **encryption at rest** (`RHIZOME_ENCRYPTION_KEY`) for backups and uploaded files. Everything lives in one folder you can copy |
 | 🤖 **Friendly to scripts & AI** | A per-node REST API built for agents, and an optional in-app ✨ Ask AI assistant (bring your own Anthropic key) |
 
 Press `Ctrl+/` in the app for the full keyboard reference. For the complete

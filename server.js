@@ -17,6 +17,9 @@
  *   RHIZOME_AGENT_TOKEN   if set, unlocks the per-node REST API at /api/v1 (Bearer or ?token=)
  *   ANTHROPIC_API_KEY     if set, enables the in-app "Ask AI" assistant
  *   RHIZOME_AI_MODEL      Claude model for Ask AI      (default claude-opus-4-8)
+ *   RHIZOME_ENCRYPTION_KEY if set, encrypts backups + uploaded files at rest (AES-256-GCM).
+ *                         Keep it OUT of DATA_DIR so backups don't ship the key. Restore a
+ *                         backup with: RHIZOME_ENCRYPTION_KEY=… node cryptobox.js <in> <out>
  */
 'use strict';
 
@@ -29,6 +32,7 @@ const crypto = require('crypto');
 const { Store } = require('./db');
 const { Accounts } = require('./accounts');
 const { applyOpsToDoc } = require('./opsdoc');
+const cryptobox = require('./cryptobox');
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -53,7 +57,7 @@ const ADMIN_PASSWORD = process.env.RHIZOME_ADMIN_PASSWORD || PASSWORD || '';
 const SESSION_MAX_AGE = 90 * 24 * 60 * 60 * 1000;
 const MAX_BODY = 64 * 1024 * 1024;
 const MAX_UPLOAD = 32 * 1024 * 1024;
-const BACKUP_EVERY_MS = 60 * 60 * 1000;
+const BACKUP_EVERY_MS = +(process.env.RHIZOME_BACKUP_EVERY_MS || 60 * 60 * 1000); // lowered in tests
 const BACKUP_KEEP = 40;
 
 const MIME = {
@@ -221,7 +225,16 @@ function maybeBackup(g) {
   try { g.db.sync(g.store.doc, g.store.version); } catch (e) { console.error('pre-backup resync failed:', e); }
   try {
     const stamp = new Date(now).toISOString().replace(/[:.]/g, '-');
-    g.db.backup(path.join(g.backupDir, `outline-${stamp}.db`));
+    const dest = path.join(g.backupDir, `outline-${stamp}.db`);
+    if (cryptobox.enabled()) {
+      // SQLite must VACUUM to a real file; encrypt that copy at rest, then drop the plaintext temp
+      const tmp = dest + '.plain';
+      g.db.backup(tmp);
+      fs.writeFileSync(dest, cryptobox.encrypt(fs.readFileSync(tmp)));
+      fs.unlinkSync(tmp);
+    } else {
+      g.db.backup(dest);
+    }
     const all = fs.readdirSync(g.backupDir).filter(f => f.endsWith('.db')).sort();
     for (const stale of all.slice(0, Math.max(0, all.length - BACKUP_KEEP))) {
       try { fs.unlinkSync(path.join(g.backupDir, stale)); } catch { /* ignore */ }
@@ -940,7 +953,7 @@ async function serveUserFile(req, res, urlPath) {
   const file = path.normalize(path.join(FILES_DIR, name));
   if (!file.startsWith(FILES_DIR)) return send(res, 403, { error: 'forbidden' });
   try {
-    const data = await fsp.readFile(file);
+    const data = cryptobox.decrypt(await fsp.readFile(file)); // transparent for plaintext (pre-encryption) files
     const type = MIME[path.extname(file).toLowerCase()] || 'application/octet-stream';
     send(res, 200, data, { 'Content-Type': type, 'Cache-Control': 'private, max-age=31536000' });
   } catch {
@@ -1331,7 +1344,7 @@ const server = http.createServer(async (req, res) => {
         const data = await readBody(req, MAX_UPLOAD);
         if (!data.length) return send(res, 400, { error: 'empty upload' });
         const stored = `${uid()}-${safe}`;
-        await fsp.writeFile(path.join(FILES_DIR, stored), data);
+        await fsp.writeFile(path.join(FILES_DIR, stored), cryptobox.encrypt(data));
         return send(res, 200, { url: `/files/${encodeURIComponent(stored)}`, name: safe, size: data.length });
       }
 

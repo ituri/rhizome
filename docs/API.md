@@ -117,3 +117,10 @@ Enabled when `RHIZOME_AGENT_TOKEN` is set. Auth: `Authorization: Bearer <token>`
 (bootstraps the admin on first run), `RHIZOME_INVITE_CODE` (registration gate),
 `RHIZOME_CAPTURE_TOKEN`, `RHIZOME_AGENT_TOKEN`, `RHIZOME_TOTP_SECRET`, `ANTHROPIC_API_KEY`,
 `RHIZOME_AI_MODEL`.
+
+**Encryption at rest** — set `RHIZOME_ENCRYPTION_KEY` to a passphrase to AES-256-GCM-encrypt
+the artifacts that leave the machine: **backups** and **uploaded files**. The live SQLite DB
+stays plaintext (FTS5 needs a plaintext index; `node:sqlite` can't open an encrypted file), so
+search/capture/sharing/AI keep working. Keep the key **out of `DATA_DIR`** so backups don't ship
+it. Turning it on is backward-compatible — existing plaintext backups/files stay readable, new
+writes are encrypted. Restore a backup with `RHIZOME_ENCRYPTION_KEY=… node cryptobox.js <in> <out>`.
