@@ -75,21 +75,21 @@ Rhizome runs with zero configuration. When you want more, everything is an envir
 | `RHIZOME_ADMIN_PASSWORD` | *(unset)* | If set, creates the admin account on first run and requires login |
 | `RHIZOME_INVITE_CODE` | *(unset)* | If set, self-registration requires this invite code |
 | `RHIZOME_TOTP_SECRET` | *(unset)* | If set (base32), login also requires a 6-digit TOTP code. Generate with `node server.js --gen-totp` |
-| `RHIZOME_CAPTURE_TOKEN` | *(unset)* | Enables `POST /api/capture?token=…` for sending items to your Inbox from anywhere (email automations, iOS Shortcuts, curl) |
 | `RHIZOME_AGENT_TOKEN` | *(unset)* | Enables the per-node REST API at `/api/v1` for scripts and AI agents (`Authorization: Bearer …` or `?token=…`) |
 | `ANTHROPIC_API_KEY` | *(unset)* | Enables the in-app ✨ Ask AI assistant |
 | `RHIZOME_AI_MODEL` | `claude-opus-4-8` | Claude model used by Ask AI |
 
-> The legacy `TENDRIL_*` names (`TENDRIL_PASSWORD`, `TENDRIL_CAPTURE_TOKEN`, `TENDRIL_AGENT_TOKEN`, `TENDRIL_TOTP_SECRET`, `TENDRIL_AI_MODEL`) are still honored as fallbacks.
+> The legacy `TENDRIL_*` names (`TENDRIL_PASSWORD`, `TENDRIL_AGENT_TOKEN`, `TENDRIL_TOTP_SECRET`, `TENDRIL_AI_MODEL`) are still honored as fallbacks.
 
 If you expose Rhizome to the internet, set `RHIZOME_ADMIN_PASSWORD` (and, for open sign-ups,
 `RHIZOME_INVITE_CODE`) and put it behind HTTPS — any reverse proxy (Caddy, nginx, Traefik)
 works; it's plain HTTP on one port. The full HTTP API is documented in [docs/API.md](docs/API.md).
 
-With `RHIZOME_CAPTURE_TOKEN` set, anything can drop a thought into your Inbox:
+Create a **write-scoped API key** in the app (Account → API keys) and anything can
+drop a thought into your Inbox:
 
 ```sh
-curl -X POST "https://your-host/api/capture?token=…" -d "call mom tomorrow"
+curl -X POST "https://your-host/api/capture?token=rzk_…" -d "call mom tomorrow"
 ```
 
 ## 🤖 Node API (for scripts & AI agents)

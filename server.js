@@ -13,7 +13,6 @@
  *   RHIZOME_ADMIN_PASSWORD if set, creates the admin on first run and requires login
  *   RHIZOME_INVITE_CODE   if set, self-registration requires this invite code
  *   RHIZOME_TOTP_SECRET   if set (base32), login additionally requires a TOTP code
- *   RHIZOME_CAPTURE_TOKEN if set, POST /api/capture with this token appends to today's Inbox
  *   RHIZOME_AGENT_TOKEN   if set, unlocks the per-node REST API at /api/v1 (Bearer or ?token=)
  *   ANTHROPIC_API_KEY     if set, enables the in-app "Ask AI" assistant
  *   RHIZOME_AI_MODEL      Claude model for Ask AI      (default claude-opus-4-8)
@@ -46,7 +45,6 @@ const FILES_DIR = path.join(DATA_DIR, 'files');
 // RHIZOME_* preferred; legacy TENDRIL_* names still honored as fallbacks
 const PASSWORD = process.env.RHIZOME_PASSWORD || process.env.TENDRIL_PASSWORD || '';
 const TOTP_SECRET = process.env.RHIZOME_TOTP_SECRET || process.env.TENDRIL_TOTP_SECRET || '';
-const CAPTURE_TOKEN = process.env.RHIZOME_CAPTURE_TOKEN || process.env.TENDRIL_CAPTURE_TOKEN || '';
 const AGENT_TOKEN = process.env.RHIZOME_AGENT_TOKEN || process.env.TENDRIL_AGENT_TOKEN || '';
 const AI_KEY = process.env.ANTHROPIC_API_KEY || '';
 const AI_MODEL = process.env.RHIZOME_AI_MODEL || process.env.TENDRIL_AI_MODEL || 'claude-opus-4-8';
@@ -1242,13 +1240,11 @@ const server = http.createServer(async (req, res) => {
         return send(res, 200, { ok: true });
       }
       if (url.startsWith('/api/capture') && req.method === 'POST') {
-        const token = new URL(url, 'http://x').searchParams.get('token')
-          || req.headers['x-capture-token'] || '';
         const user = currentUser(req);
         const key = user ? null : apiKeyFor(req, url); // a write-scoped API key captures into its graph
-        const allowed = (CAPTURE_TOKEN && timingSafeEq(token, CAPTURE_TOKEN)) || !!user || (key && key.scope === 'write') || accounts.userCount() === 0;
+        const allowed = !!user || (key && key.scope === 'write') || accounts.userCount() === 0;
         if (!allowed) return send(res, 401, { error: 'unauthorized' });
-        // a session captures into its own first graph; an API key into its graph; the capture token → admin graph
+        // a session captures into its own first graph; an API key into its graph; open mode → default graph
         const gid = user ? accounts.graphsForUser(user.id)[0]?.id : (key ? key.graphId : defaultGraphId());
         const g = gid && getGraph(gid);
         if (!g) return send(res, 400, { error: 'no graph to capture into' });
@@ -1384,7 +1380,6 @@ server.listen(PORT, HOST, () => {
   console.log(`Data directory: ${DATA_DIR}`);
   const users = accounts.userCount();
   console.log(users ? `Accounts: ${users} user(s), login required${TOTP_SECRET ? ' + TOTP MFA' : ''}${INVITE_CODE ? ', registration by invite code' : ''}` : 'Accounts: none yet — open access (set RHIZOME_ADMIN_PASSWORD to lock down)');
-  if (CAPTURE_TOKEN) console.log('Capture API: POST /api/capture?token=…');
   if (AGENT_TOKEN) console.log('Node API: /api/v1 (agent token enabled)');
   if (AI_KEY) console.log(`Ask AI: enabled (${AI_MODEL})`);
 });

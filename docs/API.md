@@ -72,7 +72,7 @@ Access is denied with **403** for a non-member (or a key bound to another graph)
 |---|---|---|---|
 | POST | `/api/upload?name=<file>` | raw bytes | `{url:"/files/…", name, size}` (max 32 MB). |
 | GET | `/files/<name>` | — | the uploaded file (private unless inside a shared subtree). |
-| POST | `/api/capture?token=<token>` | `{text}` or raw text | `{ok, captured}`. Auth via a session, the global capture token, or a **write API key** (`rzk_…`). Session → your first graph; API key → its graph; global token → the admin graph. Lands under today's journal → `Inbox`; indentation (tabs / 2 spaces) nests. |
+| POST | `/api/capture?token=<rzk_…>` | `{text}` or raw text | `{ok, captured}`. Auth via a session or a **write-scoped API key** (`rzk_…`). Session → your first graph; API key → its graph. Lands under today's journal → `Inbox`; indentation (tabs / 2 spaces) nests. |
 | POST | `/api/ai` | `{prompt, context?}` | `{text}` (only if `ANTHROPIC_API_KEY` is set). |
 
 ## Admin (admin session required)
@@ -87,9 +87,10 @@ Access is denied with **403** for a non-member (or a key bound to another graph)
 | PUT | `/api/admin/security` | `{threshold, mode, minutes}` | set the lockout policy. `mode` = `auto` (unlock after `minutes`) \| `manual` (admin only). |
 | POST | `/api/admin/users/:id/unlock` | — | clear a locked account's failure count + lock. |
 
-Example capture (the `r` shell command):
+Example capture (the `r` shell command) — authenticate with a **write-scoped API
+key** (`rzk_…`, created under Account → API keys) or a logged-in session:
 ```sh
-curl -sS -X POST 'https://rhizome.syslinx.org/api/capture?token=<CAPTURE_TOKEN>' --data-raw '15:10 buy milk'
+curl -sS -X POST 'https://rhizome.syslinx.org/api/capture?token=rzk_…' --data-raw '15:10 buy milk'
 ```
 
 ## Sharing (public read of a shared subtree)
@@ -115,7 +116,7 @@ Enabled when `RHIZOME_AGENT_TOKEN` is set. Auth: `Authorization: Bearer <token>`
 
 `PORT`, `HOST`, `DATA_DIR`, `RHIZOME_ADMIN_USER` (default `phil`), `RHIZOME_ADMIN_PASSWORD`
 (bootstraps the admin on first run), `RHIZOME_INVITE_CODE` (registration gate),
-`RHIZOME_CAPTURE_TOKEN`, `RHIZOME_AGENT_TOKEN`, `RHIZOME_TOTP_SECRET`, `ANTHROPIC_API_KEY`,
+`RHIZOME_AGENT_TOKEN`, `RHIZOME_TOTP_SECRET`, `ANTHROPIC_API_KEY`,
 `RHIZOME_AI_MODEL`.
 
 **Encryption at rest** — set `RHIZOME_ENCRYPTION_KEY` to a passphrase to AES-256-GCM-encrypt
