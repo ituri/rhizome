@@ -767,6 +767,10 @@ function isAuthed(req) {
   return !!currentUser(req);
 }
 const sessionCookie = token => `rz_session=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${Math.floor(SESSION_MAX_AGE / 1000)}`;
+// the signed-in user if they are an admin, else null
+function requireAdmin(req) { const u = currentUser(req); return u && u.is_admin ? u : null; }
+// the effective registration invite code: an admin-rotated DB value overrides the env default
+const currentInviteCode = () => accounts.getSetting('invite_code') ?? INVITE_CODE;
 
 const attempts = new Map();
 function throttled(ip) {
@@ -994,7 +998,7 @@ const server = http.createServer(async (req, res) => {
           user: u ? { id: u.id, username: u.username, isAdmin: !!u.is_admin } : null,
           graphs: u ? accounts.graphsForUser(u.id) : [],
           authRequired: accounts.userCount() > 0,
-          inviteRequired: !!INVITE_CODE,
+          inviteRequired: !!currentInviteCode(),
           ai: !!AI_KEY,
         });
       }
@@ -1003,7 +1007,8 @@ const server = http.createServer(async (req, res) => {
         const body = await readJson(req);
         const username = String(body.username || '').trim();
         const password = String(body.password || '');
-        if (INVITE_CODE && !timingSafeEq(String(body.invite || ''), INVITE_CODE)) {
+        const invite = currentInviteCode();
+        if (invite && !timingSafeEq(String(body.invite || ''), invite)) {
           recordAttempt(ip, false);
           return send(res, 403, { error: 'invalid invite code' });
         }
@@ -1108,6 +1113,52 @@ const server = http.createServer(async (req, res) => {
         if (targetId === graph.owner_id) return send(res, 400, { error: 'the owner cannot be removed' });
         accounts.removeMember(targetId, gid);
         return send(res, 200, { ok: true });
+      }
+      // admin panel (Phase 5): user list with stats, delete users, manage the invite code
+      if (url === '/api/admin/users' && req.method === 'GET') {
+        if (!requireAdmin(req)) return send(res, 403, { error: 'admin only' });
+        const users = accounts.listUsers().map(u => {
+          const owned = accounts.graphsForUser(u.id).filter(g => g.ownerId === u.id);
+          let notes = 0, bytes = 0;
+          for (const g of owned) {
+            const doc = getGraph(g.id).store.doc;
+            if (doc && doc.nodes) notes += Object.keys(doc.nodes).length;
+            const dir = path.join(GRAPHS_DIR, g.id);
+            for (const f of ['outline.db', 'outline.db-wal']) { try { bytes += fs.statSync(path.join(dir, f)).size; } catch { /* none */ } }
+            try { for (const bk of fs.readdirSync(path.join(dir, 'backups'))) bytes += fs.statSync(path.join(dir, 'backups', bk)).size; } catch { /* none */ }
+          }
+          return { id: u.id, username: u.username, isAdmin: !!u.is_admin, lastLogin: u.last_login, created: u.created, graphs: owned.length, notes, bytes };
+        });
+        return send(res, 200, { users });
+      }
+      const adminDelM = url.match(/^\/api\/admin\/users\/([A-Za-z0-9]+)$/);
+      if (adminDelM && req.method === 'DELETE') {
+        const admin = requireAdmin(req);
+        if (!admin) return send(res, 403, { error: 'admin only' });
+        const targetId = adminDelM[1];
+        const target = accounts.userById(targetId);
+        if (!target) return send(res, 404, { error: 'user not found' });
+        if (targetId === admin.id) return send(res, 400, { error: 'you cannot delete yourself' });
+        if (target.is_admin && accounts.adminCount() <= 1) return send(res, 400, { error: 'cannot delete the last admin' });
+        for (const g of accounts.graphsForUser(targetId).filter(x => x.ownerId === targetId)) {
+          accounts.deleteGraph(g.id);
+          graphCache.delete(g.id);
+          try { fs.rmSync(path.join(GRAPHS_DIR, g.id), { recursive: true, force: true }); } catch { /* already gone */ }
+          for (const t of Object.keys(shares)) if (shares[t].graph === g.id) delete shares[t];
+        }
+        persistShares();
+        accounts.deleteUser(targetId);
+        return send(res, 200, { ok: true });
+      }
+      if (url === '/api/admin/invite') {
+        const admin = requireAdmin(req);
+        if (!admin) return send(res, 403, { error: 'admin only' });
+        if (req.method === 'GET') return send(res, 200, { code: currentInviteCode() });
+        if (req.method === 'PUT') {
+          const code = String((await readJson(req)).code || '');
+          accounts.setSetting('invite_code', code || null); // empty → clear (falls back to the env default)
+          return send(res, 200, { code: currentInviteCode() });
+        }
       }
       if (url.startsWith('/api/capture') && req.method === 'POST') {
         const token = new URL(url, 'http://x').searchParams.get('token')

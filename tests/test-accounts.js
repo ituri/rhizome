@@ -64,6 +64,26 @@ const cookieFrom = sc => { const m = (sc || '').match(/rz_session=([^;]+)/); ret
   assert(!r.body.user.isAdmin, 'a self-registered user is not an admin');
   assert(r.body.graphs.length === 1 && r.body.graphs[0].name === 'Home', 'registration creates the user their own graph');
 
+  // admin panel (Phase 5)
+  r = await J('/api/admin/users', { headers: { Cookie: cookie } });
+  assert(r.status === 200 && r.body.users.some(u => u.username === 'phil' && u.isAdmin) && r.body.users.some(u => u.username === 'bob'),
+    'admin lists all users with stats');
+  assert(r.body.users.every(u => typeof u.notes === 'number' && typeof u.bytes === 'number' && 'lastLogin' in u),
+    'each user row carries note/storage/last-login stats');
+  r = await J('/api/admin/users', { headers: { Cookie: bobCookie } });
+  assert(r.status === 403, 'a non-admin cannot open the admin user list');
+  r = await J('/api/admin/invite', { method: 'PUT', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ code: 'rotated99' }) });
+  assert(r.status === 200 && r.body.code === 'rotated99', 'admin rotates the invite code');
+  r = await post('/api/register', { username: 'carol', password: 'sekret', invite: 'letmein' });
+  assert(r.status === 403, 'the old invite code no longer works after rotation');
+  r = await post('/api/register', { username: 'carol', password: 'sekret', invite: 'rotated99' });
+  assert(r.status === 200, 'the new invite code works');
+  const carolId = r.body.user.id;
+  r = await J('/api/admin/users/' + carolId, { method: 'DELETE', headers: { Cookie: bobCookie } });
+  assert(r.status === 403, 'a non-admin cannot delete a user');
+  r = await J('/api/admin/users/' + carolId, { method: 'DELETE', headers: { Cookie: cookie } });
+  assert(r.status === 200, 'admin deletes a user');
+
   r = await post('/api/logout', {}, cookie);
   assert(r.status === 200, 'logout ok');
   r = await J(`/api/g/${gid}/doc`, { headers: { Cookie: cookie } });

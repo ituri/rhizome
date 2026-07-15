@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   created INTEGER NOT NULL,
   seen    INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS settings (k TEXT PRIMARY KEY, v TEXT);
 `;
 
 const now = () => Date.now();
@@ -98,6 +99,15 @@ class Accounts {
   // for the admin panel — note/storage stats are added by the server (per-graph)
   listUsers() {
     return this.db.prepare('SELECT id, username, is_admin, last_login, created FROM users ORDER BY created').all();
+  }
+  adminCount() { return this.db.prepare('SELECT COUNT(*) AS c FROM users WHERE is_admin = 1').get().c; }
+
+  /* ---------------- settings (runtime-editable, e.g. the invite code) ---------------- */
+
+  getSetting(k) { const r = this.db.prepare('SELECT v FROM settings WHERE k = ?').get(k); return r ? r.v : null; }
+  setSetting(k, v) {
+    if (v == null) this.db.prepare('DELETE FROM settings WHERE k = ?').run(k);
+    else this.db.prepare('INSERT INTO settings(k,v) VALUES(?,?) ON CONFLICT(k) DO UPDATE SET v = excluded.v').run(k, String(v));
   }
 
   // returns the user row on success, null on wrong username/password (constant-time compare)

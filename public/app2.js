@@ -1537,6 +1537,67 @@ async function deleteGraph(g) {
   else showToast((await res.json()).error || 'Could not delete the graph');
 }
 
+// admin-only: list users with stats, delete users, view/rotate the invite code
+async function showAdminPanel() {
+  const ov = document.createElement('div');
+  ov.className = 'overlay';
+  ov.innerHTML = `<div class="acct-dialog admin-panel" role="dialog" aria-label="Admin panel">
+    <h3>Admin panel</h3>
+    <div class="admin-invite"></div>
+    <div class="admin-users">Loading…</div>
+    <div class="acct-actions"><button class="acct-cancel">Close</button></div>
+  </div>`;
+  document.body.append(ov);
+  const close = () => ov.remove();
+  ov.addEventListener('mousedown', e => { if (e.target === ov) close(); });
+  ov.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
+  ov.querySelector('.acct-cancel').addEventListener('click', close);
+  const fmtBytes = b => b >= 1e6 ? (b / 1e6).toFixed(1) + ' MB' : b >= 1e3 ? Math.round(b / 1e3) + ' KB' : b + ' B';
+  const fmtDate = t => t ? new Date(t).toLocaleString() : '—';
+  const loadInvite = async () => {
+    const { code } = await (await fetch('/api/admin/invite')).json();
+    const box = ov.querySelector('.admin-invite');
+    box.innerHTML = `<span>Invite code:</span> <code class="admin-code">${escHtml(code || '(none)')}</code> <button class="admin-rotate">Change…</button>`;
+    box.querySelector('.admin-rotate').addEventListener('click', async () => {
+      const nc = prompt('New invite code (leave empty to fall back to the server default):', code || '');
+      if (nc === null) return;
+      await fetch('/api/admin/invite', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: nc.trim() }) });
+      loadInvite();
+    });
+  };
+  const loadUsers = async () => {
+    const { users } = await (await fetch('/api/admin/users')).json();
+    const box = ov.querySelector('.admin-users');
+    box.innerHTML = '';
+    const table = document.createElement('table');
+    table.className = 'admin-table';
+    table.innerHTML = '<thead><tr><th>User</th><th>Last login</th><th>Notes</th><th>Storage</th><th></th></tr></thead>';
+    const tb = document.createElement('tbody');
+    for (const u of users) {
+      const tr = document.createElement('tr');
+      const badge = u.isAdmin ? ' <span class="admin-badge">admin</span>' : '';
+      tr.innerHTML = `<td>${escHtml(u.username)}${badge}</td><td>${escHtml(fmtDate(u.lastLogin))}</td><td>${u.notes}</td><td>${fmtBytes(u.bytes)}</td>`;
+      const td = document.createElement('td');
+      if (u.id !== state.user.id) {
+        const x = document.createElement('button');
+        x.className = 'side-remove side-del'; x.textContent = '×'; x.title = 'Delete user';
+        x.addEventListener('click', async () => {
+          if (!confirm(`Delete user “${u.username}” and all their graphs? This cannot be undone.`)) return;
+          const r = await fetch('/api/admin/users/' + u.id, { method: 'DELETE' });
+          if (r.ok) loadUsers(); else showToast((await r.json()).error || 'Could not delete');
+        });
+        td.append(x);
+      }
+      tr.append(td);
+      tb.append(tr);
+    }
+    table.append(tb);
+    box.append(table);
+  };
+  loadInvite();
+  loadUsers();
+}
+
 function showChangePassword() {
   const ov = document.createElement('div');
   ov.className = 'overlay';
@@ -2141,10 +2202,9 @@ $('#btn-menu').addEventListener('click', e => {
     if (state.user && !SHARE_TOKEN) {
       pop.append(document.createElement('hr'));
       addTitle('Signed in as ' + state.user.username);
-      pop.append(
-        menuItem('Change password…', '🔑', () => showChangePassword()),
-        menuItem('Log out', '🔒', async () => { await fetch('/api/logout', { method: 'POST' }); location.reload(); }),
-      );
+      pop.append(menuItem('Change password…', '🔑', () => showChangePassword()));
+      if (state.user.isAdmin) pop.append(menuItem('Admin panel…', '🛠', () => showAdminPanel()));
+      pop.append(menuItem('Log out', '🔒', async () => { await fetch('/api/logout', { method: 'POST' }); location.reload(); }));
     } else if (state.authRequired && !SHARE_TOKEN) {
       pop.append(menuItem('Lock (log out)', '🔒', async () => {
         await fetch('/api/logout', { method: 'POST' });
