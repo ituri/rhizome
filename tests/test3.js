@@ -264,7 +264,7 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   await sleep(800); // flush pending save so the server knows the node
   const sh = await page.evaluate(async () => {
     const it = document.querySelector('.tree .item');
-    const res = await fetch('/api/shares', {
+    const res = await fetch(apiBase + '/shares', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ nodeId: it.dataset.id, mode: 'view' }),
     });
@@ -272,7 +272,7 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   });
   let shareStatus = await page.evaluate(async t => (await fetch(`/api/share/${t}/doc`)).status, sh.token);
   assert(shareStatus === 200, 'share link works before revoke');
-  await page.evaluate(async t => fetch('/api/shares/' + t, { method: 'DELETE' }), sh.token);
+  await page.evaluate(async t => fetch(apiBase + '/shares/' + t, { method: 'DELETE' }), sh.token);
   await sleep(150);
   shareStatus = await page.evaluate(async t => (await fetch(`/api/share/${t}/doc`)).status, sh.token);
   assert(shareStatus === 404, 'revoked share link is dead (404)');
@@ -324,7 +324,7 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   await sleep(800);
   const xss = await page.evaluate(async () => {
     // simulate a hostile client writing raw markup straight to the API
-    const cur = await (await fetch('/api/doc')).json();
+    const cur = await (await fetch(apiBase + '/doc')).json();
     const evil = structuredClone(cur.doc);
     const id = 'evil00000001';
     evil.nodes[id] = {
@@ -332,7 +332,7 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
       text: 'gotcha <img src=x onerror="window.__pwned=1"><script>window.__pwned=2</scr' + 'ipt>',
     };
     evil.nodes[evil.root].children.push(id);
-    await fetch('/api/doc', {
+    await fetch(apiBase + '/doc', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ baseVersion: cur.version, doc: evil }),
@@ -360,7 +360,8 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
 
   /* ---- 15. server wrote a backup file ---- */
   await sleep(1200);
-  const backupDir = process.env.DATA_DIR ? require('path').join(process.env.DATA_DIR, 'backups') : process.env.TEMP + '\\tendril-e2e\\data\\backups';
+  // backups are per-graph now (DATA_DIR/graphs/<id>/backups); open mode uses the 'default' graph
+  const backupDir = require('path').join(process.env.DATA_DIR, 'graphs', 'default', 'backups');
   const backups = fs.readdirSync(backupDir).filter(f => f.endsWith('.db'));
   assert(backups.length >= 1, `rotating backup written (${backups.length} file)`);
 

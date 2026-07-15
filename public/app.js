@@ -883,7 +883,10 @@ function redo() {
 
 /* ---------------- 8. persistence & sync ---------------- */
 
-const SAVE_URL = SHARE_TOKEN ? `/api/share/${SHARE_TOKEN}/doc` : '/api/doc';
+// the active graph's API base, e.g. "/api/g/<graphId>". Set by ensureAuth once the graph
+// is known; document/ops/events/version/search/shares all hang off it. Files & AI stay global.
+let apiBase = '';
+let SAVE_URL = SHARE_TOKEN ? `/api/share/${SHARE_TOKEN}/doc` : '/api/doc';
 
 function setSaveUI(mode) {
   saveStateEl.classList.toggle('saving', mode === 'saving');
@@ -966,7 +969,7 @@ async function doSave() {
       }
       const batch = pendingOps;        // take the queue; edits during the await accumulate a fresh one
       pendingOps = [];
-      const r = await fetch('/api/ops', {
+      const r = await fetch(apiBase + '/ops', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ops: batch, device: DEVICE_ID }),
       });
       if (r.ok) {
@@ -1034,7 +1037,7 @@ bc?.addEventListener('message', async e => {
   // another tab saved — refetch the whole doc instead of receiving it cloned over the channel
   if (dirty || !e.data || e.data.version <= state.version) return;
   try {
-    const full = await (await fetch('/api/doc')).json();
+    const full = await (await fetch(apiBase + '/doc')).json();
     if (!dirty && full.version > state.version) adoptRemote(full.version, full.doc);
   } catch { /* offline */ }
 });
@@ -1161,9 +1164,9 @@ document.addEventListener('visibilitychange', async () => {
       if (!dirty && full.version > state.version) adoptRemote(full.version, full.doc);
       return;
     }
-    const v = await (await fetch('/api/version')).json();
+    const v = await (await fetch(apiBase + '/version')).json();
     if (v.version > state.version) {
-      const full = await (await fetch('/api/doc')).json();
+      const full = await (await fetch(apiBase + '/doc')).json();
       if (!dirty) adoptRemote(full.version, full.doc);
     }
   } catch { /* offline */ }
@@ -1195,7 +1198,7 @@ function connectSSE() {
     return;
   }
   try {
-    const es = new EventSource('/api/events');
+    const es = new EventSource(apiBase + '/events');
     es.onmessage = async e => {
       try {
         const data = JSON.parse(e.data);
@@ -1209,7 +1212,7 @@ function connectSSE() {
           state.version = data.version;
           renderPage();
         } else {
-          const full = await (await fetch('/api/doc')).json();
+          const full = await (await fetch(apiBase + '/doc')).json();
           if (!dirty && full.version > state.version) adoptRemote(full.version, full.doc);
         }
       } catch { /* ignore */ }
@@ -1532,7 +1535,7 @@ function computeSearch() {
       // on screen meanwhile — with the 160ms debounce and a local query that's a few ms.
       const seq = ++searchSeq;
       state.ftsCandidates = { q: ftsQ, ids: null, ok: false, pending: true };
-      fetch('/api/search?q=' + encodeURIComponent(ftsQ))
+      fetch(apiBase + '/search?q=' + encodeURIComponent(ftsQ))
         .then(r => r.json())
         .then(({ ids }) => { if (seq === searchSeq) { state.ftsCandidates = { q: ftsQ, ids: ids || [], ok: true, pending: false }; renderPage(); } })
         .catch(() => { if (seq === searchSeq) { state.ftsCandidates = { q: ftsQ, ids: null, ok: false, pending: false }; renderPage(); } });
@@ -3946,7 +3949,7 @@ function renderJump(q) {
   const seq = ++jumpSeq;
   // large docs: let SQLite FTS5 do the scan (O(matches)) instead of walking every node per keystroke
   if (!SHARE_TOKEN && q.trim() && Object.keys(doc.nodes).length > jumpFtsThreshold) {
-    fetch('/api/search?q=' + encodeURIComponent(q))
+    fetch(apiBase + '/search?q=' + encodeURIComponent(q))
       .then(r => r.json())
       .then(({ ids }) => {
         if (seq !== jumpSeq) return; // a newer keystroke superseded this response
@@ -4367,12 +4370,20 @@ function welcomeDoc() {
 
 /* ---------------- 27. login & bootstrap (init lives in app2.js) ---------------- */
 
+// choose the active graph (no switcher yet → the first one) and point the API base at it
+function pickActiveGraph(me) {
+  state.graphs = me.graphs || [];
+  state.graphId = state.graphs[0]?.id || 'default'; // open mode has no graphs → the default graph
+  apiBase = '/api/g/' + state.graphId;
+  if (!SHARE_TOKEN) SAVE_URL = apiBase + '/doc';
+}
+
 async function ensureAuth() {
   const me = await (await fetch('/api/me')).json();
   state.authRequired = me.authRequired;
   state.aiEnabled = !!me.ai;
   state.user = me.user || null;
-  if (!me.authRequired || me.user) return; // open instance, or already logged in
+  if (!me.authRequired || me.user) { pickActiveGraph(me); return; } // open instance, or already logged in
 
   const screen = $('#login-screen');
   screen.hidden = false;
@@ -4405,7 +4416,13 @@ async function ensureAuth() {
       const res = await fetch(mode === 'register' ? '/api/register' : '/api/login', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
       });
-      if (res.ok) { state.user = (await res.json()).user; screen.hidden = true; resolve(); }
+      if (res.ok) {
+        state.user = (await res.json()).user;
+        const me2 = await (await fetch('/api/me')).json(); // learn the new user's graphs
+        pickActiveGraph(me2);
+        screen.hidden = true;
+        resolve();
+      }
       else {
         err.textContent = (await res.json()).error || 'Something went wrong';
         err.hidden = false;
@@ -4435,7 +4452,7 @@ async function loadDoc() {
       : 'You are editing a <b>shared outline</b> — changes save to its owner.';
     return;
   }
-  const data = await (await fetch('/api/doc')).json();
+  const data = await (await fetch(apiBase + '/doc')).json();
   if (data.doc && data.doc.nodes && data.doc.nodes[data.doc.root || ROOT]) {
     doc = data.doc;
     doc.root = doc.root || ROOT;

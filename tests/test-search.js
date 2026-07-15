@@ -32,7 +32,7 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   await page.evaluate(() => {
     jumpFtsThreshold = 5;
     window.__ftsCalls = 0;
-    const f = window.fetch; window.fetch = (u, o) => { if (String(u).includes('/api/search')) window.__ftsCalls++; return f(u, o); };
+    const f = window.fetch; window.fetch = (u, o) => { if (String(u).includes('/search?q=')) window.__ftsCalls++; return f(u, o); };
   });
 
   // open quick-jump and type the unique word

@@ -52,7 +52,7 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   await page.waitForFunction(() =>
     document.querySelector('#save-state .save-label')?.textContent === 'saved' && !dirty, { timeout: 8000 });
   const early = await page.evaluate(async () => {
-    const { doc: d, version } = await (await fetch('/api/doc')).json();
+    const { doc: d, version } = await (await fetch(apiBase + '/doc')).json();
     return { hits: Object.values(d.nodes).filter(n => /erster Gedanke/.test(n.text || '')).length,
              srvVersion: version, cliVersion: state.version };
   });
@@ -156,7 +156,7 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   await page.waitForFunction(() =>
     document.querySelector('#save-state .save-label')?.textContent === 'saved' && !dirty, { timeout: 8000 });
   const onServer = await page.evaluate(async () => {
-    const { doc: d } = await (await fetch('/api/doc')).json();
+    const { doc: d } = await (await fetch(apiBase + '/doc')).json();
     return Object.values(d.nodes).filter(n => /erster Gedanke/.test(n.text || '')).length;
   });
   assert(onServer === 1, `today's note reached the server before reload (${onServer})`);

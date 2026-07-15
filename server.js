@@ -173,120 +173,160 @@ if (adminRow && accounts.graphsForUser(adminRow.id).length === 0) {
  * @typedef {{ version:number, doc:Doc|null }} DocStore
  */
 
-// Per-node SQLite store backs persistence (Phase 1). The in-memory `store.doc`
-// stays the authoritative working model; `persist()` writes only changed rows.
-const db = new Store(DB_FILE);
-/** @type {DocStore} */
-let store;
-if (!db.isEmpty()) {
-  store = /** @type {DocStore} */ (db.loadDoc());
-} else {
-  // first run on SQLite: migrate an existing outline.json if present…
-  let seed = null;
-  try { seed = JSON.parse(fs.readFileSync(DOC_FILE, 'utf8')); } catch { /* none */ }
-  if (seed && seed.doc && seed.doc.nodes) {
-    db.importDoc(seed.doc, typeof seed.version === 'number' ? seed.version : 0);
-    try { fs.renameSync(DOC_FILE, DOC_FILE + '.migrated'); } catch { /* ignore */ }
-    store = /** @type {DocStore} */ (db.loadDoc());
-  } else {
-    // …otherwise leave the doc null so the client seeds the welcome outline,
-    // which the first save then writes into the (empty) database.
-    store = { version: 0, doc: null };
-  }
-}
-
+/* ---------- global (cross-graph) state ----------
+ * Uploaded files and share links stay global: files are content-addressed by a unique name,
+ * and a share record carries the graph id it points into. Only the document itself — nodes,
+ * op-log, SSE clients and backups — is isolated per graph (see GraphContext below).
+ */
 let shares = {};
 try { shares = JSON.parse(fs.readFileSync(SHARES_FILE, 'utf8')); } catch { /* none */ }
-
 function persistShares() {
   fs.writeFileSync(SHARES_FILE, JSON.stringify(shares, null, 1));
 }
 
-let lastBackupAt = 0;
-try {
-  const entries = fs.readdirSync(BACKUP_DIR).filter(f => f.endsWith('.db')).sort();
-  if (entries.length) lastBackupAt = fs.statSync(path.join(BACKUP_DIR, entries[entries.length - 1])).mtimeMs;
-} catch { /* ignore */ }
+/* ---------- per-graph runtime (Phase 2) ----------
+ * A GraphContext bundles one graph's isolated state; getGraph(id) loads/caches it. The doc
+ * layer, persistence and sync all take a context `g` — no shared mutable document globals.
+ */
+const GRAPHS_DIR = path.join(DATA_DIR, 'graphs');
+fs.mkdirSync(GRAPHS_DIR, { recursive: true });
+const SEEN_MAX = 20000;
+const graphCache = new Map(); // graphId → GraphContext
 
-function maybeBackup() {
+function loadGraph(id) {
+  const dir = path.join(GRAPHS_DIR, id);
+  const backupDir = path.join(dir, 'backups');
+  fs.mkdirSync(backupDir, { recursive: true });
+  const db = new Store(path.join(dir, 'outline.db'));
+  const store = db.isEmpty() ? { version: 0, doc: null } : /** @type {DocStore} */ (db.loadDoc());
+  let lastBackupAt = 0;
+  try {
+    const es = fs.readdirSync(backupDir).filter(f => f.endsWith('.db')).sort();
+    if (es.length) lastBackupAt = fs.statSync(path.join(backupDir, es[es.length - 1])).mtimeMs;
+  } catch { /* none */ }
+  return { id, dir, backupDir, db, store, sse: new Set(), seenOps: new Set(), seenOrder: [], lastBackupAt };
+}
+function getGraph(id) {
+  let g = graphCache.get(id);
+  if (!g) { g = loadGraph(id); graphCache.set(id, g); }
+  return g;
+}
+
+function maybeBackup(g) {
   const now = Date.now();
-  if (now - lastBackupAt <= BACKUP_EVERY_MS) return;
-  lastBackupAt = now;
+  if (now - g.lastBackupAt <= BACKUP_EVERY_MS) return;
+  g.lastBackupAt = now;
   // a full reconcile before the snapshot: backups are always canonical, and any drift the
   // O(change) op path could have left (sparse ords, a mis-derived row) self-heals hourly.
-  try { db.sync(store.doc, store.version); } catch (e) { console.error('pre-backup resync failed:', e); }
+  try { g.db.sync(g.store.doc, g.store.version); } catch (e) { console.error('pre-backup resync failed:', e); }
   try {
     const stamp = new Date(now).toISOString().replace(/[:.]/g, '-');
-    db.backup(path.join(BACKUP_DIR, `outline-${stamp}.db`));
-    const all = fs.readdirSync(BACKUP_DIR).filter(f => f.endsWith('.db')).sort();
+    g.db.backup(path.join(g.backupDir, `outline-${stamp}.db`));
+    const all = fs.readdirSync(g.backupDir).filter(f => f.endsWith('.db')).sort();
     for (const stale of all.slice(0, Math.max(0, all.length - BACKUP_KEEP))) {
-      try { fs.unlinkSync(path.join(BACKUP_DIR, stale)); } catch { /* ignore */ }
+      try { fs.unlinkSync(path.join(g.backupDir, stale)); } catch { /* ignore */ }
     }
   } catch (e) { console.error('backup failed:', e); }
 }
 
 // whole-doc path (PUT, share merge, capture, v1 API): diff the full doc against the shadow
-function persist() {
-  try { db.sync(store.doc, store.version); maybeBackup(); }
+function persist(g) {
+  try { g.db.sync(g.store.doc, g.store.version); maybeBackup(g); }
   catch (err) { console.error('persist failed:', err); }
 }
 
 // Route B hot path: persist only the rows the op batch touched (O(change)). If anything goes
-// wrong, fall back to a full reconcile so disk can never silently diverge from memory — worst
-// case is one slow save, never a corrupt one.
-function persistOps(ops) {
-  try { db.applyOps(store.doc, store.version, ops); maybeBackup(); }
+// wrong, fall back to a full reconcile so disk can never silently diverge from memory.
+function persistOps(g, ops) {
+  try { g.db.applyOps(g.store.doc, g.store.version, ops); maybeBackup(g); }
   catch (err) {
     console.error('persistOps failed — falling back to full resync:', err);
-    try { db.sync(store.doc, store.version); } catch (e2) { console.error('full resync failed:', e2); }
+    try { g.db.sync(g.store.doc, g.store.version); } catch (e2) { console.error('full resync failed:', e2); }
   }
 }
 
-/* ---------- live sync (SSE) ---------- */
+/* ---------- live sync (SSE), per graph ---------- */
 
-const sseClients = new Set();
-
-function broadcast(payload) {
+function broadcast(g, payload) {
   const msg = `data: ${JSON.stringify(payload)}\n\n`;
-  for (const res of sseClients) {
-    try { res.write(msg); } catch { sseClients.delete(res); }
+  for (const res of g.sse) {
+    try { res.write(msg); } catch { g.sse.delete(res); }
   }
 }
 
 setInterval(() => {
-  for (const res of sseClients) {
-    try { res.write(':hb\n\n'); } catch { sseClients.delete(res); }
+  for (const g of graphCache.values()) {
+    for (const res of g.sse) { try { res.write(':hb\n\n'); } catch { g.sse.delete(res); } }
   }
 }, 25000).unref();
 
-function commitDoc(doc, origin) {
-  store = { version: store.version + 1, doc };
-  persist();
-  broadcast({ version: store.version, origin });
-  return store.version;
+function commitDoc(g, doc, origin) {
+  g.store = { version: g.store.version + 1, doc };
+  persist(g);
+  broadcast(g, { version: g.store.version, origin });
+  return g.store.version;
 }
 
 // commit after an op-batch: same version bump + persist, but broadcast the applied ops
-// (tagged with the originating device) so peers converge by replaying them — the origin
-// lets the sender ignore its own echo and avoid re-applying ops it already made locally
-// Route B op-log: the version IS the monotonic sequence number; the server is the sole
-// sequencer. `seenOps` makes application idempotent — a re-sent op (after a failed POST,
-// or a duplicate broadcast) is dropped by id, so nothing double-applies.
-const seenOps = new Set();
-const seenOrder = [];
-const SEEN_MAX = 20000;
-function markSeen(id) {
-  if (id == null || seenOps.has(id)) return;
-  seenOps.add(id); seenOrder.push(id);
-  if (seenOrder.length > SEEN_MAX) seenOps.delete(seenOrder.shift());
+// (tagged with the originating device) so peers converge by replaying them. `seenOps`
+// makes application idempotent — a re-sent op is dropped by id, so nothing double-applies.
+function markSeen(g, id) {
+  if (id == null || g.seenOps.has(id)) return;
+  g.seenOps.add(id); g.seenOrder.push(id);
+  if (g.seenOrder.length > SEEN_MAX) g.seenOps.delete(g.seenOrder.shift());
 }
-function commitOps(ops, origin) {
-  store = { version: store.version + 1, doc: store.doc };
-  for (const op of ops) markSeen(op.id);
-  persistOps(ops);                                // O(change) incremental write, not an O(doc) re-flatten
-  broadcast({ version: store.version, ops, origin });
-  return store.version;
+function commitOps(g, ops, origin) {
+  g.store = { version: g.store.version + 1, doc: g.store.doc };
+  for (const op of ops) markSeen(g, op.id);
+  persistOps(g, ops);                                // O(change) incremental write, not an O(doc) re-flatten
+  broadcast(g, { version: g.store.version, ops, origin });
+  return g.store.version;
 }
+
+// resolve which graph a request targets, checking membership. Returns the GraphContext or null.
+function graphForUser(user, graphId) {
+  if (!user || !graphId) return null;
+  if (!accounts.roleOf(user.id, graphId)) return null; // not a member → no access
+  return getGraph(graphId);
+}
+// the admin's first graph — target for the capture token and the /api/v1 agent API.
+// falls back to a fixed 'default' graph in open mode (no accounts configured).
+function defaultGraphId() {
+  const admin = accounts.userByName(ADMIN_USER);
+  const g = admin && accounts.graphsForUser(admin.id)[0];
+  return g ? g.id : 'default';
+}
+
+// one-time migration: move the legacy single-graph DB (DATA_DIR/outline.db, or a seed
+// outline.json) into the admin's first graph. Guarded — runs once, then the file is gone.
+function migrateLegacyGraph() {
+  const admin = accounts.userByName(ADMIN_USER);
+  // account mode → the admin's first graph; open mode (no accounts) → a fixed 'default' graph
+  const target = (admin && accounts.graphsForUser(admin.id)[0]) || { id: 'default', name: 'default' };
+  const destDb = path.join(GRAPHS_DIR, target.id, 'outline.db');
+  if (fs.existsSync(destDb)) return; // graph already has its own data
+  if (fs.existsSync(DB_FILE)) {
+    fs.mkdirSync(path.join(GRAPHS_DIR, target.id, 'backups'), { recursive: true });
+    for (const suffix of ['', '-wal', '-shm']) {
+      const src = DB_FILE + suffix;
+      if (fs.existsSync(src)) fs.renameSync(src, destDb + suffix);
+    }
+    for (const t of Object.keys(shares)) if (!shares[t].graph) shares[t].graph = target.id;
+    persistShares();
+    console.log(`Migrated legacy outline into graph "${target.name}" (${target.id})`);
+    return;
+  }
+  try {
+    const seed = JSON.parse(fs.readFileSync(DOC_FILE, 'utf8'));
+    if (seed && seed.doc && seed.doc.nodes) {
+      getGraph(target.id).db.importDoc(seed.doc, typeof seed.version === 'number' ? seed.version : 0);
+      graphCache.delete(target.id); // reload from the imported rows on next access
+      fs.renameSync(DOC_FILE, DOC_FILE + '.migrated');
+      console.log(`Seeded graph "${target.name}" from outline.json`);
+    }
+  } catch { /* nothing to seed */ }
+}
+migrateLegacyGraph();
 
 // remove a subtree into the trash (the doc-model equivalent of a tombstone). The op's
 // `ts` is used for the trash entry so client and server build an identical entry.
@@ -368,8 +408,8 @@ function ensureDayInDoc(doc, iso) {
 }
 
 // quick-capture lands under today's journal in an "Inbox" bullet: today → Inbox → line(s)
-function captureText(text) {
-  const doc = ensureDoc();
+function captureText(g, text) {
+  const doc = ensureDoc(g);
   const dayId = ensureDayInDoc(doc, todayIso());
   // drop stray empty bullets (e.g. an unused daily-note placeholder) so capture never
   // strands a blank line above the Inbox
@@ -400,18 +440,18 @@ function captureText(text) {
     stack.push({ depth, id: node.id });
     count++;
   }
-  if (count) commitDoc(doc);
+  if (count) commitDoc(g, doc);
   return count;
 }
 
 /* ---------- per-node API (v1) ---------- */
 
 /** @returns {Doc} */
-function ensureDoc() {
-  if (!store.doc || !store.doc.nodes || !store.doc.nodes.root) {
-    store.doc = { root: 'root', nodes: { root: { id: 'root', text: '', note: null, done: false, collapsed: false, children: [] } } };
+function ensureDoc(g) {
+  if (!g.store.doc || !g.store.doc.nodes || !g.store.doc.nodes.root) {
+    g.store.doc = { root: 'root', nodes: { root: { id: 'root', text: '', note: null, done: false, collapsed: false, children: [] } } };
   }
-  return store.doc;
+  return g.store.doc;
 }
 
 // strip the obvious dangerous bits server-side; the client applies a full
@@ -442,9 +482,9 @@ const serverPlain = html => String(html || '').replace(/<[^>]+>/g, '')
 
 // mirrors are interactive instances: content reads/writes route to the node that owns
 // the content; structural ops act on the instance (same rule as the client)
-function contentIdInDoc(id) {
-  const t = store.doc.nodes[id]?.mirror;
-  return t && store.doc.nodes[t] ? t : id;
+function contentIdInDoc(doc, id) {
+  const t = doc.nodes[id]?.mirror;
+  return t && doc.nodes[t] ? t : id;
 }
 
 // deleting a node that has surviving mirrors hands its content + children to the oldest
@@ -480,18 +520,18 @@ function promoteDoomedInDoc(doc, rootId) {
   }
 }
 
-function nodeParent(id) {
-  for (const pid of Object.keys(store.doc.nodes)) {
-    if ((store.doc.nodes[pid].children || []).includes(id)) return pid;
+function nodeParent(doc, id) {
+  for (const pid of Object.keys(doc.nodes)) {
+    if ((doc.nodes[pid].children || []).includes(id)) return pid;
   }
   return null;
 }
-function nodeDetach(id) {
-  const p = nodeParent(id);
-  if (p) { const a = store.doc.nodes[p].children; const i = a.indexOf(id); if (i >= 0) a.splice(i, 1); }
+function nodeDetach(doc, id) {
+  const p = nodeParent(doc, id);
+  if (p) { const a = doc.nodes[p].children; const i = a.indexOf(id); if (i >= 0) a.splice(i, 1); }
 }
-function nodeInsert(parent, index, id) {
-  const a = store.doc.nodes[parent].children;
+function nodeInsert(doc, parent, index, id) {
+  const a = doc.nodes[parent].children;
   if (!Number.isInteger(index) || index < 0 || index > a.length) index = a.length;
   a.splice(index, 0, id);
 }
@@ -507,40 +547,40 @@ function pushTrash(doc, id, parent, index, ts) {
   return ids;
 }
 
-function nodeDelete(id) {
-  const parent = nodeParent(id);
-  const ids = pushTrash(store.doc, id, parent, parent ? store.doc.nodes[parent].children.indexOf(id) : 0);
-  nodeDetach(id);
-  for (const x of ids) delete store.doc.nodes[x];
+function nodeDelete(doc, id) {
+  const parent = nodeParent(doc, id);
+  const ids = pushTrash(doc, id, parent, parent ? doc.nodes[parent].children.indexOf(id) : 0);
+  nodeDetach(doc, id);
+  for (const x of ids) delete doc.nodes[x];
   return ids.length;
 }
 // `children` is polymorphic by design: child *ids* in the flat view, nested node
 // objects under ?tree=1 (filled in by nodeTree). Hence the any[] in the contract.
 /** @param {string} id @returns {{id:string,mirror:string|null,text:string,plain:string,note:string|null,done:boolean,collapsed:boolean,format:string,children:any[],created:number|null,modified:number|null,parent:string|null}} */
-function nodeView(id) {
-  const inst = store.doc.nodes[id];
-  const n = store.doc.nodes[contentIdInDoc(id)]; // a mirror presents its target's content
+function nodeView(doc, id) {
+  const inst = doc.nodes[id];
+  const n = doc.nodes[contentIdInDoc(doc, id)]; // a mirror presents its target's content
   return {
     id, mirror: inst.mirror || null,
     text: n.text || '', plain: serverPlain(n.text), note: n.note ?? null,
     done: !!n.done, collapsed: !!inst.collapsed, format: n.format || 'bullet',
     children: n.children || [], created: n.c ?? null, modified: n.m ?? null,
-    parent: nodeParent(id),
+    parent: nodeParent(doc, id),
   };
 }
-function nodeTree(id, depth) {
-  const v = nodeView(id);
+function nodeTree(doc, id, depth) {
+  const v = nodeView(doc, id);
   if (depth === undefined || depth > 0) {
-    v.children = (store.doc.nodes[id].children || []).map(c => nodeTree(c, depth === undefined ? undefined : depth - 1));
+    v.children = (doc.nodes[id].children || []).map(c => nodeTree(doc, c, depth === undefined ? undefined : depth - 1));
   }
   return v;
 }
-function apiSearch(q, limit) {
+function apiSearch(doc, q, limit) {
   const terms = q.toLowerCase().split(/\s+/).filter(Boolean);
   const out = [];
   const walk = (id, path) => {
-    for (const c of (store.doc.nodes[id].children || [])) {
-      const n = store.doc.nodes[c];
+    for (const c of (doc.nodes[id].children || [])) {
+      const n = doc.nodes[c];
       if (!n) continue;
       const plain = serverPlain(n.text);
       const hay = (plain + ' ' + (n.note || '')).toLowerCase();
@@ -566,16 +606,17 @@ async function readJson(req) {
   return JSON.parse((await readBody(req)).toString('utf8') || '{}');
 }
 
-async function handleV1(req, res, url) {
+async function handleV1(req, res, url, g) {
   if (!apiAuthed(req, url)) return send(res, 401, { error: 'unauthorized — set RHIZOME_AGENT_TOKEN and send Authorization: Bearer <token>' });
-  ensureDoc();
+  if (!g) return send(res, 404, { error: 'no graph available' });
+  const doc = ensureDoc(g);
   const path = url.split('?')[0];
   const method = req.method;
   const u = new URL(url, 'http://x');
 
   if (path === '/api/v1' || path === '/api/v1/') {
     return send(res, 200, {
-      name: 'Rhizome node API', version: store.version,
+      name: 'Rhizome node API', version: g.store.version,
       endpoints: [
         'GET    /api/v1/doc',
         'GET    /api/v1/version',
@@ -590,17 +631,17 @@ async function handleV1(req, res, url) {
       ],
     });
   }
-  if (path === '/api/v1/version' && method === 'GET') return send(res, 200, { version: store.version });
-  if (path === '/api/v1/doc' && method === 'GET') return send(res, 200, { version: store.version, doc: store.doc });
+  if (path === '/api/v1/version' && method === 'GET') return send(res, 200, { version: g.store.version });
+  if (path === '/api/v1/doc' && method === 'GET') return send(res, 200, { version: g.store.version, doc });
   if (path === '/api/v1/search' && method === 'GET') {
     const q = u.searchParams.get('q') || '';
     const lim = parseInt(u.searchParams.get('limit') || '50', 10);
-    return send(res, 200, { results: q.trim() ? apiSearch(q, lim) : [] });
+    return send(res, 200, { results: q.trim() ? apiSearch(doc, q, lim) : [] });
   }
   if (path === '/api/v1/nodes' && method === 'POST') {
     const body = await readJson(req);
     const parent = body.parent || 'root';
-    if (!store.doc.nodes[parent]) return send(res, 400, { error: 'unknown parent node' });
+    if (!doc.nodes[parent]) return send(res, 400, { error: 'unknown parent node' });
     const now = Date.now();
     const node = {
       id: uid(), text: sanitizeServerHtml(body.text || ''),
@@ -608,65 +649,65 @@ async function handleV1(req, res, url) {
       done: !!body.done, collapsed: false, children: [], c: now, m: now,
     };
     if (body.format) node.format = String(body.format);
-    store.doc.nodes[node.id] = node;
-    nodeInsert(parent, body.index, node.id);
-    commitDoc(store.doc);
-    return send(res, 201, nodeView(node.id));
+    doc.nodes[node.id] = node;
+    nodeInsert(doc, parent, body.index, node.id);
+    commitDoc(g, doc);
+    return send(res, 201, nodeView(doc, node.id));
   }
 
   const m = path.match(/^\/api\/v1\/nodes\/([A-Za-z0-9]+)(\/tree|\/children|\/move|\/complete)?$/);
   if (m) {
     const id = m[1], sub = m[2];
-    if (!store.doc.nodes[id]) return send(res, 404, { error: 'node not found' });
+    if (!doc.nodes[id]) return send(res, 404, { error: 'node not found' });
 
     if (!sub && method === 'GET') {
       if (u.searchParams.get('tree')) {
         const d = u.searchParams.get('depth');
-        return send(res, 200, nodeTree(id, d != null ? parseInt(d, 10) : undefined));
+        return send(res, 200, nodeTree(doc, id, d != null ? parseInt(d, 10) : undefined));
       }
-      return send(res, 200, nodeView(id));
+      return send(res, 200, nodeView(doc, id));
     }
     if (sub === '/children' && method === 'GET') {
-      return send(res, 200, { children: (store.doc.nodes[id].children || []).map(nodeView) });
+      return send(res, 200, { children: (doc.nodes[id].children || []).map(c => nodeView(doc, c)) });
     }
     if (!sub && method === 'PATCH') {
       const body = await readJson(req);
-      const n = store.doc.nodes[contentIdInDoc(id)]; // content writes hit the owner
+      const n = doc.nodes[contentIdInDoc(doc, id)]; // content writes hit the owner
       if ('text' in body) n.text = sanitizeServerHtml(String(body.text));
       if ('note' in body) n.note = body.note == null ? null : String(body.note);
       if ('done' in body) n.done = !!body.done;
-      if ('collapsed' in body) store.doc.nodes[id].collapsed = !!body.collapsed; // expansion is per-instance
+      if ('collapsed' in body) doc.nodes[id].collapsed = !!body.collapsed; // expansion is per-instance
       if ('format' in body) { if (body.format) n.format = String(body.format); else delete n.format; }
       n.m = Date.now();
-      commitDoc(store.doc);
-      return send(res, 200, nodeView(id));
+      commitDoc(g, doc);
+      return send(res, 200, nodeView(doc, id));
     }
     if (sub === '/complete' && method === 'POST') {
       const body = await readJson(req);
-      const n = store.doc.nodes[contentIdInDoc(id)]; // completing a mirror completes every instance
+      const n = doc.nodes[contentIdInDoc(doc, id)]; // completing a mirror completes every instance
       n.done = body.done === undefined ? true : !!body.done;
       n.m = Date.now();
-      commitDoc(store.doc);
-      return send(res, 200, nodeView(id));
+      commitDoc(g, doc);
+      return send(res, 200, nodeView(doc, id));
     }
     if (sub === '/move' && method === 'POST') {
       const body = await readJson(req);
       const target = body.parent || 'root';
-      if (!store.doc.nodes[target]) return send(res, 400, { error: 'unknown target parent' });
-      if (target === id || subtreeIds(store.doc, id).includes(target)) {
+      if (!doc.nodes[target]) return send(res, 400, { error: 'unknown target parent' });
+      if (target === id || subtreeIds(doc, id).includes(target)) {
         return send(res, 400, { error: 'cannot move a node into itself or its own subtree' });
       }
-      nodeDetach(id);
-      nodeInsert(target, body.index, id);
-      store.doc.nodes[id].m = Date.now();
-      commitDoc(store.doc);
-      return send(res, 200, nodeView(id));
+      nodeDetach(doc, id);
+      nodeInsert(doc, target, body.index, id);
+      doc.nodes[id].m = Date.now();
+      commitDoc(g, doc);
+      return send(res, 200, nodeView(doc, id));
     }
     if (!sub && method === 'DELETE') {
       if (id === 'root') return send(res, 400, { error: 'cannot delete the root' });
-      promoteDoomedInDoc(store.doc, id); // mirrors of anything inside survive (client parity)
-      const count = nodeDelete(id);
-      commitDoc(store.doc);
+      promoteDoomedInDoc(doc, id); // mirrors of anything inside survive (client parity)
+      const count = nodeDelete(doc, id);
+      commitDoc(g, doc);
       return send(res, 200, { ok: true, deleted: count });
     }
   }
@@ -744,16 +785,19 @@ function recordAttempt(ip, ok) {
 
 /* ---------- share helpers ---------- */
 
+// a file is shared if it sits inside any shared subtree — check each share against its own graph
 function fileIsShared(urlPath) {
-  const doc = store.doc;
-  if (!doc) return false;
-  return Object.values(shares).some(share =>
-    doc.nodes[share.id] && subtreeIds(doc, share.id).some(id =>
-      (doc.nodes[id].files || []).some(f => f && f.url === urlPath)));
+  for (const share of Object.values(shares)) {
+    const g = share.graph && getGraph(share.graph);
+    const doc = g && g.store.doc;
+    if (!doc || !doc.nodes[share.id]) continue;
+    if (subtreeIds(doc, share.id).some(id => (doc.nodes[id].files || []).some(f => f && f.url === urlPath))) return true;
+  }
+  return false;
 }
 
-function shareDocFor(share) {
-  const doc = store.doc;
+function shareDocFor(g, share) {
+  const doc = g && g.store.doc;
   if (!doc || !doc.nodes[share.id]) return null;
   const nodes = {};
   for (const id of subtreeIds(doc, share.id)) nodes[id] = doc.nodes[id];
@@ -775,8 +819,8 @@ function cleanIncomingNode(n) {
   };
 }
 
-function mergeShareDoc(share, incoming) {
-  const doc = store.doc;
+function mergeShareDoc(g, share, incoming) {
+  const doc = g && g.store.doc;
   if (!doc || !doc.nodes[share.id] || !incoming.nodes || !incoming.nodes[share.id]) return false;
   // a guest may only touch ids reachable from the share root in its own doc
   const allowed = new Set(subtreeIds(incoming, share.id));
@@ -785,7 +829,7 @@ function mergeShareDoc(share, incoming) {
   // nodes the guest dropped go to the trash, not the void (one entry per detached subtree)
   const removed = new Set(before.filter(id => id !== share.id && !allowed.has(id)));
   for (const id of removed) {
-    const p = nodeParent(id);
+    const p = nodeParent(doc, id);
     if (p && removed.has(p)) continue; // covered by an ancestor's entry
     pushTrash(doc, id, p, 0);
   }
@@ -816,7 +860,7 @@ function mergeShareDoc(share, incoming) {
       return true;
     });
   }
-  commitDoc(doc);
+  commitDoc(g, doc);
   return true;
 }
 
@@ -907,28 +951,29 @@ const server = http.createServer(async (req, res) => {
   const url = req.url || '/';
 
   try {
-    /* ---- per-node REST API (agent token or session cookie) ---- */
-    if (url.startsWith('/api/v1')) return await handleV1(req, res, url);
+    /* ---- per-node REST API (agent token or session cookie) — targets the admin's graph ---- */
+    if (url.startsWith('/api/v1')) return await handleV1(req, res, url, getGraph(defaultGraphId()));
 
     /* ---- share access (token-scoped, no cookie needed) ---- */
     const shareMatch = url.match(/^\/api\/share\/([a-f0-9]{24,})\/doc(\?.*)?$/);
     if (shareMatch) {
       const share = shares[shareMatch[1]];
       if (!share) return send(res, 404, { error: 'share not found or revoked' });
+      const g = getGraph(share.graph || defaultGraphId()); // legacy shares fall back to the admin graph
       if (req.method === 'GET') {
-        const doc = shareDocFor(share);
+        const doc = shareDocFor(g, share);
         if (!doc) return send(res, 410, { error: 'shared item was deleted' });
-        return send(res, 200, { version: store.version, doc, mode: share.mode, root: share.id });
+        return send(res, 200, { version: g.store.version, doc, mode: share.mode, root: share.id });
       }
       if (req.method === 'PUT' || req.method === 'POST') {
         if (share.mode !== 'edit') return send(res, 403, { error: 'this share is view-only' });
         const body = await readJson(req);
-        if (typeof body.baseVersion === 'number' && body.baseVersion !== store.version) {
-          const doc = shareDocFor(share);
-          return send(res, 409, { version: store.version, doc });
+        if (typeof body.baseVersion === 'number' && body.baseVersion !== g.store.version) {
+          const doc = shareDocFor(g, share);
+          return send(res, 409, { version: g.store.version, doc });
         }
-        if (!mergeShareDoc(share, body.doc || {})) return send(res, 400, { error: 'malformed share document' });
-        return send(res, 200, { version: store.version });
+        if (!mergeShareDoc(g, share, body.doc || {})) return send(res, 400, { error: 'malformed share document' });
+        return send(res, 200, { version: g.store.version });
       }
       return send(res, 405, { error: 'method not allowed' });
     }
@@ -1000,80 +1045,93 @@ const server = http.createServer(async (req, res) => {
       if (url.startsWith('/api/capture') && req.method === 'POST') {
         const token = new URL(url, 'http://x').searchParams.get('token')
           || req.headers['x-capture-token'] || '';
-        const allowed = (CAPTURE_TOKEN && timingSafeEq(token, CAPTURE_TOKEN)) || isAuthed(req);
+        const user = currentUser(req);
+        const allowed = (CAPTURE_TOKEN && timingSafeEq(token, CAPTURE_TOKEN)) || !!user || accounts.userCount() === 0;
         if (!allowed) return send(res, 401, { error: 'unauthorized' });
+        // a session captures into its own first graph; the capture token targets the admin's graph
+        const gid = user ? accounts.graphsForUser(user.id)[0]?.id : defaultGraphId();
+        const g = gid && getGraph(gid);
+        if (!g) return send(res, 400, { error: 'no graph to capture into' });
         const raw = (await readBody(req, 1024 * 1024)).toString('utf8');
         let text = raw;
         try { const j = JSON.parse(raw); if (typeof j.text === 'string') text = j.text; } catch { /* plain text body */ }
-        const count = captureText(text);
+        const count = captureText(g, text);
         return send(res, 200, { ok: true, captured: count });
       }
 
-      /* ---- everything below requires auth ---- */
+      /* ---- graph-scoped endpoints: /api/g/:graphId/… (membership required) ---- */
+      const gm = url.match(/^\/api\/g\/([A-Za-z0-9]+)\/([a-z]+)(\/[a-f0-9]+)?(?:\?.*)?$/);
+      if (gm) {
+        const user = currentUser(req);
+        const open = accounts.userCount() === 0;
+        if (!open && !user) return send(res, 401, { error: 'unauthorized' });
+        const g = open ? getGraph(gm[1]) : graphForUser(user, gm[1]);
+        if (!g) return send(res, 403, { error: 'no access to this graph' });
+        const seg = gm[2], method = req.method;
+        if (seg === 'doc' && method === 'GET') return send(res, 200, g.store);
+        if (seg === 'version' && method === 'GET') return send(res, 200, { version: g.store.version });
+        if (seg === 'search' && method === 'GET') {
+          const q = new URL(url, 'http://x').searchParams.get('q') || '';
+          return send(res, 200, { ids: g.db.search(q, 500) });
+        }
+        if (seg === 'doc' && (method === 'PUT' || method === 'POST')) {
+          const body = await readJson(req);
+          if (!body.doc || typeof body.doc !== 'object' || !body.doc.nodes) return send(res, 400, { error: 'malformed document' });
+          if (typeof body.baseVersion === 'number' && body.baseVersion !== g.store.version) return send(res, 409, g.store);
+          const v = commitDoc(g, sanitizeDocNodes(body.doc), body.device);
+          return send(res, 200, { version: v });
+        }
+        if (seg === 'ops' && method === 'POST') {
+          const body = await readJson(req);
+          if (!Array.isArray(body.ops)) return send(res, 400, { error: 'ops array required' });
+          if (!g.store.doc) g.store.doc = { root: 'root', nodes: { root: { id: 'root', text: '', note: null, done: false, collapsed: false, children: [] } } };
+          const fresh = body.ops.filter(op => op && (op.id == null || !g.seenOps.has(op.id))); // idempotent: drop re-sends
+          for (const op of fresh) { // sanitize incoming text/note server-side (same guarantee as the doc path)
+            if (op.data) { if (typeof op.data.text === 'string') op.data.text = sanitizeServerHtml(op.data.text); if (typeof op.data.note === 'string') op.data.note = sanitizeServerHtml(op.data.note); }
+            if (op.patch) { if (typeof op.patch.text === 'string') op.patch.text = sanitizeServerHtml(op.patch.text); if (typeof op.patch.note === 'string') op.patch.note = sanitizeServerHtml(op.patch.note); }
+          }
+          const applied = applyOpsToDoc(g.store.doc, fresh, trashSubtreeInDoc);
+          for (const op of fresh) markSeen(g, op.id);
+          const v = applied.length ? commitOps(g, applied, body.device) : g.store.version;
+          return send(res, 200, { version: v, applied: applied.length });
+        }
+        if (seg === 'events' && method === 'GET') {
+          res.writeHead(200, {
+            'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store',
+            'Connection': 'keep-alive', 'X-Accel-Buffering': 'no',
+          });
+          res.write(`data: ${JSON.stringify({ version: g.store.version })}\n\n`);
+          g.sse.add(res);
+          req.on('close', () => g.sse.delete(res));
+          return;
+        }
+        if (seg === 'shares' && method === 'GET') {
+          return send(res, 200, Object.entries(shares).filter(([, s]) => s.graph === g.id).map(([token, s]) => ({ token, ...s })));
+        }
+        if (seg === 'shares' && method === 'POST') {
+          const body = await readJson(req);
+          if (!g.store.doc?.nodes?.[body.nodeId]) return send(res, 400, { error: 'unknown node' });
+          const token = crypto.randomBytes(16).toString('hex');
+          shares[token] = { id: body.nodeId, graph: g.id, mode: body.mode === 'edit' ? 'edit' : 'view', created: Date.now() };
+          persistShares();
+          return send(res, 200, { token, url: `/s/${token}` });
+        }
+        if (seg === 'shares' && method === 'DELETE' && gm[3]) {
+          const t = gm[3].slice(1);
+          if (shares[t] && shares[t].graph === g.id) { delete shares[t]; persistShares(); }
+          return send(res, 200, { ok: true });
+        }
+        if (seg === 'capture' && method === 'POST') {
+          const raw = (await readBody(req, 1024 * 1024)).toString('utf8');
+          let text = raw;
+          try { const j = JSON.parse(raw); if (typeof j.text === 'string') text = j.text; } catch { /* plain text body */ }
+          return send(res, 200, { ok: true, captured: captureText(g, text) });
+        }
+        return send(res, 404, { error: 'not found' });
+      }
+
+      /* ---- global authed endpoints (files, AI) ---- */
       if (!isAuthed(req)) return send(res, 401, { error: 'unauthorized' });
-
-      if (url === '/api/doc' && req.method === 'GET') return send(res, 200, store);
-      if (url === '/api/version' && req.method === 'GET') return send(res, 200, { version: store.version });
-      if (url.startsWith('/api/search') && req.method === 'GET') {
-        const q = new URL(url, 'http://x').searchParams.get('q') || '';
-        return send(res, 200, { ids: db.search(q, 500) });   // FTS5-backed; Phase 3 wires the client
-      }
-      if (url === '/api/doc' && (req.method === 'PUT' || req.method === 'POST')) {
-        const body = await readJson(req);
-        if (!body.doc || typeof body.doc !== 'object' || !body.doc.nodes) {
-          return send(res, 400, { error: 'malformed document' });
-        }
-        if (typeof body.baseVersion === 'number' && body.baseVersion !== store.version) {
-          return send(res, 409, store);
-        }
-        const v = commitDoc(sanitizeDocNodes(body.doc), body.device);
-        return send(res, 200, { version: v });
-      }
-      if (url === '/api/ops' && req.method === 'POST') {
-        const body = await readJson(req);
-        if (!Array.isArray(body.ops)) return send(res, 400, { error: 'ops array required' });
-        if (!store.doc) store.doc = { root: 'root', nodes: { root: { id: 'root', text: '', note: null, done: false, collapsed: false, children: [] } } };
-        const fresh = body.ops.filter(op => op && (op.id == null || !seenOps.has(op.id))); // idempotent: drop re-sends
-        for (const op of fresh) { // sanitize incoming text/note server-side (same guarantee as the doc path)
-          if (op.data) { if (typeof op.data.text === 'string') op.data.text = sanitizeServerHtml(op.data.text); if (typeof op.data.note === 'string') op.data.note = sanitizeServerHtml(op.data.note); }
-          if (op.patch) { if (typeof op.patch.text === 'string') op.patch.text = sanitizeServerHtml(op.patch.text); if (typeof op.patch.note === 'string') op.patch.note = sanitizeServerHtml(op.patch.note); }
-        }
-        const applied = applyOpsToDoc(store.doc, fresh, trashSubtreeInDoc);
-        for (const op of fresh) markSeen(op.id); // record even no-op ops so they're never reprocessed
-        const v = applied.length ? commitOps(applied, body.device) : store.version;
-        return send(res, 200, { version: v, applied: applied.length });
-      }
-
-      if (url === '/api/events' && req.method === 'GET') {
-        res.writeHead(200, {
-          'Content-Type': 'text/event-stream',
-          'Cache-Control': 'no-store',
-          'Connection': 'keep-alive',
-          'X-Accel-Buffering': 'no',
-        });
-        res.write(`data: ${JSON.stringify({ version: store.version })}\n\n`);
-        sseClients.add(res);
-        req.on('close', () => sseClients.delete(res));
-        return;
-      }
-
-      if (url === '/api/shares' && req.method === 'GET') {
-        return send(res, 200, Object.entries(shares).map(([token, s]) => ({ token, ...s })));
-      }
-      if (url === '/api/shares' && req.method === 'POST') {
-        const body = await readJson(req);
-        if (!store.doc?.nodes?.[body.nodeId]) return send(res, 400, { error: 'unknown node' });
-        const token = crypto.randomBytes(16).toString('hex');
-        shares[token] = { id: body.nodeId, mode: body.mode === 'edit' ? 'edit' : 'view', created: Date.now() };
-        persistShares();
-        return send(res, 200, { token, url: `/s/${token}` });
-      }
-      const delShare = url.match(/^\/api\/shares\/([a-f0-9]+)$/);
-      if (delShare && req.method === 'DELETE') {
-        delete shares[delShare[1]];
-        persistShares();
-        return send(res, 200, { ok: true });
-      }
 
       if (url.startsWith('/api/upload') && req.method === 'POST') {
         const rawName = new URL(url, 'http://x').searchParams.get('name') || 'file';

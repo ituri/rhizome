@@ -33,7 +33,9 @@ const node = (id, text, children = [], extra = {}) =>
     const cookie = (login.headers.get('set-cookie') || '').split(';')[0];
     const authed = (url, opts = {}) =>
       fetch(API + url, { ...opts, headers: { ...(opts.headers || {}), cookie } });
-    const getDoc = async () => (await (await authed('/api/doc')).json());
+    const me = await (await authed('/api/me')).json();
+    const G = '/api/g/' + (me.graphs[0]?.id || 'default'); // graph-scoped API base
+    const getDoc = async () => (await (await authed(G + '/doc')).json());
 
     // outline: root → [A (shared, child A1), B (private)]
     const doc = {
@@ -45,11 +47,11 @@ const node = (id, text, children = [], extra = {}) =>
         B: node('B', 'private item'),
       },
     };
-    let res = await authed('/api/doc', { method: 'PUT', body: JSON.stringify({ doc }) });
+    let res = await authed(G + '/doc', { method: 'PUT', body: JSON.stringify({ doc }) });
     assert(res.ok, 'owner can save the seed outline');
     let version = (await res.json()).version;
 
-    const share = await (await authed('/api/shares', {
+    const share = await (await authed(G + '/shares', {
       method: 'POST', body: JSON.stringify({ nodeId: 'A', mode: 'edit' }),
     })).json();
     assert(!!share.token, 'edit share created for node A');
@@ -120,7 +122,7 @@ const node = (id, text, children = [], extra = {}) =>
     /* A5. sync writes are sanitized server-side */
     const dirty = (await getDoc()).doc;
     dirty.nodes.B.text = 'hi <script>alert(1)</script><b onclick="x()">bold</b>';
-    res = await authed('/api/doc', {
+    res = await authed(G + '/doc', {
       method: 'PUT', body: JSON.stringify({ baseVersion: version, doc: dirty }),
     });
     d = (await getDoc()).doc;
@@ -132,14 +134,14 @@ const node = (id, text, children = [], extra = {}) =>
     const up = await (await authed('/api/upload?name=secret.txt', { method: 'POST', body: 'top secret' })).json();
     const cur = (await getDoc()).doc;
     cur.nodes.B.files = [{ url: up.url, name: 'secret.txt', type: 'text/plain' }];
-    await authed('/api/doc', { method: 'PUT', body: JSON.stringify({ baseVersion: version, doc: cur }) });
+    await authed(G + '/doc', { method: 'PUT', body: JSON.stringify({ baseVersion: version, doc: cur }) });
     let anon = await fetch(API + up.url);
     assert(anon.status === 401, 'file on a private node stays 401 even though a share exists');
     version = (await getDoc()).version;
     const cur2 = (await getDoc()).doc;
     cur2.nodes.B.files = [];
     cur2.nodes.A.files = [{ url: up.url, name: 'secret.txt', type: 'text/plain' }];
-    await authed('/api/doc', { method: 'PUT', body: JSON.stringify({ baseVersion: version, doc: cur2 }) });
+    await authed(G + '/doc', { method: 'PUT', body: JSON.stringify({ baseVersion: version, doc: cur2 }) });
     anon = await fetch(API + up.url);
     assert(anon.status === 200, 'file attached inside the shared subtree is reachable for guests');
 

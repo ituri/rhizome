@@ -19,7 +19,7 @@ const cookieFrom = sc => { const m = (sc || '').match(/rz_session=([^;]+)/); ret
   let r = await J('/api/me');
   assert(r.status === 200 && r.body.user === null && r.body.authRequired === true && r.body.inviteRequired === true,
     'me: logged out, auth + invite required');
-  r = await J('/api/doc');
+  r = await J('/api/g/x/doc');
   assert(r.status === 401, 'doc rejected without a session');
 
   r = await post('/api/login', { username: 'phil', password: 'wrong' });
@@ -34,7 +34,8 @@ const cookieFrom = sc => { const m = (sc || '').match(/rz_session=([^;]+)/); ret
   assert(r.body.user.isAdmin === true, 'the bootstrap admin is flagged as admin');
   assert(Array.isArray(r.body.graphs) && r.body.graphs.length === 1 && r.body.graphs[0].role === 'owner',
     'the admin owns exactly one graph');
-  r = await J('/api/doc', { headers: { Cookie: cookie } });
+  const gid = r.body.graphs[0].id;
+  r = await J(`/api/g/${gid}/doc`, { headers: { Cookie: cookie } });
   assert(r.status === 200, 'doc accessible with a session');
 
   // self-service password change
@@ -65,7 +66,7 @@ const cookieFrom = sc => { const m = (sc || '').match(/rz_session=([^;]+)/); ret
 
   r = await post('/api/logout', {}, cookie);
   assert(r.status === 200, 'logout ok');
-  r = await J('/api/doc', { headers: { Cookie: cookie } });
+  r = await J(`/api/g/${gid}/doc`, { headers: { Cookie: cookie } });
   assert(r.status === 401, 'session invalid after logout');
 
   console.log(failures ? `\n${failures} FAILURE(S)` : '\nACCOUNTS TESTS PASSED');

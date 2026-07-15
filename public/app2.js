@@ -1647,7 +1647,7 @@ captureOverlay.addEventListener('mousedown', e => { if (e.target === captureOver
 async function fetchShares() {
   if (SHARE_TOKEN) return;
   try {
-    state.shares = await (await fetch('/api/shares')).json();
+    state.shares = await (await fetch(apiBase + '/shares')).json();
   } catch { state.shares = []; }
 }
 
@@ -1690,14 +1690,14 @@ function renderSharePop(pop, id) {
     input.focus();
 
     pop.append(menuItem('Revoke link', '✕', async () => {
-      await fetch('/api/shares/' + existing.token, { method: 'DELETE' });
+      await fetch(apiBase + '/shares/' + existing.token, { method: 'DELETE' });
       await fetchShares();
       elById.get(id)?.classList.toggle('shared-ring', state.shares.some(s => s.id === id));
       renderSharePop(pop, id);
     }, { danger: true, keepOpen: true }));
   } else {
     const make = mode => async () => {
-      const res = await fetch('/api/shares', {
+      const res = await fetch(apiBase + '/shares', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ nodeId: id, mode }),

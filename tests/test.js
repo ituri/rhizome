@@ -269,7 +269,7 @@ const assert = (cond, msg) => {
 
   // --- 17. persistence round-trip
   await sleep(1200);
-  const saved = await page.evaluate(async () => (await (await fetch('/api/doc')).json()));
+  const saved = await page.evaluate(async () => (await (await fetch(apiBase + '/doc')).json()));
   const savedJson = JSON.stringify(saved.doc);
   assert(saved.version >= 1, `document saved to server (v${saved.version})`);
   assert(savedJson.includes('My new task'), 'typed text persisted');

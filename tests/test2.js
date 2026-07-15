@@ -315,7 +315,7 @@ const focusByText = text => `(() => {
   const share = await page.evaluate(async () => {
     const els = [...document.querySelectorAll('.tree .item')];
     const it = els.find(e => (e.querySelector(':scope > .row .content')?.textContent || '').includes('Welcome'));
-    const res = await fetch('/api/shares', {
+    const res = await fetch(apiBase + '/shares', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ nodeId: it.dataset.id, mode: 'view' }),
@@ -337,7 +337,7 @@ const focusByText = text => `(() => {
   const shareEdit = await page.evaluate(async () => {
     const els = [...document.querySelectorAll('.tree .item')];
     const it = els.find(e => (e.querySelector(':scope > .row .content')?.textContent || '').includes('Try it'));
-    const res = await fetch('/api/shares', {
+    const res = await fetch(apiBase + '/shares', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ nodeId: it.dataset.id, mode: 'edit' }),
