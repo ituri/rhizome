@@ -2024,14 +2024,14 @@ html, body { font-size: 14px; line-height: 1.5; }
 [data-theme="dark"] .ref-page { color: #61a5d1; }
 .ref-page::before { content: "▾ "; color: #8a9ba8; font-size: 11px; }
 .ref-row {
-  background: var(--accent-soft); /* subtle warm accent tint, adapts per theme */
+  background: color-mix(in oklab, var(--accent) 5%, transparent); /* barely-there warm tint */
   border-left: none;
   border-radius: 3px;
   padding: 6px 10px;
   margin: 4px 0 4px 8px;
   color: var(--ink);
 }
-.ref-row:hover { background: color-mix(in oklab, var(--accent) 22%, transparent); border-left: none; }
+.ref-row:hover { background: color-mix(in oklab, var(--accent) 10%, transparent); border-left: none; }
 .day-refs { border-top: none; }
 
 /* lighter Roam-gray bullet dots (light theme) */
