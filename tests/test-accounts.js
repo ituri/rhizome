@@ -31,6 +31,7 @@ const cookieFrom = sc => { const m = (sc || '').match(/rz_session=([^;]+)/); ret
 
   r = await J('/api/me', { headers: { Cookie: cookie } });
   assert(r.body.user && r.body.user.username === 'phil', 'me returns the logged-in user');
+  assert(r.body.user.isAdmin === true, 'the bootstrap admin is flagged as admin');
   r = await J('/api/doc', { headers: { Cookie: cookie } });
   assert(r.status === 200, 'doc accessible with a session');
 
@@ -45,6 +46,7 @@ const cookieFrom = sc => { const m = (sc || '').match(/rz_session=([^;]+)/); ret
   assert(r.status === 409, 'duplicate username rejected');
   r = await J('/api/me', { headers: { Cookie: bobCookie } });
   assert(r.body.user && r.body.user.username === 'bob', 'registration logs the new user in');
+  assert(!r.body.user.isAdmin, 'a self-registered user is not an admin');
 
   r = await post('/api/logout', {}, cookie);
   assert(r.status === 200, 'logout ok');

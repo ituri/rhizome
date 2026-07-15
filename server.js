@@ -133,9 +133,12 @@ fs.mkdirSync(FILES_DIR, { recursive: true });
 const accounts = new Accounts(path.join(DATA_DIR, 'accounts.db'));
 // first run with an admin password configured bootstraps the admin account
 if (accounts.userCount() === 0 && ADMIN_PASSWORD) {
-  const u = accounts.createUser(ADMIN_USER, ADMIN_PASSWORD);
+  const u = accounts.createUser(ADMIN_USER, ADMIN_PASSWORD, true);
   console.log(`Created admin account "${u.username}"`);
 }
+// keep the configured admin flagged as admin (covers accounts created before is_admin existed)
+const adminRow = accounts.userByName(ADMIN_USER);
+if (adminRow && !adminRow.is_admin) accounts.setAdmin(adminRow.id, true);
 
 /**
  * The outline's data model — one flat node map; the tree lives in the children id-arrays.
@@ -935,7 +938,7 @@ const server = http.createServer(async (req, res) => {
       if (url === '/api/me' && req.method === 'GET') {
         const u = currentUser(req);
         return send(res, 200, {
-          user: u ? { id: u.id, username: u.username } : null,
+          user: u ? { id: u.id, username: u.username, isAdmin: !!u.is_admin } : null,
           authRequired: accounts.userCount() > 0,
           inviteRequired: !!INVITE_CODE,
           ai: !!AI_KEY,
@@ -954,6 +957,7 @@ const server = http.createServer(async (req, res) => {
         if (password.length < 6) return send(res, 400, { error: 'password must be at least 6 characters' });
         if (accounts.userByName(username)) return send(res, 409, { error: 'that username is taken' });
         const user = accounts.createUser(username, password);
+        accounts.setLastLogin(user.id);
         const token = accounts.newSession(user.id);
         recordAttempt(ip, true);
         return send(res, 200, { user: { id: user.id, username: user.username } }, { 'Set-Cookie': sessionCookie(token) });
@@ -966,6 +970,7 @@ const server = http.createServer(async (req, res) => {
         if (ok && TOTP_SECRET) ok = totpValid(TOTP_SECRET, body.code); // optional global second factor
         recordAttempt(ip, ok);
         if (!ok) return send(res, 401, { error: user ? 'wrong code' : 'wrong username or password' });
+        accounts.setLastLogin(user.id);
         const token = accounts.newSession(user.id);
         return send(res, 200, { user: { id: user.id, username: user.username } }, { 'Set-Cookie': sessionCookie(token) });
       }

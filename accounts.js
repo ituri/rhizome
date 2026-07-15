@@ -18,11 +18,13 @@ const crypto = require('node:crypto');
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS users (
-  id        TEXT PRIMARY KEY,
-  username  TEXT NOT NULL UNIQUE COLLATE NOCASE,
-  pass_hash TEXT NOT NULL,
-  pass_salt TEXT NOT NULL,
-  created   INTEGER NOT NULL
+  id         TEXT PRIMARY KEY,
+  username   TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  pass_hash  TEXT NOT NULL,
+  pass_salt  TEXT NOT NULL,
+  created    INTEGER NOT NULL,
+  last_login INTEGER,
+  is_admin   INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS graphs (
   id       TEXT PRIMARY KEY,
@@ -62,6 +64,14 @@ class Accounts {
     this.db.exec('PRAGMA journal_mode = WAL');
     this.db.exec('PRAGMA foreign_keys = ON');
     this.db.exec(SCHEMA);
+    this._migrate();
+  }
+
+  // add columns introduced after the first release to an already-created users table
+  _migrate() {
+    const cols = new Set(this.db.prepare('PRAGMA table_info(users)').all().map(c => c.name));
+    if (!cols.has('last_login')) this.db.exec('ALTER TABLE users ADD COLUMN last_login INTEGER');
+    if (!cols.has('is_admin')) this.db.exec('ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0');
   }
 
   /* ---------------- users ---------------- */
@@ -70,12 +80,24 @@ class Accounts {
   userByName(username) { return this.db.prepare('SELECT * FROM users WHERE username = ? COLLATE NOCASE').get(String(username)); }
   userById(id) { return this.db.prepare('SELECT * FROM users WHERE id = ?').get(id); }
 
-  createUser(username, password) {
+  createUser(username, password, isAdmin = false) {
     const { hash, salt } = hashPassword(password);
     const id = uid();
-    this.db.prepare('INSERT INTO users(id,username,pass_hash,pass_salt,created) VALUES(?,?,?,?,?)')
-      .run(id, String(username).trim(), hash, salt, now());
+    this.db.prepare('INSERT INTO users(id,username,pass_hash,pass_salt,created,is_admin) VALUES(?,?,?,?,?,?)')
+      .run(id, String(username).trim(), hash, salt, now(), isAdmin ? 1 : 0);
     return this.userById(id);
+  }
+
+  setLastLogin(userId) { this.db.prepare('UPDATE users SET last_login = ? WHERE id = ?').run(now(), userId); }
+  setAdmin(userId, on) { this.db.prepare('UPDATE users SET is_admin = ? WHERE id = ?').run(on ? 1 : 0, userId); }
+  deleteUser(userId) {
+    this.db.prepare('DELETE FROM sessions WHERE user_id = ?').run(userId);
+    this.db.prepare('DELETE FROM memberships WHERE user_id = ?').run(userId);
+    this.db.prepare('DELETE FROM users WHERE id = ?').run(userId);
+  }
+  // for the admin panel — note/storage stats are added by the server (per-graph)
+  listUsers() {
+    return this.db.prepare('SELECT id, username, is_admin, last_login, created FROM users ORDER BY created').all();
   }
 
   // returns the user row on success, null on wrong username/password (constant-time compare)
