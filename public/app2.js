@@ -110,6 +110,7 @@ $('#btn-sidebar').addEventListener('click', () => {
   document.body.classList.toggle('sidebar-mobile', innerWidth < 900);
   if (settings.sidebar) window.renderSidebar();
 });
+$('#side-assets')?.addEventListener('click', () => window.showAssets());
 
 /* ---------------- B. backlinks ---------------- */
 
@@ -1982,6 +1983,7 @@ window.showAssets = function showAssets() {
     for (const o of orphans) {
       const row = assetRow(o, { unused: true });
       $('.asset-del', row).addEventListener('click', async () => {
+        if (!confirm(`Permanently delete the unused file "${o.name}"?`)) return;
         try { await fetch(apiBase + '/assets/orphans/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ names: [o.name] }) }); showToast('Deleted ' + o.name); renderUnused(); }
         catch { showToast('Delete failed'); }
       });
@@ -2505,7 +2507,6 @@ $('#btn-menu').addEventListener('click', e => {
       pop.append(document.createElement('hr'));
       pop.append(
         menuItem('Quick capture', '📥', () => window.showCapture(), { hint: 'Ctrl+Shift+Space' }),
-        menuItem('Assets', '🖼', () => window.showAssets()),
         menuItem('Trash', '🗑', () => showTrash()),
         menuItem('Present', '▶', () => startPresent()),
       );
