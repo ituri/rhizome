@@ -1009,22 +1009,31 @@ async function doSave() {
       commitActiveText(true); // flush the active edit into the op WITH re-decorate (so e.g. a
       commitUndoTxn();        // just-inserted date pill is styled), then finalize the op
       if (!pendingOps.length) {
-        if (changeSeq === seq) { dirty = false; setSaveUI('saved'); localStorage.removeItem('tendril-offline'); }
-        return;
+        // Nothing to delta-sync. If the doc is CLEAN, we're genuinely up to date → "saved".
+        // But if it's still DIRTY, a mutation reached node state WITHOUT emitting an op (e.g.
+        // a debounced text commit that landed outside a transaction) — reporting "saved" here
+        // would strand it on this device only: the "typed in the web, green, but it never
+        // reached the server / iOS" truncation bug. Fall through (below) to the whole-doc PUT,
+        // whose body carries the full node text, instead of POSTing an empty op batch.
+        if (!dirty) {
+          if (changeSeq === seq) { setSaveUI('saved'); localStorage.removeItem('tendril-offline'); }
+          return;
+        }
+      } else {
+        const batch = pendingOps;        // take the queue; edits during the await accumulate a fresh one
+        pendingOps = [];
+        const r = await fetch(apiBase + '/ops', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ops: batch, device: DEVICE_ID }),
+        });
+        if (r.ok) {
+          const rv = (await r.json()).version;
+          if (rv > state.version) state.version = rv; // never regress if a peer broadcast already advanced us
+          if (changeSeq === seq) { dirty = false; setSaveUI('saved'); localStorage.removeItem('tendril-offline'); }
+          cacheDoc(); // refresh the offline boot snapshot with the just-synced state
+          return;
+        }
+        pendingOps = batch.concat(pendingOps); // failed → requeue (idempotent), fall to the whole-doc PUT
       }
-      const batch = pendingOps;        // take the queue; edits during the await accumulate a fresh one
-      pendingOps = [];
-      const r = await fetch(apiBase + '/ops', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ops: batch, device: DEVICE_ID }),
-      });
-      if (r.ok) {
-        const rv = (await r.json()).version;
-        if (rv > state.version) state.version = rv; // never regress if a peer broadcast already advanced us
-        if (changeSeq === seq) { dirty = false; setSaveUI('saved'); localStorage.removeItem('tendril-offline'); }
-        cacheDoc(); // refresh the offline boot snapshot with the just-synced state
-        return;
-      }
-      pendingOps = batch.concat(pendingOps); // failed → requeue (idempotent), fall to the whole-doc PUT
     }
     // ops journaled after this stringify are NOT in the PUT body — they must survive it
     const opsBeforePut = pendingOps.length;
@@ -1205,6 +1214,7 @@ function queueOps(txn) {
 }
 
 document.addEventListener('visibilitychange', async () => {
+  if (document.visibilityState === 'hidden') { flushBeforeHide(); return; } // backgrounded → persist NOW
   if (document.visibilityState !== 'visible' || !doc) return;
   if (!SHARE_TOKEN && (!sse || sse.readyState === 2)) openSSE(); // revive the stream after sleep
   if (dirty) return;
@@ -1222,18 +1232,26 @@ document.addEventListener('visibilitychange', async () => {
   } catch { /* offline */ }
 });
 
-window.addEventListener('beforeunload', () => {
-  commitActiveText();
-  if (dirty && doc && !state.readOnly) {
-    // stash first: if the beacon loses a version race the server rejects it,
-    // and the next load merges the stash via graftMissing instead
-    stashOffline();
-    navigator.sendBeacon?.(SAVE_URL, new Blob(
-      [JSON.stringify({ baseVersion: state.version, doc })],
-      { type: 'application/json' }
-    ));
-  }
-});
+// Flush a pending edit + save when the page is backgrounded or torn down. On mobile,
+// switching apps or locking the screen FREEZES timers, so the 450 ms commit-debounce and
+// 600 ms save-debounce may never fire — characters typed just before the switch stay only
+// in the contenteditable DOM and are lost, so the node syncs a truncated PREFIX (e.g. a
+// bullet becomes "History einer Sei…"). beforeunload is unreliable on mobile; pagehide and
+// visibilitychange:hidden fire dependably, so we commit the live DOM text and beacon the doc.
+function flushBeforeHide() {
+  if (!doc || state.readOnly) return;
+  commitActiveText(); // pull the live contenteditable text into node.text before we serialize
+  if (!dirty) return;
+  // stash first: if the beacon loses a version race the server rejects it,
+  // and the next load merges the stash via graftMissing instead
+  stashOffline();
+  navigator.sendBeacon?.(SAVE_URL, new Blob(
+    [JSON.stringify({ baseVersion: state.version, doc })],
+    { type: 'application/json' }
+  ));
+}
+window.addEventListener('pagehide', flushBeforeHide);
+window.addEventListener('beforeunload', flushBeforeHide);
 
 let sse = null;
 // (re)open the live event stream; called on connect and again after the tab wakes / the

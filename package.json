@@ -17,6 +17,7 @@
     "test:rbconverge": "node tests/test-rb-converge.js",
     "test:worker": "node tests/test-worker.js",
     "test:opsync": "node tests/test-opsync.js",
+    "test:persist": "node tests/test-persist.js",
     "test:search": "node tests/test-search.js",
     "test:mirror": "node tests/test-mirror.js",
     "test:mirrorserver": "node tests/test-mirror-server.js",
