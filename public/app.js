@@ -64,6 +64,9 @@ const bc = (!SHARE_TOKEN && 'BroadcastChannel' in window) ? new BroadcastChannel
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+// an attachment renders as an image based on its file-NAME extension (authoritative): a broken or
+// edited extension (e.g. "Photo.jp") stops it rendering, and a missing/blank mime type doesn't.
+const looksLikeImage = s => /\.(png|jpe?g|gif|webp|svg|bmp|heic|heif|avif)$/i.test(s || '');
 
 const pageEl = $('#page');
 const treeEl = $('#tree');
@@ -1771,7 +1774,7 @@ function buildAttachments(n) {
   wrap.className = 'attachments';
   for (const f of n.files) {
     const url = fileHref(f.url); // null for javascript: and other unsafe schemes
-    if ((f.type || '').startsWith('image/')) {
+    if (looksLikeImage(f.name || f.url)) {
       const img = document.createElement('img');
       img.className = 'att-img';
       img.src = url || '';

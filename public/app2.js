@@ -1923,7 +1923,6 @@ window.renderAssetsView = function renderAssetsView(frag) {
   const searchEl = $('.assets-search', view);
   searchEl.value = assetsQuery;
   const jump = node => zoomTo(node);
-  const isImageName = s => /\.(png|jpe?g|gif|webp|svg|bmp|heic|heif)$/i.test(s || '');
   const matchAsset = a => fuzzyMatch(assetsQuery, a.name || a.url) || (a.refs || []).some(r => fuzzyMatch(assetsQuery, r.pageTitle || ''));
 
   $$('.assets-tab', view).forEach(t => {
@@ -1935,7 +1934,7 @@ window.renderAssetsView = function renderAssetsView(frag) {
   function assetRow(a, { refs, unused } = {}) {
     const row = document.createElement('div');
     row.className = 'asset-row';
-    const img = (a.type || '').startsWith('image/') || isImageName(a.name);
+    const img = looksLikeImage(a.name || a.url);
     row.innerHTML = `${img ? `<img class="asset-thumb" loading="lazy" alt="">` : '<div class="asset-thumb asset-file">📎</div>'}
       <div class="asset-info"><div class="asset-name"></div><div class="asset-meta"></div><div class="asset-refs"></div></div>
       <div class="asset-actions"><a class="asset-dl" download title="Download">⇩</a><button class="asset-rename" title="Rename">Rename</button><button class="asset-del">Delete</button></div>`;
