@@ -464,9 +464,12 @@ button { font-family: inherit; }
   transition: color 0.25s;
 }
 .content:empty::before { content: "\200b"; }
-/* an image-only bullet shouldn't show an empty text line above the picture */
+/* an image-only bullet shouldn't show an empty text line above the picture: collapse the empty
+   content and pull the image up beside the bullet dot (it sits to the right of it, so no overlap) */
 .item.has-files > .row > .content:empty { padding: 0; min-height: 0; }
 .item.has-files > .row > .content:empty::before { content: none; }
+.item.has-files > .row:has(> .content:empty) { padding-top: 0; padding-bottom: 0; }
+.item.has-files:has(> .row > .content:empty) > .attachments { margin-top: -23px; }
 
 .item.done > .row .content {
   color: var(--done);
