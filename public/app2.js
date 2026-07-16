@@ -110,7 +110,6 @@ $('#btn-sidebar').addEventListener('click', () => {
   document.body.classList.toggle('sidebar-mobile', innerWidth < 900);
   if (settings.sidebar) window.renderSidebar();
 });
-$('#side-assets')?.addEventListener('click', () => window.showAssets());
 
 /* ---------------- B. backlinks ---------------- */
 
@@ -1895,24 +1894,29 @@ function fmtBytes(n) {
 }
 
 // Asset manager: every file referenced in this graph (In use) + files no graph references (Unused)
-window.showAssets = function showAssets() {
-  if (SHARE_TOKEN) return;
-  const overlay = document.createElement('div');
-  overlay.className = 'overlay';
-  overlay.innerHTML = `<div class="history-dialog assets-dialog" role="dialog" aria-label="Assets">
-    <div class="history-head"><span>Assets</span><button class="history-close" aria-label="Close">×</button></div>
-    <div class="assets-tabs"><button class="assets-tab active" data-tab="used">In use</button><button class="assets-tab" data-tab="unused">Unused</button></div>
-    <div class="assets-list">Loading…</div>
-  </div>`;
-  document.body.append(overlay);
-  const close = () => { overlay.remove(); document.removeEventListener('keydown', onKey); };
-  const onKey = e => { if (e.key === 'Escape') close(); };
-  document.addEventListener('keydown', onKey);
-  overlay.addEventListener('mousedown', e => { if (e.target === overlay) close(); });
-  $('.history-close', overlay).addEventListener('click', close);
-  const listEl = $('.assets-list', overlay);
-  const jump = node => { close(); zoomTo(node); };
+let assetsTab = 'used';   // 'used' | 'unused' — persists across re-renders
+function assetsViewActive() { return state.view === 'assets' && state.zoom === ROOT && !SHARE_TOKEN && !searchActive(); }
+window.assetsViewActive = assetsViewActive;
+
+// Full-page asset manager: files referenced in this graph (In use) + files no graph references (Unused)
+window.renderAssetsView = function renderAssetsView(frag) {
+  const view = document.createElement('div');
+  view.className = 'assets-view';
+  view.innerHTML = `<h1 class="pages-head">Assets</h1>
+    <div class="assets-tabs">
+      <button class="assets-tab" data-tab="used">In use</button>
+      <button class="assets-tab" data-tab="unused">Unused</button>
+    </div>
+    <div class="assets-list">Loading…</div>`;
+  frag.append(view);
+  const listEl = $('.assets-list', view);
+  const jump = node => zoomTo(node);
   const isImageName = s => /\.(png|jpe?g|gif|webp|svg|bmp|heic|heif)$/i.test(s || '');
+
+  $$('.assets-tab', view).forEach(t => {
+    t.classList.toggle('active', t.dataset.tab === assetsTab);
+    t.addEventListener('click', () => { if (assetsTab !== t.dataset.tab) { assetsTab = t.dataset.tab; renderPage(); } });
+  });
 
   function assetRow(a, { refs, unused } = {}) {
     const row = document.createElement('div');
@@ -1952,9 +1956,10 @@ window.showAssets = function showAssets() {
       $('.asset-del', row).addEventListener('click', async () => {
         if (!confirm(`Delete "${a.name}" and remove it from ${a.refs.length} note(s)?`)) return;
         try {
-          const res = await (await fetch(apiBase + '/assets/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: a.url }) })).json();
-          if (res.version != null) { const full = await (await fetch(apiBase + '/doc')).json(); adoptRemote(full.version, full.doc); }
-          showToast('Deleted ' + a.name); renderUsed();
+          await fetch(apiBase + '/assets/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: a.url }) });
+          const full = await (await fetch(apiBase + '/doc')).json();
+          showToast('Deleted ' + a.name);
+          adoptRemote(full.version, full.doc);   // updates the doc + re-renders the assets view
         } catch { showToast('Delete failed'); }
       });
       listEl.append(row);
@@ -1991,11 +1996,7 @@ window.showAssets = function showAssets() {
     }
   }
 
-  $$('.assets-tab', overlay).forEach(t => t.addEventListener('click', () => {
-    $$('.assets-tab', overlay).forEach(x => x.classList.toggle('active', x === t));
-    t.dataset.tab === 'used' ? renderUsed() : renderUnused();
-  }));
-  renderUsed();
+  (assetsTab === 'unused' ? renderUnused : renderUsed)();
 };
 
 function restoreTrashEntry(entry) {

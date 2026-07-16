@@ -1694,7 +1694,7 @@ const searchDebounced = debounce(q => setSearch(q, { fromInput: true }), 160);
 
 function updateDocTitle() {
   document.title = state.zoom === HOME && !SHARE_TOKEN
-    ? (state.view === 'pages' ? 'All Pages — Rhizome' : state.view === 'daily' ? 'Daily Notes — Rhizome' : 'Outline — Rhizome')
+    ? (state.view === 'pages' ? 'All Pages — Rhizome' : state.view === 'assets' ? 'Assets — Rhizome' : state.view === 'daily' ? 'Daily Notes — Rhizome' : 'Outline — Rhizome')
     : (plainOf(N(state.zoom).text).trim() || 'Untitled') + ' — Rhizome';
 }
 
@@ -2074,9 +2074,12 @@ function renderPage() {
   const frag = document.createDocumentFragment();
   // rhizome: an active search renders whole-outline results grouped by page
   const specialView = searchActive() && window.renderSearchResults ? 'search'
+    : window.assetsViewActive?.() ? 'assets'
     : window.pagesViewActive?.() ? 'pages' : window.dailyViewActive?.() ? 'daily' : null;
   if (specialView === 'search') {
     window.renderSearchResults(frag);
+  } else if (specialView === 'assets') {
+    window.renderAssetsView(frag);
   } else if (specialView === 'pages') {
     window.renderPagesView(frag);
   } else if (specialView === 'daily') {
@@ -2704,6 +2707,7 @@ const rowContentOf = id => elById.get(id)?.querySelector(':scope > .row > .conte
 function parseHashView() {
   if (SHARE_TOKEN) return null;
   if (/^#\/pages\b/.test(location.hash)) return 'pages';
+  if (/^#\/assets\b/.test(location.hash)) return 'assets';
   if (/^#\/outline\b/.test(location.hash)) return null; // legacy: the full root outline
   const m = location.hash.match(/^#\/n\/([A-Za-z0-9]+)/);
   return m ? null : 'daily';

@@ -616,6 +616,7 @@ window.renderSidebar = function renderSidebar() {
 
   $('#side-daily')?.classList.toggle('current', state.zoom === ROOT && state.view === 'daily');
   $('#side-pages-link')?.classList.toggle('current', state.view === 'pages');
+  $('#side-assets')?.classList.toggle('current', state.view === 'assets');
 
   const starsBox = $('#side-stars');
   const starsSection = $('#side-stars-section');
