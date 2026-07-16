@@ -132,6 +132,11 @@ class Accounts {
     else this.db.prepare('INSERT INTO settings(k,v) VALUES(?,?) ON CONFLICT(k) DO UPDATE SET v = excluded.v').run(k, String(v));
   }
 
+  // per-user cross-device preferences (a small JSON blob), stored in the settings table
+  // under a namespaced key so no schema change is needed
+  getUserPrefs(userId) { try { return JSON.parse(this.getSetting('uprefs:' + userId) || '{}'); } catch { return {}; } }
+  setUserPrefs(userId, obj) { this.setSetting('uprefs:' + userId, JSON.stringify(obj || {})); }
+
   /* ---------------- API keys (per-graph, scoped) ---------------- */
 
   // returns { id, key } — the plaintext key is shown once; only its sha256 is stored

@@ -1167,10 +1167,24 @@ const server = http.createServer(async (req, res) => {
         return send(res, 200, {
           user: u ? { id: u.id, username: u.username, isAdmin: !!u.is_admin } : null,
           graphs: u ? accounts.graphsForUser(u.id) : [],
+          prefs: u ? accounts.getUserPrefs(u.id) : {}, // cross-device preferences
           authRequired: accounts.userCount() > 0,
           inviteRequired: !!currentInviteCode(),
           ai: !!AI_KEY,
         });
+      }
+      // cross-device user preferences (shared web ⇄ iOS): a small merged JSON blob
+      if (url === '/api/account/prefs') {
+        const u = currentUser(req);
+        if (!u) return send(res, 401, { error: 'not signed in' });
+        if (req.method === 'GET') return send(res, 200, { prefs: accounts.getUserPrefs(u.id) });
+        if (req.method === 'PUT') {
+          const body = await readJson(req);
+          const incoming = (body && typeof body.prefs === 'object' && body.prefs) ? body.prefs : {};
+          const merged = Object.assign(accounts.getUserPrefs(u.id), incoming);
+          accounts.setUserPrefs(u.id, merged);
+          return send(res, 200, { prefs: merged });
+        }
       }
       if (url === '/api/register' && req.method === 'POST') {
         if (throttled(ip)) return send(res, 429, { error: 'too many attempts — try again in 10 minutes' });

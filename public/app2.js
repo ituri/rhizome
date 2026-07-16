@@ -2133,12 +2133,23 @@ function enhanceCaptureSpec(spec) {
   spec.children.forEach(enhanceCaptureSpec);
 }
 
+// a leading local HH:mm, exactly like the `r` command and the iOS capture
+function captureTimePrefix() {
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')} `;
+}
+
 function doCapture() {
   const text = captureInput.value;
   const forest = parseIndentedText(text);
   if (!forest.length) { captureOverlay.hidden = true; return; }
   snapshot(); // rhizome: before enhance — a captured date may create its day node
   forest.forEach(enhanceCaptureSpec);
+  // stamp each top-level line with the time (children stay as typed), if enabled
+  if (settings.captureTimestamp !== false) {
+    const stamp = captureTimePrefix();
+    forest.forEach(spec => { spec.text = stamp + spec.text; });
+  }
   const inbox = findOrCreateInbox();
   materializeForest(forest, inbox);
   captureInput.value = '';
@@ -2574,6 +2585,7 @@ function showSettings(initialTab) {
     bool(g, 'Rich tags (emoji in tags)', () => !!settings.richTags, v => { settings.richTags = v; renderPage(); });
     bool(g, 'Convert markdown on paste', () => settings.markdownPaste !== false, v => { settings.markdownPaste = v; });
     g = group('Behaviour');
+    bool(g, 'Timestamp quick capture', () => settings.captureTimestamp !== false, v => { settings.captureTimestamp = v; window.pushSharedPref('captureTimestamp'); });
     bool(g, 'Tag duplicates with #copy', () => !!settings.copyTag, v => { settings.copyTag = v; });
     bool(g, 'Video embeds', () => !!settings.embeds, v => { settings.embeds = v; renderPage(); });
     choice(g, 'Week starts', [['Monday', 'mon'], ['Sunday', 'sun']],

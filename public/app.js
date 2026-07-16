@@ -40,6 +40,7 @@ const settings = Object.assign(
     showCompleted: true, embeds: true, copyTag: true, sidebar: false,
     width: 'reading', arrows: 'hover', capitalize: false, richTags: false,
     dateFormat: 'medium', weekStart: 'mon', markdownPaste: true, animations: true,
+    captureTimestamp: true, // prefix quick-capture lines with the local HH:mm
     opSync: true, // op delta-sync is the default save path (PUT remains the fallback)
   },
   JSON.parse(localStorage.getItem('tendril-settings') || '{}')
@@ -4425,6 +4426,28 @@ function saveSettings() {
   localStorage.setItem('tendril-settings', JSON.stringify(settings));
 }
 
+// preferences shared across devices for the signed-in account (web ⇄ iOS)
+const SHARED_PREF_KEYS = ['captureTimestamp'];
+
+// on load, the server's stored value wins for shared keys (so a change on iOS shows up here)
+function applySharedPrefs(me) {
+  if (!me || !me.user || !me.prefs) return;
+  for (const k of SHARED_PREF_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(me.prefs, k)) settings[k] = me.prefs[k];
+  }
+  saveSettings();
+}
+
+// on change, mirror a shared key up to the server (best-effort; local save already happened)
+function pushSharedPref(key) {
+  if (!SHARED_PREF_KEYS.includes(key) || !state.user || state.offline) return;
+  fetch('/api/account/prefs', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prefs: { [key]: settings[key] } }),
+  }).catch(() => {});
+}
+window.pushSharedPref = pushSharedPref;
+
 /* ---------------- 25. search & mobile wiring ---------------- */
 
 searchEl.addEventListener('input', () => searchDebounced(searchEl.value));
@@ -4542,6 +4565,7 @@ async function ensureAuth() {
       state.authRequired = me.authRequired;
       state.aiEnabled = !!me.ai;
       state.user = me.user || null;
+      applySharedPrefs(me);
       pickActiveGraph(me);
       return;
     }
@@ -4550,6 +4574,7 @@ async function ensureAuth() {
   state.authRequired = me.authRequired;
   state.aiEnabled = !!me.ai;
   state.user = me.user || null;
+  applySharedPrefs(me);
   if (!me.authRequired || me.user) { pickActiveGraph(me); return; } // open instance, or already logged in
 
   const screen = $('#login-screen');
@@ -4586,6 +4611,7 @@ async function ensureAuth() {
       if (res.ok) {
         state.user = (await res.json()).user;
         const me2 = await (await fetch('/api/me')).json(); // learn the new user's graphs
+        applySharedPrefs(me2);
         pickActiveGraph(me2);
         screen.hidden = true;
         resolve();
