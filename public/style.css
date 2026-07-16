@@ -764,6 +764,7 @@ body.dragging-item .content, body.dragging-item .note { cursor: grabbing; }
 .diff-added { background: color-mix(in oklab, #2e9e5b 16%, transparent); color: var(--ink); }
 .diff-removed { background: color-mix(in oklab, #e5484d 15%, transparent); color: var(--ink-soft); }
 .diff-empty { color: var(--ink-faint); padding: 4px 8px; font-size: 13px; }
+.diff-note { color: var(--ink-soft); font-style: italic; }
 
 .jump {
   width: min(560px, 100%);

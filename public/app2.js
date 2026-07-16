@@ -1856,23 +1856,33 @@ window.showPageHistory = function showPageHistory(pageId) {
   }).catch(() => { listEl.innerHTML = '<div class="history-empty">Could not load history.</div>'; });
 };
 
-// render a plain-text diff of two page snapshots (by node): added / removed / changed bullets
+// render a plain-text diff of two page snapshots (by node): added / removed / changed bullets,
+// plus a note for structure-only changes (move/indent, collapse, done, formatting) so a version
+// whose bullet text didn't change still explains what it captured
 function renderHistoryDiff(panel, oldDoc, newDoc) {
   const oldN = (oldDoc && oldDoc.nodes) || {}, newN = (newDoc && newDoc.nodes) || {};
   const lines = [];
+  const notes = new Set();  // structural / non-text changes, described once each
   for (const id in newN) {
-    const nt = plainOf(newN[id].text).trim();
-    if (!(id in oldN)) { if (nt) lines.push(['added', nt]); }
-    else { const ot = plainOf(oldN[id].text).trim(); if (ot !== nt) lines.push(['changed', nt, ot]); }
+    const nn = newN[id], nt = plainOf(nn.text).trim();
+    if (!(id in oldN)) { nt ? lines.push(['added', nt]) : notes.add('Added an empty bullet'); continue; }
+    const on = oldN[id], ot = plainOf(on.text).trim();
+    if (ot !== nt) lines.push(['changed', nt, ot]);
+    else if ((on.text || '') !== (nn.text || '')) notes.add('Changed text formatting');
+    if (!!on.done !== !!nn.done) notes.add(nn.done ? 'Marked a bullet done' : 'Un-marked a bullet');
+    if (!!on.collapsed !== !!nn.collapsed) notes.add(nn.collapsed ? 'Collapsed a bullet' : 'Expanded a bullet');
+    if ((on.note || '') !== (nn.note || '')) notes.add('Edited a note');
+    if (JSON.stringify(on.children || []) !== JSON.stringify(nn.children || [])) notes.add('Moved / reordered bullets');
   }
-  for (const id in oldN) if (!(id in newN)) { const ot = plainOf(oldN[id].text).trim(); if (ot) lines.push(['removed', ot]); }
-  if (!lines.length) { panel.innerHTML = '<div class="diff-empty">No text changes in this version.</div>'; return; }
+  for (const id in oldN) if (!(id in newN)) { const ot = plainOf(oldN[id].text).trim(); ot ? lines.push(['removed', ot]) : notes.add('Removed an empty bullet'); }
+  if (!lines.length && !notes.size) { panel.innerHTML = '<div class="diff-empty">No changes in this version.</div>'; return; }
   panel.innerHTML = '';
   const mk = (cls, prefix, text) => { const d = document.createElement('div'); d.className = 'diff-line ' + cls; d.textContent = prefix + text; panel.append(d); };
   for (const [type, text, oldText] of lines) {
     if (type === 'changed') { mk('diff-removed', '− ', oldText); mk('diff-added', '+ ', text); }
     else mk(type === 'added' ? 'diff-added' : 'diff-removed', type === 'added' ? '+ ' : '− ', text);
   }
+  for (const n of notes) mk('diff-note', '• ', n);
 }
 
 function restoreTrashEntry(entry) {
