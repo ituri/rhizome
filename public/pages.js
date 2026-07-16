@@ -205,31 +205,50 @@ async function geocodeAndRetitle(pageId, coords) {
   finally { geocoding.delete(pageId); }
 }
 
-// a small, non-interactive map under any bullet that links to a location page — so a place
-// referenced in the journal (or anywhere) shows its map inline, without opening the page.
-window.buildGeoMini = function buildGeoMini(n) {
-  const t = n.text || '';
-  if (!t.includes('#/n/')) return null;
+// the coordinate of the first location page a text links to, else null
+function firstLinkedCoords(html) {
+  if (!html.includes('#/n/')) return null;
   const tpl = document.createElement('template');
-  tpl.innerHTML = t;
-  let coords = null;
+  tpl.innerHTML = html;
   for (const a of tpl.content.querySelectorAll('a[href^="#/n/"]')) {
     const c = pageCoords(a.getAttribute('href').slice(4));
-    if (c) { coords = c; break; } // first location link wins
+    if (c) return c;
   }
-  if (!coords) return null;
+  return null;
+}
+
+// a small, non-interactive map under any bullet that links to a location page — so a place
+// referenced in the journal (or anywhere) shows its map inline, without opening the page.
+// The map element is cached per node so re-renders (indent/outdent, edits) REUSE it instead of
+// rebuilding Leaflet, which would make the tiles flash.
+const geoMiniCache = new Map(); // nodeId → { el, map, key }
+window.buildGeoMini = function buildGeoMini(n) {
+  const coords = firstLinkedCoords(n.text || '');
+  const cached = geoMiniCache.get(n.id);
+  if (!coords) {
+    if (cached) { try { cached.map?.remove(); } catch { /* noop */ } geoMiniCache.delete(n.id); }
+    return null;
+  }
+  const key = `${coords.lat},${coords.lon}`;
+  if (cached && cached.key === key) {
+    if (cached.map) requestAnimationFrame(() => cached.map.invalidateSize()); // fix size after re-attach
+    return cached.el; // reuse the live map element — no flash
+  }
+  if (cached) { try { cached.map?.remove(); } catch { /* noop */ } }
   const el = document.createElement('div');
   el.className = 'geo-mini';
+  const entry = { el, map: null, key };
+  geoMiniCache.set(n.id, entry);
   loadLeaflet().then(() => {
     if (!el.isConnected) return;
-    const map = L.map(el, {
+    entry.map = L.map(el, {
       zoomControl: false, attributionControl: false, dragging: false, scrollWheelZoom: false,
       doubleClickZoom: false, boxZoom: false, keyboard: false, tap: false, touchZoom: false,
     }).setView([coords.lat, coords.lon], 15);
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
-    L.circleMarker([coords.lat, coords.lon], { radius: 6, weight: 2, color: '#bf562f', fillColor: '#bf562f', fillOpacity: 0.85 }).addTo(map);
-    setTimeout(() => map.invalidateSize(), 60);
-  }).catch(() => el.remove());
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(entry.map);
+    L.circleMarker([coords.lat, coords.lon], { radius: 6, weight: 2, color: '#bf562f', fillColor: '#bf562f', fillOpacity: 0.85 }).addTo(entry.map);
+    setTimeout(() => entry.map.invalidateSize(), 60);
+  }).catch(() => { el.remove(); geoMiniCache.delete(n.id); });
   return el;
 };
 
