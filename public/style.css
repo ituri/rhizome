@@ -328,7 +328,7 @@ button { font-family: inherit; }
 .geo-mini {
   height: 130px;
   max-width: 320px;
-  margin: 5px 0 7px;
+  margin: 5px 0 7px 26px;   /* indent to the content/text column (past the bullet), like .note */
   border: 1px solid var(--line);
   border-radius: 8px;
   overflow: hidden;
