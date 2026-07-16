@@ -93,6 +93,13 @@ drop a thought into your Inbox:
 curl -X POST "https://your-host/api/capture?token=rzk_…" -d "call mom tomorrow"
 ```
 
+Add `&deviceName=<name>` (or a JSON body `{"text":"…","deviceName":"…"}`) to label the
+capture in the page history, so you can tell which device or script added a note:
+
+```sh
+curl -X POST "https://your-host/api/capture?token=rzk_…&deviceName=r-cli" -d "call mom tomorrow"
+```
+
 ## 🤖 Node API (for scripts & AI agents)
 
 A small per-node REST API lives at `/api/v1`, designed for an AI agent collaborating
