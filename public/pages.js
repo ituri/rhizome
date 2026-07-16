@@ -101,6 +101,22 @@ function pageOf(id) {
   return chain.length > 1 ? chain[1] : id;
 }
 
+// the page used for version history: a journal day (cal:'day') is its own page; otherwise the
+// top-level page (child of root, not the calendar root). Mirrors the server's pageIdOf, so the
+// history menu asks for the right key (pageOf would return the calendar root for a journal day).
+function historyPageOf(id) {
+  let cur = id;
+  while (cur) {
+    if (N(cur)?.cal === 'day') return cur;
+    const p = parentOf(cur);
+    if (!p) return null;
+    if (p === ROOT) return N(cur)?.cal === 'root' ? null : cur;
+    cur = p;
+  }
+  return null;
+}
+window.historyPageOf = historyPageOf;
+
 /* ---------------- Location pages: coords → OSM mini-map + reverse-geocoded title -------------- */
 // A location page carries a "lat, lon" coordinate (from the iOS geo button). We render an OSM
 // mini-map for it and, the first time we see one whose TITLE is still raw coordinates, reverse-

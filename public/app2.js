@@ -2332,7 +2332,8 @@ $('#btn-menu').addEventListener('click', e => {
         menuItem('Trash', '🗑', () => showTrash()),
         menuItem('Present', '▶', () => startPresent()),
       );
-      if (state.zoom !== ROOT) pop.append(menuItem('Page history', '🕘', () => window.showPageHistory(pageOf(state.zoom))));
+      const histPage = state.zoom !== ROOT ? window.historyPageOf?.(state.zoom) : null;
+      if (histPage) pop.append(menuItem('Page history', '🕘', () => window.showPageHistory(histPage)));
       pop.append(menuItem('Device name…', '🏷', () => {
         const n = prompt('Device name (shown in page history):', window.getDeviceName());
         if (n != null) { window.setDeviceName(n); showToast('Device name: ' + window.getDeviceName()); }
