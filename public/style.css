@@ -777,6 +777,8 @@ body.dragging-item .content, body.dragging-item .note { cursor: grabbing; }
 .asset-actions { display: flex; align-items: center; gap: 6px; flex: none; }
 .asset-dl { text-decoration: none; color: var(--ink-soft); font-size: 17px; padding: 2px 6px; border-radius: 6px; }
 .asset-dl:hover { background: var(--line); }
+.asset-rename { border: 1px solid var(--line); background: var(--bg); color: var(--ink-soft); font-size: 13px; padding: 4px 10px; border-radius: 7px; cursor: pointer; }
+.asset-rename:hover { border-color: var(--accent); color: var(--accent); }
 .asset-del { border: 1px solid var(--line); background: var(--bg); color: var(--ink-soft); font-size: 13px; padding: 4px 10px; border-radius: 7px; cursor: pointer; }
 .asset-del:hover { border-color: oklch(0.6 0.19 25); color: oklch(0.55 0.19 25); }
 .asset-orphanbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 10px; font-size: 13px; color: var(--ink-soft); }

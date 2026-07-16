@@ -1441,10 +1441,11 @@ const server = http.createServer(async (req, res) => {
         return send(res, 404, { error: 'not found' });
       }
 
-      /* ---- asset management: /api/g/:graphId/assets[/orphans][/delete] ---- */
-      const am = url.match(/^\/api\/g\/([A-Za-z0-9]+)\/assets(\/orphans)?(\/delete)?(?:\?.*)?$/);
+      /* ---- asset management: /api/g/:graphId/assets[/orphans][/delete|/rename] ---- */
+      const am = url.match(/^\/api\/g\/([A-Za-z0-9]+)\/assets(\/orphans)?(\/[a-z]+)?(?:\?.*)?$/);
       if (am) {
-        const gid = am[1], isOrphans = !!am[2], isDelete = !!am[3], method = req.method;
+        const gid = am[1], isOrphans = !!am[2], action = am[3] ? am[3].slice(1) : '', method = req.method;
+        const isDelete = action === 'delete', isRename = action === 'rename';
         const open = accounts.userCount() === 0;
         const user = currentUser(req);
         if (!open && !user) return send(res, 401, { error: 'unauthorized' });
@@ -1480,7 +1481,24 @@ const server = http.createServer(async (req, res) => {
           return send(res, 404, { error: 'not found' });
         }
 
-        if (method === 'GET' && !isDelete) return send(res, 200, { assets: graphAssets(g) });
+        if (method === 'GET' && !action) return send(res, 200, { assets: graphAssets(g) });
+        if (method === 'POST' && isRename) {
+          const body = await readJson(req);
+          const furl = String(body.url || '');
+          const name = String(body.name || '').replace(/[\r\n\t]/g, ' ').trim().slice(0, 200);
+          if (!furl.startsWith('/files/') || !name) return send(res, 400, { error: 'bad request' });
+          const doc = g.store.doc;
+          let changed = false;
+          if (doc && doc.nodes) {
+            for (const id in doc.nodes) {
+              for (const f of (doc.nodes[id].files || [])) {
+                if (f && f.url === furl && f.name !== name) { f.name = name; changed = true; }
+              }
+            }
+          }
+          const version = changed ? commitDoc(g, doc, 'assets') : g.store.version;
+          return send(res, 200, { version });
+        }
         if (method === 'POST' && isDelete) {
           const body = await readJson(req);
           const furl = String(body.url || '');

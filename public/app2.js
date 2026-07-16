@@ -1924,7 +1924,8 @@ window.renderAssetsView = function renderAssetsView(frag) {
     const img = (a.type || '').startsWith('image/') || isImageName(a.name);
     row.innerHTML = `${img ? `<img class="asset-thumb" loading="lazy" alt="">` : '<div class="asset-thumb asset-file">📎</div>'}
       <div class="asset-info"><div class="asset-name"></div><div class="asset-meta"></div><div class="asset-refs"></div></div>
-      <div class="asset-actions"><a class="asset-dl" download title="Download">⇩</a><button class="asset-del">Delete</button></div>`;
+      <div class="asset-actions"><a class="asset-dl" download title="Download">⇩</a><button class="asset-rename" title="Rename">Rename</button><button class="asset-del">Delete</button></div>`;
+    if (unused) $('.asset-rename', row).hidden = true;   // rename applies to referenced files
     if (img) $('.asset-thumb', row).src = fileHref(a.url) || '';
     $('.asset-name', row).textContent = a.name || a.url.split('/').pop();
     const bits = [fmtBytes(a.size)];
@@ -1953,6 +1954,16 @@ window.renderAssetsView = function renderAssetsView(frag) {
     listEl.innerHTML = '';
     for (const a of assets) {
       const row = assetRow(a, { refs: a.refs });
+      $('.asset-rename', row).addEventListener('click', async () => {
+        const name = prompt('Rename file:', a.name || '');
+        if (name == null || !name.trim() || name === a.name) return;
+        try {
+          await fetch(apiBase + '/assets/rename', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: a.url, name: name.trim() }) });
+          const full = await (await fetch(apiBase + '/doc')).json();
+          showToast('Renamed to ' + name.trim());
+          adoptRemote(full.version, full.doc);
+        } catch { showToast('Rename failed'); }
+      });
       $('.asset-del', row).addEventListener('click', async () => {
         if (!confirm(`Delete "${a.name}" and remove it from ${a.refs.length} note(s)?`)) return;
         try {
