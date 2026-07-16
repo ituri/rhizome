@@ -321,6 +321,7 @@ button { font-family: inherit; }
   border: 1px solid var(--line);
   border-radius: 10px;
   overflow: hidden;
+  isolation: isolate;   /* contain Leaflet's high z-indexes so they don't paint over dialogs */
 }
 .zoom-map .leaflet-container { height: 100%; background: var(--line-soft); font: inherit; }
 .zoom-map .leaflet-control-attribution { font-size: 10px; }
@@ -332,6 +333,7 @@ button { font-family: inherit; }
   border: 1px solid var(--line);
   border-radius: 8px;
   overflow: hidden;
+  isolation: isolate;       /* keep Leaflet's z-indexes from painting over overlays/dialogs */
 }
 .geo-mini .leaflet-container { height: 100%; background: var(--line-soft); cursor: default; }
 
