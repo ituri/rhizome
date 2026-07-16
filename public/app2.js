@@ -1799,7 +1799,7 @@ window.showPageHistory = function showPageHistory(pageId) {
       return;
     }
     listEl.innerHTML = '';
-    versions.forEach(v => {
+    versions.forEach((v, i) => {
       const when = new Date(v.ts).toLocaleString();
       const row = document.createElement('div');
       row.className = 'history-row';
@@ -1808,6 +1808,29 @@ window.showPageHistory = function showPageHistory(pageId) {
       meta.innerHTML = `<span class="history-when"></span><span class="history-device"></span>`;
       $('.history-when', meta).textContent = when;
       $('.history-device', meta).textContent = v.device || 'unknown device';
+
+      const diffPanel = document.createElement('div');
+      diffPanel.className = 'history-diff';
+      diffPanel.hidden = true;
+      const diffBtn = document.createElement('button');
+      diffBtn.className = 'history-diffbtn';
+      diffBtn.textContent = 'Diff';
+      diffBtn.title = 'What changed in this version vs. the previous one';
+      diffBtn.addEventListener('click', async () => {
+        if (!diffPanel.hidden) { diffPanel.hidden = true; return; }
+        diffPanel.hidden = false;
+        if (diffPanel.dataset.loaded) return;
+        diffPanel.dataset.loaded = '1';
+        diffPanel.innerHTML = '<div class="diff-empty">Loading…</div>';
+        try {
+          const newer = await (await fetch(apiBase + '/history/' + pageId + '/' + v.id)).json();
+          const older = versions[i + 1]
+            ? await (await fetch(apiBase + '/history/' + pageId + '/' + versions[i + 1].id)).json()
+            : { doc: { nodes: {} } };  // oldest version → everything is "added"
+          renderHistoryDiff(diffPanel, older.doc, newer.doc);
+        } catch { diffPanel.innerHTML = '<div class="diff-empty">Could not load diff.</div>'; diffPanel.dataset.loaded = ''; }
+      });
+
       const restore = document.createElement('button');
       restore.className = 'history-restore';
       restore.textContent = 'Restore';
@@ -1824,11 +1847,33 @@ window.showPageHistory = function showPageHistory(pageId) {
           showToast('Restored the version from ' + when);
         } catch { restore.disabled = false; restore.textContent = 'Restore'; showToast('Restore failed'); }
       });
-      row.append(meta, restore);
-      listEl.append(row);
+      row.append(meta, diffBtn, restore);
+      const wrap = document.createElement('div');
+      wrap.className = 'history-item';
+      wrap.append(row, diffPanel);
+      listEl.append(wrap);
     });
   }).catch(() => { listEl.innerHTML = '<div class="history-empty">Could not load history.</div>'; });
 };
+
+// render a plain-text diff of two page snapshots (by node): added / removed / changed bullets
+function renderHistoryDiff(panel, oldDoc, newDoc) {
+  const oldN = (oldDoc && oldDoc.nodes) || {}, newN = (newDoc && newDoc.nodes) || {};
+  const lines = [];
+  for (const id in newN) {
+    const nt = plainOf(newN[id].text).trim();
+    if (!(id in oldN)) { if (nt) lines.push(['added', nt]); }
+    else { const ot = plainOf(oldN[id].text).trim(); if (ot !== nt) lines.push(['changed', nt, ot]); }
+  }
+  for (const id in oldN) if (!(id in newN)) { const ot = plainOf(oldN[id].text).trim(); if (ot) lines.push(['removed', ot]); }
+  if (!lines.length) { panel.innerHTML = '<div class="diff-empty">No text changes in this version.</div>'; return; }
+  panel.innerHTML = '';
+  const mk = (cls, prefix, text) => { const d = document.createElement('div'); d.className = 'diff-line ' + cls; d.textContent = prefix + text; panel.append(d); };
+  for (const [type, text, oldText] of lines) {
+    if (type === 'changed') { mk('diff-removed', '− ', oldText); mk('diff-added', '+ ', text); }
+    else mk(type === 'added' ? 'diff-added' : 'diff-removed', type === 'added' ? '+ ' : '− ', text);
+  }
+}
 
 function restoreTrashEntry(entry) {
   // remap ids on conflict (e.g. restored twice via undo interplay)
