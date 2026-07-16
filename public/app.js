@@ -1952,6 +1952,8 @@ function mountItem(id, underMatch = false) {
   if (embed) item.append(embed);
   const qr = window.buildQueryResults?.(cn); // live {{query:…}} result list
   if (qr) item.append(qr);
+  const geoMini = window.buildGeoMini?.(cn); // small map under a bullet linking to a location page
+  if (geoMini) item.append(geoMini);
 
   const um = underMatch || (searchActive() && state.matchSet?.has(id));
 

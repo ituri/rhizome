@@ -324,6 +324,16 @@ button { font-family: inherit; }
 }
 .zoom-map .leaflet-container { height: 100%; background: var(--line-soft); font: inherit; }
 .zoom-map .leaflet-control-attribution { font-size: 10px; }
+/* inline mini map under a bullet that links to a location page (journal etc.) */
+.geo-mini {
+  height: 130px;
+  max-width: 320px;
+  margin: 5px 0 7px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.geo-mini .leaflet-container { height: 100%; background: var(--line-soft); cursor: default; }
 
 .search-banner {
   font-size: 13px;

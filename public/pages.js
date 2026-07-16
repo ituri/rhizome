@@ -205,6 +205,34 @@ async function geocodeAndRetitle(pageId, coords) {
   finally { geocoding.delete(pageId); }
 }
 
+// a small, non-interactive map under any bullet that links to a location page — so a place
+// referenced in the journal (or anywhere) shows its map inline, without opening the page.
+window.buildGeoMini = function buildGeoMini(n) {
+  const t = n.text || '';
+  if (!t.includes('#/n/')) return null;
+  const tpl = document.createElement('template');
+  tpl.innerHTML = t;
+  let coords = null;
+  for (const a of tpl.content.querySelectorAll('a[href^="#/n/"]')) {
+    const c = pageCoords(a.getAttribute('href').slice(4));
+    if (c) { coords = c; break; } // first location link wins
+  }
+  if (!coords) return null;
+  const el = document.createElement('div');
+  el.className = 'geo-mini';
+  loadLeaflet().then(() => {
+    if (!el.isConnected) return;
+    const map = L.map(el, {
+      zoomControl: false, attributionControl: false, dragging: false, scrollWheelZoom: false,
+      doubleClickZoom: false, boxZoom: false, keyboard: false, tap: false, touchZoom: false,
+    }).setView([coords.lat, coords.lon], 15);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+    L.circleMarker([coords.lat, coords.lon], { radius: 6, weight: 2, color: '#bf562f', fillColor: '#bf562f', fillOpacity: 0.85 }).addTo(map);
+    setTimeout(() => map.invalidateSize(), 60);
+  }).catch(() => el.remove());
+  return el;
+};
+
 // in an HTML string, replace the visible text of links to `pageId` whose label is still raw
 // coordinates with `label` (the address). Leaves custom labels and #/@ tag pills untouched.
 function relabelCoordLinks(html, pageId, label) {
