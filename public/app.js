@@ -1872,6 +1872,7 @@ function mountItem(id, underMatch = false) {
   }
   if (!mirror && mirrorCounts.has(id)) item.classList.add('mirrored'); // original of ≥1 mirror → diamond too
   if (cn.done) item.classList.add('done');
+  if (cn.files && cn.files.length) item.classList.add('has-files');
   if (kidsOf(cn.id).length) item.classList.add('has-children');
   if (!expanded) item.classList.add('collapsed');
   if (state.shares.some(s => s.id === id)) item.classList.add('shared-ring');

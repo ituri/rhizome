@@ -464,6 +464,9 @@ button { font-family: inherit; }
   transition: color 0.25s;
 }
 .content:empty::before { content: "\200b"; }
+/* an image-only bullet shouldn't show an empty text line above the picture */
+.item.has-files > .row > .content:empty { padding: 0; min-height: 0; }
+.item.has-files > .row > .content:empty::before { content: none; }
 
 .item.done > .row .content {
   color: var(--done);
