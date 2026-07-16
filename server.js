@@ -1504,9 +1504,14 @@ const server = http.createServer(async (req, res) => {
           let changed = false;
           if (doc && doc.nodes) {
             for (const id in doc.nodes) {
-              for (const f of (doc.nodes[id].files || [])) {
-                if (f && f.url === furl && f.name !== name) { f.name = name; changed = true; }
-              }
+              const n = doc.nodes[id];
+              const match = (n.files || []).find(f => f && f.url === furl);
+              if (!match) continue;
+              const old = match.name;
+              if (match.name !== name) { match.name = name; changed = true; }
+              // also rename the bullet's text label if it was the auto file-name label (not a
+              // custom caption the user typed), so clicking the image shows the new name
+              if (old && serverPlain(n.text).trim() === String(old).trim()) { n.text = escHtml(name); changed = true; }
             }
           }
           const version = changed ? commitDoc(g, doc, 'assets') : g.store.version;
