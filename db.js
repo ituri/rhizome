@@ -39,6 +39,16 @@ CREATE TRIGGER IF NOT EXISTS nodes_au AFTER UPDATE ON nodes BEGIN
 END;
 
 CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT);
+
+-- page version history: one snapshot of a page's subtree per edit-session, with the device name
+CREATE TABLE IF NOT EXISTS versions (
+  id       INTEGER PRIMARY KEY AUTOINCREMENT,
+  page_id  TEXT NOT NULL,
+  ts       INTEGER NOT NULL,
+  device   TEXT,
+  doc      TEXT NOT NULL              -- JSON { root, nodes } of the page subtree at that time
+);
+CREATE INDEX IF NOT EXISTS versions_page ON versions(page_id, id DESC);
 `;
 
 class Store {
@@ -69,6 +79,16 @@ class Store {
   }
 
   isEmpty() { return this.db.prepare('SELECT 1 FROM nodes LIMIT 1').get() === undefined; }
+
+  // ---- page version history ----
+  historyAdd(pageId, ts, device, docJson) {
+    this.db.prepare('INSERT INTO versions(page_id,ts,device,doc) VALUES(?,?,?,?)').run(pageId, ts, device, docJson);
+    // keep only the newest 60 versions per page
+    this.db.prepare('DELETE FROM versions WHERE page_id=? AND id NOT IN (SELECT id FROM versions WHERE page_id=? ORDER BY id DESC LIMIT 60)').run(pageId, pageId);
+  }
+  historyLatestDoc(pageId) { const r = this.db.prepare('SELECT doc FROM versions WHERE page_id=? ORDER BY id DESC LIMIT 1').get(pageId); return r ? r.doc : null; }
+  historyList(pageId) { return this.db.prepare('SELECT id, ts, device FROM versions WHERE page_id=? ORDER BY id DESC LIMIT 100').all(pageId); }
+  historyGet(pageId, id) { const r = this.db.prepare('SELECT doc FROM versions WHERE page_id=? AND id=?').get(pageId, id); return r ? r.doc : null; }
 
   get version() { return parseInt(this.meta('version') || '0', 10); }
 

@@ -1023,7 +1023,7 @@ async function doSave() {
         const batch = pendingOps;        // take the queue; edits during the await accumulate a fresh one
         pendingOps = [];
         const r = await fetch(apiBase + '/ops', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ops: batch, device: DEVICE_ID }),
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ops: batch, device: DEVICE_ID, deviceName: DEVICE_NAME }),
         });
         if (r.ok) {
           const rv = (await r.json()).version;
@@ -1040,7 +1040,7 @@ async function doSave() {
     let res = await fetch(SAVE_URL, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ baseVersion: state.version, doc, device: DEVICE_ID }),
+      body: JSON.stringify({ baseVersion: state.version, doc, device: DEVICE_ID, deviceName: DEVICE_NAME }),
     });
     if (res.status === 409) {
       const server = await res.json();
@@ -1049,7 +1049,7 @@ async function doSave() {
       res = await fetch(SAVE_URL, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ baseVersion: server.version, doc, device: DEVICE_ID }),
+        body: JSON.stringify({ baseVersion: server.version, doc, device: DEVICE_ID, deviceName: DEVICE_NAME }),
       });
     }
     if (res.status === 401) { location.reload(); return; }
@@ -1111,6 +1111,19 @@ bc?.addEventListener('message', async e => {
 // ignores *this* tab's own echo — two tabs of one browser share localStorage, so a
 // persisted id would make them wrongly ignore each other's ops.
 const DEVICE_ID = Math.random().toString(36).slice(2, 8) + Math.random().toString(36).slice(2, 6);
+// A human-readable device name sent with edits, so page history can show where a change came
+// from. Auto-guessed from the platform, remembered in localStorage, and user-editable in Settings.
+function guessDeviceName() {
+  const ua = navigator.userAgent;
+  const os = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Android'
+    : /Mac OS X|Macintosh/.test(ua) ? 'Mac' : /Windows/.test(ua) ? 'Windows' : /Linux/.test(ua) ? 'Linux' : 'Web';
+  const br = /Edg\//.test(ua) ? 'Edge' : /Chrome\//.test(ua) ? 'Chrome' : /Firefox\//.test(ua) ? 'Firefox'
+    : /Safari\//.test(ua) ? 'Safari' : 'Browser';
+  return `${br} · ${os}`;
+}
+let DEVICE_NAME = localStorage.getItem('rhizome-device-name') || guessDeviceName();
+window.setDeviceName = name => { DEVICE_NAME = String(name || '').trim() || guessDeviceName(); localStorage.setItem('rhizome-device-name', DEVICE_NAME); };
+window.getDeviceName = () => DEVICE_NAME;
 const pad = (n, w) => String(n).padStart(w, '0');
 const hlcClock = {
   p: 0, c: 0,
@@ -1246,7 +1259,7 @@ function flushBeforeHide() {
   // and the next load merges the stash via graftMissing instead
   stashOffline();
   navigator.sendBeacon?.(SAVE_URL, new Blob(
-    [JSON.stringify({ baseVersion: state.version, doc })],
+    [JSON.stringify({ baseVersion: state.version, doc, device: DEVICE_ID, deviceName: DEVICE_NAME })],
     { type: 'application/json' }
   ));
 }

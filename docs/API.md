@@ -61,6 +61,13 @@ to its bound graph only, at its scope (`read` → GET, `write` → all). Session
 | GET | `/api/g/:g/search?q=` | — | `{ids:[…]}` — FTS5-backed, up to 500. |
 | GET/POST/DELETE | `/api/g/:g/shares[/:token]` | `{nodeId, mode}` | share a subtree by secret link (see below). |
 | POST | `/api/g/:g/capture` | `{text}` or raw | `{ok, captured}` — capture into this graph. |
+| GET | `/api/g/:g/history/:pageId` | — | `{versions:[{id, ts, device}]}` — page version snapshots, newest first. |
+| GET | `/api/g/:g/history/:pageId/:versionId` | — | `{doc}` — the page subtree snapshot at that version. |
+| POST | `/api/g/:g/history/:pageId/:versionId/restore` | `{device?, deviceName?}` | `{version}` — restore the page to that snapshot (recorded as a new version). |
+
+Snapshots are taken server-side, debounced ~45s after a page's edits settle (one version per
+edit-session per page, newest 60 kept). Each carries the editing device's name — clients send it
+as `deviceName` in the `ops`/`doc` bodies (a page also counts a journal day as its own page).
 
 Access is denied with **403** for a non-member (or a key bound to another graph), **401** when unauthenticated.
 

@@ -1776,6 +1776,60 @@ function showTrash() {
   $('#trash-overlay').hidden = false;
 }
 
+// Page version history: list the server-stored snapshots (time + device) and restore one.
+window.showPageHistory = function showPageHistory(pageId) {
+  if (!pageId || SHARE_TOKEN) return;
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay';
+  overlay.innerHTML = `<div class="history-dialog" role="dialog" aria-label="Page history">
+    <div class="history-head"><span>Version history</span><button class="history-close" aria-label="Close">×</button></div>
+    <div class="history-list">Loading…</div>
+  </div>`;
+  document.body.append(overlay);
+  const close = () => { overlay.remove(); document.removeEventListener('keydown', onKey); };
+  const onKey = e => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKey);
+  overlay.addEventListener('mousedown', e => { if (e.target === overlay) close(); });
+  $('.history-close', overlay).addEventListener('click', close);
+
+  const listEl = $('.history-list', overlay);
+  fetch(apiBase + '/history/' + pageId).then(r => r.json()).then(({ versions }) => {
+    if (!versions || !versions.length) {
+      listEl.innerHTML = '<div class="history-empty">No versions yet — snapshots are saved a little after you edit a page.</div>';
+      return;
+    }
+    listEl.innerHTML = '';
+    versions.forEach(v => {
+      const when = new Date(v.ts).toLocaleString();
+      const row = document.createElement('div');
+      row.className = 'history-row';
+      const meta = document.createElement('div');
+      meta.className = 'history-meta';
+      meta.innerHTML = `<span class="history-when"></span><span class="history-device"></span>`;
+      $('.history-when', meta).textContent = when;
+      $('.history-device', meta).textContent = v.device || 'unknown device';
+      const restore = document.createElement('button');
+      restore.className = 'history-restore';
+      restore.textContent = 'Restore';
+      restore.addEventListener('click', async () => {
+        restore.disabled = true; restore.textContent = 'Restoring…';
+        try {
+          await fetch(apiBase + '/history/' + pageId + '/' + v.id + '/restore', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ device: DEVICE_ID, deviceName: DEVICE_NAME }),
+          });
+          const full = await (await fetch(apiBase + '/doc')).json();
+          adoptRemote(full.version, full.doc);
+          close();
+          showToast('Restored the version from ' + when);
+        } catch { restore.disabled = false; restore.textContent = 'Restore'; showToast('Restore failed'); }
+      });
+      row.append(meta, restore);
+      listEl.append(row);
+    });
+  }).catch(() => { listEl.innerHTML = '<div class="history-empty">Could not load history.</div>'; });
+};
+
 function restoreTrashEntry(entry) {
   // remap ids on conflict (e.g. restored twice via undo interplay)
   const idMap = new Map();
@@ -2278,6 +2332,11 @@ $('#btn-menu').addEventListener('click', e => {
         menuItem('Trash', '🗑', () => showTrash()),
         menuItem('Present', '▶', () => startPresent()),
       );
+      if (state.zoom !== ROOT) pop.append(menuItem('Page history', '🕘', () => window.showPageHistory(pageOf(state.zoom))));
+      pop.append(menuItem('Device name…', '🏷', () => {
+        const n = prompt('Device name (shown in page history):', window.getDeviceName());
+        if (n != null) { window.setDeviceName(n); showToast('Device name: ' + window.getDeviceName()); }
+      }));
       addTitle('Week starts');
       pop.append(segRow([['Monday', 'mon'], ['Sunday', 'sun']],
         () => settings.weekStart, v => { settings.weekStart = v; saveSettings(); }));

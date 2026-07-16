@@ -210,7 +210,11 @@ function loadGraph(id) {
     const es = fs.readdirSync(backupDir).filter(f => f.endsWith('.db')).sort();
     if (es.length) lastBackupAt = fs.statSync(path.join(backupDir, es[es.length - 1])).mtimeMs;
   } catch { /* none */ }
-  return { id, dir, backupDir, db, store, sse: new Set(), seenOps: new Set(), seenOrder: [], lastBackupAt };
+  return {
+    id, dir, backupDir, db, store, sse: new Set(), seenOps: new Set(), seenOrder: [], lastBackupAt,
+    // page history: nodes/pages changed since the last debounced snapshot, + the last device name
+    historyNodes: new Set(), historyAll: false, historyTimer: null, historyDevice: '',
+  };
 }
 function getGraph(id) {
   let g = graphCache.get(id);
@@ -275,10 +279,84 @@ setInterval(() => {
   }
 }, 25000).unref();
 
+/* ---------- page version history ---------- */
+
+const HISTORY_DEBOUNCE_MS = +process.env.RHIZOME_HISTORY_DEBOUNCE_MS || 45000; // one snapshot per page per ~edit-session
+
+function buildParentMap(doc) {
+  const m = new Map();
+  for (const nid in doc.nodes) for (const c of doc.nodes[nid].children || []) m.set(c, nid);
+  return m;
+}
+// the page that contains `id`: a journal day node (cal:'day'), else the top-level page (child of
+// root, but not the calendar root). null for root / the calendar scaffold / a detached node.
+function pageIdOf(doc, id, pm) {
+  let cur = id;
+  while (cur) {
+    const n = doc.nodes[cur];
+    if (!n) return null;
+    if (n.cal === 'day') return cur;
+    const p = pm.get(cur);
+    if (!p) return null;
+    if (p === doc.root) return n.cal === 'root' ? null : cur;
+    cur = p;
+  }
+  return null;
+}
+function pageSubtree(doc, pageId) {
+  const nodes = {};
+  const stack = [pageId];
+  while (stack.length) {
+    const id = stack.pop(); const n = doc.nodes[id];
+    if (!n) continue;
+    nodes[id] = n;
+    for (const c of n.children || []) stack.push(c);
+  }
+  return { root: pageId, nodes };
+}
+function armHistory(g) {
+  if (g.historyTimer) return;
+  g.historyTimer = setTimeout(() => { g.historyTimer = null; snapshotHistory(g); }, HISTORY_DEBOUNCE_MS);
+  g.historyTimer.unref?.();
+}
+// resolve the changed nodes to their pages and snapshot each page's subtree (deduped by content)
+function snapshotHistory(g) {
+  const doc = g.store.doc;
+  if (!doc) return;
+  const pm = buildParentMap(doc);
+  const pages = new Set();
+  if (g.historyAll) {
+    for (const c of doc.nodes[doc.root]?.children || []) { const n = doc.nodes[c]; if (n && n.cal !== 'root') pages.add(c); }
+    for (const nid in doc.nodes) if (doc.nodes[nid].cal === 'day') pages.add(nid);
+  }
+  for (const nid of g.historyNodes) { const p = pageIdOf(doc, nid, pm); if (p) pages.add(p); }
+  g.historyNodes = new Set(); g.historyAll = false;
+  const now = Date.now(), device = g.historyDevice || '';
+  for (const pageId of pages) {
+    if (!doc.nodes[pageId]) continue;
+    const json = JSON.stringify(pageSubtree(doc, pageId));
+    if (json === g.db.historyLatestDoc(pageId)) continue; // nothing changed since the last version
+    try { g.db.historyAdd(pageId, now, device, json); } catch (e) { console.error('history snapshot failed:', e); }
+  }
+}
+
+// restore a page to a stored snapshot: drop nodes added since, overwrite the snapshot's nodes,
+// then commit the whole doc (peers refetch). The restore is itself recorded as a new version.
+function restorePage(g, pageId, snap, origin) {
+  const doc = g.store.doc;
+  if (!doc || !doc.nodes[pageId] || !snap.nodes || !snap.nodes[pageId]) return g.store.version;
+  const current = Object.keys(pageSubtree(doc, pageId).nodes);
+  const snapIds = new Set(Object.keys(snap.nodes));
+  for (const id of current) if (!snapIds.has(id)) delete doc.nodes[id]; // added since the snapshot → gone
+  for (const id of snapIds) doc.nodes[id] = snap.nodes[id];            // restore content + structure
+  return commitDoc(g, doc, origin);
+}
+
 function commitDoc(g, doc, origin) {
   g.store = { version: g.store.version + 1, doc };
   persist(g);
   broadcast(g, { version: g.store.version, origin });
+  g.historyAll = true; armHistory(g);
   return g.store.version;
 }
 
@@ -295,6 +373,8 @@ function commitOps(g, ops, origin) {
   for (const op of ops) markSeen(g, op.id);
   persistOps(g, ops);                                // O(change) incremental write, not an O(doc) re-flatten
   broadcast(g, { version: g.store.version, ops, origin });
+  for (const op of ops) if (op.node) g.historyNodes.add(op.node); // cheap; pages resolved on snapshot
+  armHistory(g);
   return g.store.version;
 }
 
@@ -1282,6 +1362,33 @@ const server = http.createServer(async (req, res) => {
         return send(res, 200, { ok: true, captured: count });
       }
 
+      /* ---- page version history: /api/g/:g/history/:pageId[/:versionId[/restore]] ---- */
+      const hm = url.match(/^\/api\/g\/([A-Za-z0-9]+)\/history\/([A-Za-z0-9_-]+)(?:\/(\d+)(\/restore)?)?(?:\?.*)?$/);
+      if (hm) {
+        const gid = hm[1], pageId = hm[2], versionId = hm[3] ? parseInt(hm[3], 10) : null, restore = !!hm[4];
+        const open = accounts.userCount() === 0;
+        const user = currentUser(req);
+        if (!open && !user) return send(res, 401, { error: 'unauthorized' });
+        if (!open && !accounts.roleOf(user.id, gid)) return send(res, 403, { error: 'no access to this graph' });
+        const g = getGraph(gid);
+        if (versionId == null && req.method === 'GET') {
+          return send(res, 200, { versions: g.db.historyList(pageId) });
+        }
+        if (versionId != null && !restore && req.method === 'GET') {
+          const docJson = g.db.historyGet(pageId, versionId);
+          return docJson ? send(res, 200, { doc: JSON.parse(docJson) }) : send(res, 404, { error: 'no such version' });
+        }
+        if (versionId != null && restore && req.method === 'POST') {
+          const docJson = g.db.historyGet(pageId, versionId);
+          if (!docJson) return send(res, 404, { error: 'no such version' });
+          const body = await readJson(req).catch(() => ({}));
+          g.historyDevice = String(body.deviceName || '').slice(0, 60) || g.historyDevice;
+          const v = restorePage(g, pageId, JSON.parse(docJson), body.device);
+          return send(res, 200, { version: v });
+        }
+        return send(res, 404, { error: 'not found' });
+      }
+
       /* ---- graph-scoped endpoints: /api/g/:graphId/… (membership required) ---- */
       const gm = url.match(/^\/api\/g\/([A-Za-z0-9]+)\/([a-z]+)(\/[a-f0-9]+)?(?:\?.*)?$/);
       if (gm) {
@@ -1306,6 +1413,7 @@ const server = http.createServer(async (req, res) => {
           const body = await readJson(req);
           if (!body.doc || typeof body.doc !== 'object' || !body.doc.nodes) return send(res, 400, { error: 'malformed document' });
           if (typeof body.baseVersion === 'number' && body.baseVersion !== g.store.version) return send(res, 409, g.store);
+          g.historyDevice = String(body.deviceName || '').slice(0, 60) || g.historyDevice;
           const v = commitDoc(g, sanitizeDocNodes(body.doc), body.device);
           return send(res, 200, { version: v });
         }
@@ -1320,6 +1428,7 @@ const server = http.createServer(async (req, res) => {
           }
           const applied = applyOpsToDoc(g.store.doc, fresh, trashSubtreeInDoc);
           for (const op of fresh) markSeen(g, op.id);
+          g.historyDevice = String(body.deviceName || '').slice(0, 60) || g.historyDevice;
           const v = applied.length ? commitOps(g, applied, body.device) : g.store.version;
           return send(res, 200, { version: v, applied: applied.length });
         }
