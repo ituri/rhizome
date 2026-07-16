@@ -190,10 +190,31 @@ async function geocodeAndRetitle(pageId, coords) {
     recOld(pageId);
     N(pageId).text = escHtml(address);
     N(pageId).m = Date.now();
+    // re-label existing links whose text is still the raw coordinates → the address, so the
+    // journal (and any other reference) shows the place name instead of "52.52, 13.40"
+    const needle = `#/n/${pageId}"`;
+    for (const k of Object.keys(doc.nodes)) {
+      const t = doc.nodes[k].text;
+      if (!t || !t.includes(needle)) continue;
+      const relabeled = relabelCoordLinks(t, pageId, address);
+      if (relabeled !== t) { recOld(k); doc.nodes[k].text = relabeled; N(k).m = Date.now(); }
+    }
     markDirty();
     renderPage();
   } catch { /* offline / geocoder down — leave the raw-coords title as-is, retry next visit */ }
   finally { geocoding.delete(pageId); }
+}
+
+// in an HTML string, replace the visible text of links to `pageId` whose label is still raw
+// coordinates with `label` (the address). Leaves custom labels and #/@ tag pills untouched.
+function relabelCoordLinks(html, pageId, label) {
+  const tpl = document.createElement('template');
+  tpl.innerHTML = html;
+  let changed = false;
+  for (const a of tpl.content.querySelectorAll(`a[href="#/n/${pageId}"]`)) {
+    if (!a.classList.contains('tag') && parseCoords(a.textContent)) { a.textContent = label; changed = true; }
+  }
+  return changed ? tpl.innerHTML : html;
 }
 
 /* ---------------- Roam-style day labels ---------------- */
