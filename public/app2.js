@@ -1885,6 +1885,117 @@ function renderHistoryDiff(panel, oldDoc, newDoc) {
   for (const n of notes) mk('diff-note', '• ', n);
 }
 
+// human-readable file size
+function fmtBytes(n) {
+  if (n == null) return '';
+  if (n < 1024) return n + ' B';
+  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+  return (n / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+// Asset manager: every file referenced in this graph (In use) + files no graph references (Unused)
+window.showAssets = function showAssets() {
+  if (SHARE_TOKEN) return;
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay';
+  overlay.innerHTML = `<div class="history-dialog assets-dialog" role="dialog" aria-label="Assets">
+    <div class="history-head"><span>Assets</span><button class="history-close" aria-label="Close">×</button></div>
+    <div class="assets-tabs"><button class="assets-tab active" data-tab="used">In use</button><button class="assets-tab" data-tab="unused">Unused</button></div>
+    <div class="assets-list">Loading…</div>
+  </div>`;
+  document.body.append(overlay);
+  const close = () => { overlay.remove(); document.removeEventListener('keydown', onKey); };
+  const onKey = e => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKey);
+  overlay.addEventListener('mousedown', e => { if (e.target === overlay) close(); });
+  $('.history-close', overlay).addEventListener('click', close);
+  const listEl = $('.assets-list', overlay);
+  const jump = node => { close(); zoomTo(node); };
+  const isImageName = s => /\.(png|jpe?g|gif|webp|svg|bmp|heic|heif)$/i.test(s || '');
+
+  function assetRow(a, { refs, unused } = {}) {
+    const row = document.createElement('div');
+    row.className = 'asset-row';
+    const img = (a.type || '').startsWith('image/') || isImageName(a.name);
+    row.innerHTML = `${img ? `<img class="asset-thumb" loading="lazy" alt="">` : '<div class="asset-thumb asset-file">📎</div>'}
+      <div class="asset-info"><div class="asset-name"></div><div class="asset-meta"></div><div class="asset-refs"></div></div>
+      <div class="asset-actions"><a class="asset-dl" download title="Download">⇩</a><button class="asset-del">Delete</button></div>`;
+    if (img) $('.asset-thumb', row).src = fileHref(a.url) || '';
+    $('.asset-name', row).textContent = a.name || a.url.split('/').pop();
+    const bits = [fmtBytes(a.size)];
+    if (a.mtime) bits.push(new Date(a.mtime).toLocaleDateString());
+    bits.push(unused ? 'unused' : `used in ${refs.length}`);
+    if (a.missing) bits.push('missing on disk');
+    $('.asset-meta', row).textContent = bits.filter(Boolean).join(' · ');
+    $('.asset-dl', row).href = fileHref(a.url) || '#';
+    const refsEl = $('.asset-refs', row);
+    for (const r of (refs || [])) {
+      const b = document.createElement('button');
+      b.className = 'asset-ref';
+      b.textContent = '→ ' + (r.pageTitle || 'note');
+      b.addEventListener('click', () => jump(r.node));
+      refsEl.append(b);
+    }
+    return row;
+  }
+
+  async function renderUsed() {
+    listEl.innerHTML = 'Loading…';
+    let assets;
+    try { assets = (await (await fetch(apiBase + '/assets')).json()).assets || []; }
+    catch { listEl.innerHTML = '<div class="history-empty">Could not load assets.</div>'; return; }
+    if (!assets.length) { listEl.innerHTML = '<div class="history-empty">No files attached in this graph yet.</div>'; return; }
+    listEl.innerHTML = '';
+    for (const a of assets) {
+      const row = assetRow(a, { refs: a.refs });
+      $('.asset-del', row).addEventListener('click', async () => {
+        if (!confirm(`Delete "${a.name}" and remove it from ${a.refs.length} note(s)?`)) return;
+        try {
+          const res = await (await fetch(apiBase + '/assets/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: a.url }) })).json();
+          if (res.version != null) { const full = await (await fetch(apiBase + '/doc')).json(); adoptRemote(full.version, full.doc); }
+          showToast('Deleted ' + a.name); renderUsed();
+        } catch { showToast('Delete failed'); }
+      });
+      listEl.append(row);
+    }
+  }
+
+  async function renderUnused() {
+    listEl.innerHTML = 'Loading…';
+    let orphans;
+    try {
+      const r = await fetch(apiBase + '/assets/orphans');
+      if (r.status === 403) { listEl.innerHTML = '<div class="history-empty">Only the graph owner can manage unused files.</div>'; return; }
+      orphans = (await r.json()).orphans || [];
+    } catch { listEl.innerHTML = '<div class="history-empty">Could not load unused files.</div>'; return; }
+    if (!orphans.length) { listEl.innerHTML = '<div class="history-empty">No unused files — everything is referenced by a note.</div>'; return; }
+    listEl.innerHTML = '';
+    const bar = document.createElement('div');
+    bar.className = 'asset-orphanbar';
+    bar.innerHTML = `<span>${orphans.length} unused · ${fmtBytes(orphans.reduce((s, o) => s + (o.size || 0), 0))}</span><button class="asset-delall">Delete all</button>`;
+    $('.asset-delall', bar).addEventListener('click', async () => {
+      if (!confirm(`Delete all ${orphans.length} unused files? This can't be undone.`)) return;
+      try { await fetch(apiBase + '/assets/orphans/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ names: orphans.map(o => o.name) }) }); showToast('Deleted unused files'); renderUnused(); }
+      catch { showToast('Delete failed'); }
+    });
+    listEl.append(bar);
+    for (const o of orphans) {
+      const row = assetRow(o, { unused: true });
+      $('.asset-del', row).addEventListener('click', async () => {
+        try { await fetch(apiBase + '/assets/orphans/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ names: [o.name] }) }); showToast('Deleted ' + o.name); renderUnused(); }
+        catch { showToast('Delete failed'); }
+      });
+      listEl.append(row);
+    }
+  }
+
+  $$('.assets-tab', overlay).forEach(t => t.addEventListener('click', () => {
+    $$('.assets-tab', overlay).forEach(x => x.classList.toggle('active', x === t));
+    t.dataset.tab === 'used' ? renderUsed() : renderUnused();
+  }));
+  renderUsed();
+};
+
 function restoreTrashEntry(entry) {
   // remap ids on conflict (e.g. restored twice via undo interplay)
   const idMap = new Map();
@@ -2124,7 +2235,7 @@ window.uploadAttachments = async function uploadAttachments(id, files) {
       const data = await res.json();
       const n = N(id);
       if (!n.files) n.files = [];
-      n.files.push({ url: data.url, name: data.name, type: file.type || '' });
+      n.files.push({ url: data.url, name: data.name, type: file.type || '', size: data.size });
       // label an otherwise-empty image bullet with the file name, so editing it shows text
       // (not an empty node) — matches the "file name while editing, image otherwise" behaviour
       if (!plainOf(n.text || '').trim()) n.text = escHtml(data.name || 'image');
@@ -2394,6 +2505,7 @@ $('#btn-menu').addEventListener('click', e => {
       pop.append(document.createElement('hr'));
       pop.append(
         menuItem('Quick capture', '📥', () => window.showCapture(), { hint: 'Ctrl+Shift+Space' }),
+        menuItem('Assets', '🖼', () => window.showAssets()),
         menuItem('Trash', '🗑', () => showTrash()),
         menuItem('Present', '▶', () => startPresent()),
       );

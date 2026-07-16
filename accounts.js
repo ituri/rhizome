@@ -226,6 +226,7 @@ class Accounts {
     return this.graphById(id);
   }
   graphById(id) { return this.db.prepare('SELECT * FROM graphs WHERE id = ?').get(id); }
+  allGraphIds() { return this.db.prepare('SELECT id FROM graphs').all().map(r => r.id); }
   renameGraph(id, name) { this.db.prepare('UPDATE graphs SET name = ? WHERE id = ?').run(String(name), id); }
   deleteGraph(id) {
     this.db.prepare('DELETE FROM api_keys WHERE graph_id = ?').run(id);

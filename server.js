@@ -1068,6 +1068,55 @@ async function serveUserFile(req, res, urlPath) {
   }
 }
 
+/* ---------- asset management ---------- */
+
+// a stored file name from its /files/<name> url, path-traversal-guarded like serveUserFile
+function storedFromUrl(url) {
+  if (typeof url !== 'string' || !url.startsWith('/files/')) return null;
+  const name = path.basename(decodeURIComponent(url.replace(/^\/files\//, '').split('?')[0]));
+  const file = path.normalize(path.join(FILES_DIR, name));
+  return file.startsWith(FILES_DIR) ? name : null;
+}
+function fileStat(name) {
+  try { const s = fs.statSync(path.join(FILES_DIR, name)); return { size: s.size, mtime: s.mtimeMs }; }
+  catch { return null; }
+}
+// every file referenced by a graph's notes, with size/mtime + which notes use it (backlinks)
+function graphAssets(g) {
+  const doc = g.store.doc;
+  if (!doc || !doc.nodes) return [];
+  const pm = buildParentMap(doc);
+  const byUrl = new Map();
+  for (const id in doc.nodes) {
+    for (const f of (doc.nodes[id].files || [])) {
+      if (!f || !f.url) continue;
+      let a = byUrl.get(f.url);
+      if (!a) { a = { url: f.url, name: f.name || '', type: f.type || '', size: f.size ?? null, refs: [] }; byUrl.set(f.url, a); }
+      if (a.size == null && f.size != null) a.size = f.size;
+      const page = pageIdOf(doc, id, pm);
+      a.refs.push({ node: id, page, pageTitle: page ? (serverPlain(doc.nodes[page]?.text).trim() || 'Untitled') : '' });
+    }
+  }
+  const out = [];
+  for (const a of byUrl.values()) {
+    const stored = storedFromUrl(a.url);
+    const st = stored ? fileStat(stored) : null;
+    out.push({ ...a, size: a.size ?? (st ? st.size : null), mtime: st ? st.mtime : null, missing: !st });
+  }
+  return out.sort((x, y) => (y.mtime || 0) - (x.mtime || 0));
+}
+// urls referenced by ANY graph (∪ the requesting one) — for orphan detection
+function allReferencedUrls(currentGid) {
+  const urls = new Set();
+  const gids = new Set([...accounts.allGraphIds(), currentGid].filter(Boolean));
+  for (const gid of gids) {
+    const doc = getGraph(gid).store.doc;
+    if (!doc || !doc.nodes) continue;
+    for (const id in doc.nodes) for (const f of (doc.nodes[id].files || [])) if (f && f.url) urls.add(f.url);
+  }
+  return urls;
+}
+
 /* ---------- server ---------- */
 
 const server = http.createServer(async (req, res) => {
@@ -1388,6 +1437,70 @@ const server = http.createServer(async (req, res) => {
           g.historyDevice = String(body.deviceName || '').slice(0, 60) || g.historyDevice;
           const v = restorePage(g, pageId, JSON.parse(docJson), body.device);
           return send(res, 200, { version: v });
+        }
+        return send(res, 404, { error: 'not found' });
+      }
+
+      /* ---- asset management: /api/g/:graphId/assets[/orphans][/delete] ---- */
+      const am = url.match(/^\/api\/g\/([A-Za-z0-9]+)\/assets(\/orphans)?(\/delete)?(?:\?.*)?$/);
+      if (am) {
+        const gid = am[1], isOrphans = !!am[2], isDelete = !!am[3], method = req.method;
+        const open = accounts.userCount() === 0;
+        const user = currentUser(req);
+        if (!open && !user) return send(res, 401, { error: 'unauthorized' });
+        const role = (!open && user) ? accounts.roleOf(user.id, gid) : null;
+        if (!open && !role) return send(res, 403, { error: 'no access to this graph' });
+        const g = getGraph(gid);
+        const isOwner = open || role === 'owner' || (user && user.is_admin);
+
+        if (isOrphans) {
+          if (!isOwner) return send(res, 403, { error: 'owner only' });
+          if (method === 'GET') {
+            const refd = allReferencedUrls(gid);
+            const out = [];
+            for (const name of fs.readdirSync(FILES_DIR)) {
+              const furl = `/files/${encodeURIComponent(name)}`;
+              if (refd.has(furl)) continue;
+              const st = fileStat(name);
+              out.push({ name, url: furl, size: st ? st.size : null, mtime: st ? st.mtime : null });
+            }
+            return send(res, 200, { orphans: out.sort((x, y) => (y.mtime || 0) - (x.mtime || 0)) });
+          }
+          if (method === 'POST' && isDelete) {
+            const body = await readJson(req);
+            const refd = allReferencedUrls(gid);
+            let removed = 0;
+            for (const name of (Array.isArray(body.names) ? body.names : [])) {
+              const stored = storedFromUrl(`/files/${encodeURIComponent(String(name))}`);
+              if (!stored || refd.has(`/files/${encodeURIComponent(stored)}`)) continue; // still used → skip
+              try { fs.unlinkSync(path.join(FILES_DIR, stored)); removed++; } catch { /* already gone */ }
+            }
+            return send(res, 200, { removed });
+          }
+          return send(res, 404, { error: 'not found' });
+        }
+
+        if (method === 'GET' && !isDelete) return send(res, 200, { assets: graphAssets(g) });
+        if (method === 'POST' && isDelete) {
+          const body = await readJson(req);
+          const furl = String(body.url || '');
+          if (!furl.startsWith('/files/')) return send(res, 400, { error: 'bad url' });
+          const doc = g.store.doc;
+          let changed = false;
+          if (doc && doc.nodes) {
+            for (const id in doc.nodes) {
+              const n = doc.nodes[id];
+              if (!n.files || !n.files.length) continue;
+              const kept = n.files.filter(f => f && f.url !== furl);
+              if (kept.length !== n.files.length) { if (kept.length) n.files = kept; else delete n.files; changed = true; }
+            }
+          }
+          const version = changed ? commitDoc(g, doc, 'assets') : g.store.version;
+          if (!allReferencedUrls(gid).has(furl)) {  // no graph uses it anymore → drop from disk
+            const stored = storedFromUrl(furl);
+            if (stored) { try { fs.unlinkSync(path.join(FILES_DIR, stored)); } catch { /* already gone */ } }
+          }
+          return send(res, 200, { version });
         }
         return send(res, 404, { error: 'not found' });
       }
