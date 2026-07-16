@@ -1776,7 +1776,11 @@ function buildAttachments(n) {
       img.src = url || '';
       img.alt = f.name;
       img.loading = 'lazy';
-      img.addEventListener('click', () => { if (url) window.open(url, '_blank', 'noopener'); });
+      img.addEventListener('click', () => {
+        // click to edit → focuses the bullet, revealing its file-name text (image hides while editing)
+        if (state.readOnly || SHARE_TOKEN) { if (url) window.open(url, '_blank', 'noopener'); return; }
+        focusItem(n.id, 'text', 'end');
+      });
       wrap.append(img);
       if (!state.readOnly) {
         const rm = document.createElement('button');

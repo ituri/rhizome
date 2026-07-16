@@ -2123,6 +2123,9 @@ window.uploadAttachments = async function uploadAttachments(id, files) {
       const n = N(id);
       if (!n.files) n.files = [];
       n.files.push({ url: data.url, name: data.name, type: file.type || '' });
+      // label an otherwise-empty image bullet with the file name, so editing it shows text
+      // (not an empty node) — matches the "file name while editing, image otherwise" behaviour
+      if (!plainOf(n.text || '').trim()) n.text = escHtml(data.name || 'image');
       touch(id);
       added++;
     } catch {
