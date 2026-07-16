@@ -48,6 +48,10 @@ const TOTP_SECRET = process.env.RHIZOME_TOTP_SECRET || process.env.TENDRIL_TOTP_
 const AGENT_TOKEN = process.env.RHIZOME_AGENT_TOKEN || process.env.TENDRIL_AGENT_TOKEN || '';
 const AI_KEY = process.env.ANTHROPIC_API_KEY || '';
 const AI_MODEL = process.env.RHIZOME_AI_MODEL || process.env.TENDRIL_AI_MODEL || 'claude-opus-4-8';
+// reverse-geocoder for location pages (coords → address). Configurable so you can point it at a
+// self-hosted Nominatim/Photon; default is the public OpenStreetMap Nominatim.
+const GEOCODER_URL = process.env.RHIZOME_GEOCODER_URL || 'https://nominatim.openstreetmap.org/reverse';
+const geocodeCache = new Map(); // "lat,lon" → address, so a coordinate is only looked up once
 // multi-user: registration invite gate + first-run admin account
 const INVITE_CODE = process.env.RHIZOME_INVITE_CODE || '';
 const ADMIN_USER = process.env.RHIZOME_ADMIN_USER || 'phil';
@@ -881,6 +885,29 @@ function mergeShareDoc(g, share, incoming) {
 
 /* ---------- AI proxy ---------- */
 
+// Reverse-geocode a coordinate to a short address via the configured geocoder (Nominatim-shaped
+// response). Cached in memory; a location page geocodes once, so this stays well under any rate
+// limit. Returns "" if nothing usable comes back.
+async function reverseGeocode(lat, lon) {
+  const key = `${lat.toFixed(5)},${lon.toFixed(5)}`;
+  if (geocodeCache.has(key)) return geocodeCache.get(key);
+  const u = new URL(GEOCODER_URL);
+  u.searchParams.set('lat', String(lat));
+  u.searchParams.set('lon', String(lon));
+  u.searchParams.set('format', 'jsonv2');
+  u.searchParams.set('zoom', '18');
+  u.searchParams.set('addressdetails', '1');
+  const r = await fetch(u, { headers: { 'User-Agent': 'Rhizome/1.0 (self-hosted notes app)', Accept: 'application/json' } });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const j = await r.json();
+  const a = j.address || {};
+  const road = [a.road || a.pedestrian || a.footway, a.house_number].filter(Boolean).join(' ');
+  const place = a.city || a.town || a.village || a.municipality || a.suburb || a.county || '';
+  const address = [road, place].filter(Boolean).join(', ') || j.display_name || '';
+  if (address) geocodeCache.set(key, address);
+  return address;
+}
+
 function askClaude(prompt, context) {
   return new Promise((resolve, reject) => {
     const body = JSON.stringify({
@@ -1353,6 +1380,20 @@ const server = http.createServer(async (req, res) => {
           return send(res, 200, { text });
         } catch (err) {
           return send(res, 502, { error: 'AI request failed: ' + err.message });
+        }
+      }
+
+      if (url.startsWith('/api/geocode') && req.method === 'GET') {
+        if (!currentUser(req) && accounts.userCount() > 0) return send(res, 401, { error: 'unauthorized' });
+        const p = new URLSearchParams(url.split('?')[1] || '');
+        const lat = parseFloat(p.get('lat')), lon = parseFloat(p.get('lon'));
+        if (!isFinite(lat) || !isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) {
+          return send(res, 400, { error: 'bad coordinates' });
+        }
+        try {
+          return send(res, 200, { address: await reverseGeocode(lat, lon) });
+        } catch (err) {
+          return send(res, 502, { error: 'geocode failed: ' + err.message });
         }
       }
 

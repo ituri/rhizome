@@ -101,6 +101,101 @@ function pageOf(id) {
   return chain.length > 1 ? chain[1] : id;
 }
 
+/* ---------------- Location pages: coords → OSM mini-map + reverse-geocoded title -------------- */
+// A location page carries a "lat, lon" coordinate (from the iOS geo button). We render an OSM
+// mini-map for it and, the first time we see one whose TITLE is still raw coordinates, reverse-
+// geocode it: move the coordinates into a first bullet and rename the page to the address.
+const COORD_RE = /(-?\d{1,3}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)/;
+
+function parseCoords(s) {
+  const m = (s || '').match(COORD_RE);
+  if (!m) return null;
+  const lat = +m[1], lon = +m[2];
+  if (!isFinite(lat) || !isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+  return { lat, lon };
+}
+
+// a page's coordinate: from its first bullet if present, else its own title
+function pageCoords(id) {
+  if (!N(id)) return null;
+  const first = kidsOf(id)[0];
+  return (first && parseCoords(plainOf(N(first).text))) || parseCoords(plainOf(N(id).text));
+}
+
+let leafletLoading;
+function loadLeaflet() {
+  if (window.L) return Promise.resolve();
+  if (leafletLoading) return leafletLoading;
+  leafletLoading = new Promise((resolve, reject) => {
+    const css = document.createElement('link');
+    css.rel = 'stylesheet'; css.href = '/vendor/leaflet/leaflet.css';
+    document.head.appendChild(css);
+    const s = document.createElement('script');
+    s.src = '/vendor/leaflet/leaflet.js';
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error('leaflet failed to load'));
+    document.head.appendChild(s);
+  });
+  return leafletLoading;
+}
+
+let geoMap = null;
+const geocoding = new Set();
+
+// render (or clear) the mini-map for the current page, and kick off geocoding when the title is
+// still raw coordinates. Called from renderPage.
+window.renderGeo = function renderGeo() {
+  const el = document.getElementById('zoom-map');
+  if (!el) return;
+  const coords = state.zoom !== ROOT ? pageCoords(state.zoom) : null;
+  const key = coords ? `${coords.lat},${coords.lon}` : '';
+  if (el.dataset.coords !== key) {
+    el.dataset.coords = key;
+    if (geoMap) { geoMap.remove(); geoMap = null; }
+    el.innerHTML = '';
+    el.hidden = !coords;
+    if (coords) {
+      loadLeaflet().then(() => {
+        if (el.dataset.coords !== key) return;   // navigated away while Leaflet loaded
+        geoMap = L.map(el, { zoomControl: true, attributionControl: true, scrollWheelZoom: false })
+          .setView([coords.lat, coords.lon], 16);
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          maxZoom: 19, attribution: '© OpenStreetMap contributors',
+        }).addTo(geoMap);
+        L.circleMarker([coords.lat, coords.lon], {
+          radius: 8, weight: 2, color: '#bf562f', fillColor: '#bf562f', fillOpacity: 0.85,
+        }).addTo(geoMap);
+        setTimeout(() => geoMap && geoMap.invalidateSize(), 60);
+      }).catch(() => { el.hidden = true; });
+    }
+  }
+  if (coords && parseCoords(plainOf(N(state.zoom).text)) && !geocoding.has(state.zoom)) {
+    geocodeAndRetitle(state.zoom, coords);
+  }
+};
+
+async function geocodeAndRetitle(pageId, coords) {
+  if (state.readOnly) return;
+  geocoding.add(pageId);
+  try {
+    const r = await fetch(`/api/geocode?lat=${coords.lat}&lon=${coords.lon}`);
+    const address = r.ok ? (await r.json()).address : '';
+    // bail if the page vanished or its title changed meanwhile (e.g. a concurrent edit)
+    if (!address || !N(pageId) || !parseCoords(plainOf(N(pageId).text))) return;
+    snapshot();
+    const first = kidsOf(pageId)[0];
+    if (!(first && parseCoords(plainOf(N(first).text)))) {
+      insertAt(pageId, 0, makeNode(escHtml(`${coords.lat}, ${coords.lon}`)));  // keep the raw coords in a bullet
+    }
+    recOld(pageId);
+    N(pageId).text = escHtml(address);
+    N(pageId).m = Date.now();
+    markDirty();
+    renderPage();
+  } catch { /* offline / geocoder down — leave the raw-coords title as-is, retry next visit */ }
+  finally { geocoding.delete(pageId); }
+}
+
 /* ---------------- Roam-style day labels ---------------- */
 
 const ordinal = n => {

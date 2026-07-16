@@ -2034,6 +2034,7 @@ function renderPage() {
   computeSearch();
   renderCrumbs();
   renderZoomHead();
+  window.renderGeo?.();   // mini-map + reverse-geocoded title for location pages
   updateDocTitle();
 
   const scrollY = window.scrollY;

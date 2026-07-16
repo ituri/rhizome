@@ -78,6 +78,7 @@ Rhizome runs with zero configuration. When you want more, everything is an envir
 | `RHIZOME_AGENT_TOKEN` | *(unset)* | Enables the per-node REST API at `/api/v1` for scripts and AI agents (`Authorization: Bearer …` or `?token=…`) |
 | `ANTHROPIC_API_KEY` | *(unset)* | Enables the in-app ✨ Ask AI assistant |
 | `RHIZOME_AI_MODEL` | `claude-opus-4-8` | Claude model used by Ask AI |
+| `RHIZOME_GEOCODER_URL` | public Nominatim | Reverse-geocoder for location pages (coords → address). Point it at a self-hosted Nominatim/Photon for full privacy |
 
 > The legacy `TENDRIL_*` names (`TENDRIL_PASSWORD`, `TENDRIL_AGENT_TOKEN`, `TENDRIL_TOTP_SECRET`, `TENDRIL_AI_MODEL`) are still honored as fallbacks.
 

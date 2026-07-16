@@ -313,6 +313,17 @@ button { font-family: inherit; }
   caret-color: var(--accent);
 }
 .zoom-note:empty::before { content: attr(data-ph); color: var(--ink-faint); }
+/* the mini map on a location page (Leaflet + OSM tiles) */
+.zoom-map {
+  height: 220px;
+  max-width: 520px;
+  margin-top: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.zoom-map .leaflet-container { height: 100%; background: var(--line-soft); font: inherit; }
+.zoom-map .leaflet-control-attribution { font-size: 10px; }
 
 .search-banner {
   font-size: 13px;

@@ -74,6 +74,7 @@ Access is denied with **403** for a non-member (or a key bound to another graph)
 | GET | `/files/<name>` | — | the uploaded file (private unless inside a shared subtree). |
 | POST | `/api/capture?token=<rzk_…>` | `{text}` or raw text | `{ok, captured}`. Auth via a session or a **write-scoped API key** (`rzk_…`). Session → your first graph; API key → its graph. Lands under today's journal → `Inbox`; indentation (tabs / 2 spaces) nests. |
 | POST | `/api/ai` | `{prompt, context?}` | `{text}` (only if `ANTHROPIC_API_KEY` is set). |
+| GET | `/api/geocode?lat=&lon=` | — | `{address}` — reverse-geocode a coordinate to a short address (for location pages). Server-side + cached; geocoder configurable via `RHIZOME_GEOCODER_URL` (default public Nominatim). |
 
 ## Admin (admin session required)
 
