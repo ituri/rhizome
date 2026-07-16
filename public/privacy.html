@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Rhizome — Privacy Policy</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      max-width: 42rem; margin: 3rem auto; padding: 0 1.25rem;
+      color: #1a1a1a; background: #fdfdfb;
+    }
+    @media (prefers-color-scheme: dark) { body { color: #e6e6e6; background: #1a1a1a; } }
+    h1 { font-size: 1.7rem; }
+    h2 { font-size: 1.15rem; margin-top: 2rem; }
+    a { color: #3b7; }
+    .updated { color: #888; font-size: 0.9rem; }
+    footer { margin-top: 3rem; color: #888; font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+  <h1>Privacy Policy</h1>
+  <p class="updated">Last updated: 16 July 2026</p>
+
+  <p>
+    Rhizome is a self-hosted note-taking application. This policy explains what the
+    Rhizome apps (web and iOS) do with your data. It is written for the instance
+    hosted at this address; if you run your own server, you are the data controller
+    for the notes it stores.
+  </p>
+
+  <h2>Who runs this server</h2>
+  <p>
+    This instance is operated by its owner (the person who set up the server). The
+    Rhizome software itself is not a hosted service run by a third party — your notes
+    live only on the server you connect to.
+  </p>
+
+  <h2>What data is stored</h2>
+  <ul>
+    <li><strong>Your account:</strong> username and a hashed password.</li>
+    <li><strong>Your notes and their history:</strong> the text, structure, and revision
+      history of the outlines you create.</li>
+    <li><strong>Uploaded files:</strong> images and attachments you add to notes. These
+      are stored encrypted at rest on the server.</li>
+    <li><strong>Location data (optional):</strong> if you attach a location to a note,
+      the coordinates are stored on the server and resolved to an address using the
+      OpenStreetMap Nominatim service.</li>
+    <li><strong>Device name (optional):</strong> a name you set for your device, shown in
+      page history so you can tell which device made a change.</li>
+  </ul>
+
+  <h2>Where your data goes</h2>
+  <p>
+    Your notes, files, and settings are sent only to the Rhizome server you sign in to.
+    They are not shared with the app's developer or any advertising or analytics company.
+    The apps contain <strong>no third-party tracking or advertising SDKs</strong>.
+  </p>
+  <p>
+    The only external service contacted on your behalf is OpenStreetMap (for reverse
+    geocoding and map tiles), and only when you use a location feature. Coordinates you
+    look up are sent to OpenStreetMap for that purpose.
+  </p>
+
+  <h2>Camera and photo access (iOS)</h2>
+  <p>
+    The iOS app requests camera and photo-library access only when you choose to attach
+    an image to a note. Photos you select are uploaded to your Rhizome server and nowhere
+    else.
+  </p>
+
+  <h2>Device storage</h2>
+  <p>
+    The iOS app stores your app settings (such as font size and server URL) locally using
+    the system's standard preferences store, and keeps a session cookie so you stay signed
+    in. Optionally, it can lock the app behind Face ID / Touch ID.
+  </p>
+
+  <h2>Data retention and deletion</h2>
+  <p>
+    Your notes remain on the server until you delete them. To delete your account and all
+    associated data, contact the server's operator. There is no third party holding copies
+    of your data.
+  </p>
+
+  <h2>Children</h2>
+  <p>Rhizome is not directed at children and does not knowingly collect data from children.</p>
+
+  <h2>Contact</h2>
+  <p>
+    For questions about your data or to request deletion, contact the operator of this
+    server.
+  </p>
+
+  <footer>
+    This is a template privacy policy. The server operator should review it and fill in
+    concrete contact details before publishing.
+  </footer>
+</body>
+</html>

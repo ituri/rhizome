@@ -1037,6 +1037,7 @@ function askClaude(prompt, context) {
 async function serveStatic(req, res, urlPath) {
   let p = decodeURIComponent(urlPath.split('?')[0]);
   if (p === '/' || /^\/s\/[a-f0-9]+\/?$/.test(p)) p = '/index.html';
+  if (p === '/privacy') p = '/privacy.html';
   const file = path.normalize(path.join(PUBLIC_DIR, p));
   if (file !== PUBLIC_DIR && !file.startsWith(PUBLIC_DIR + path.sep)) return send(res, 403, { error: 'forbidden' });
   let data;
@@ -1236,6 +1237,24 @@ const server = http.createServer(async (req, res) => {
         if (String(body.next || '').length < 6) return send(res, 400, { error: 'new password must be at least 6 characters' });
         accounts.setPassword(u.id, String(body.next));
         return send(res, 200, { ok: true });
+      }
+      // self-serve account deletion (App Store 5.1.1(v)): removes the user, the graphs
+      // they solely own, and those graphs' files. Confirmed by re-entering the password.
+      if (url === '/api/account' && req.method === 'DELETE') {
+        const u = currentUser(req);
+        if (!u) return send(res, 401, { error: 'not signed in' });
+        const body = await readJson(req);
+        if (!accounts.verifyLogin(u.username, String(body.password || ''))) return send(res, 403, { error: 'password is wrong' });
+        if (u.is_admin && accounts.adminCount() <= 1) return send(res, 400, { error: 'the last admin account cannot be deleted' });
+        for (const g of accounts.graphsForUser(u.id).filter(x => x.ownerId === u.id)) {
+          accounts.deleteGraph(g.id);
+          graphCache.delete(g.id);
+          try { fs.rmSync(path.join(GRAPHS_DIR, g.id), { recursive: true, force: true }); } catch { /* already gone */ }
+          for (const t of Object.keys(shares)) if (shares[t].graph === g.id) delete shares[t];
+        }
+        persistShares();
+        accounts.deleteUser(u.id);
+        return send(res, 200, { ok: true }, { 'Set-Cookie': 'rz_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0' });
       }
       // graph management (Phase 3): create / rename / delete the signed-in user's graphs
       if (url === '/api/graphs' && req.method === 'POST') {
