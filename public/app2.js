@@ -2492,108 +2492,170 @@ function segRow(options, getCurrent, onPick) {
   return seg;
 }
 
-$('#btn-menu').addEventListener('click', e => {
-  if (currentPopover) { closeAllPopovers(); return; }
-  openPopover(e.currentTarget, pop => {
-    const addTitle = t => {
-      const el = document.createElement('div');
-      el.className = 'pop-title';
-      el.textContent = t;
-      pop.append(el);
-    };
-    addTitle('Theme');
-    pop.append(segRow([['Light', 'light'], ['Auto', 'auto'], ['Dark', 'dark']],
-      () => settings.theme, v => { settings.theme = v; saveSettings(); applyTheme(); }));
-    addTitle('Accent');
-    pop.append(segRow([['Clay', 'terracotta'], ['Sage', 'sage'], ['Indigo', 'indigo'], ['Ink', 'ink']],
-      () => settings.accent, v => { settings.accent = v; saveSettings(); applyTheme(); }));
-    addTitle('Font');
-    pop.append(segRow([['Sans', 'default'], ['Serif', 'serif'], ['System', 'system'], ['Mono', 'mono']],
-      () => settings.font, v => { settings.font = v; saveSettings(); applyTheme(); }));
-    addTitle('Density');
-    pop.append(segRow([['Cozy', 'cozy'], ['Compact', 'compact']],
-      () => settings.density, v => { settings.density = v; saveSettings(); applyTheme(); }));
-    addTitle('Page width');
-    pop.append(segRow([['Reading', 'reading'], ['Full', 'full']],
-      () => settings.width, v => { settings.width = v; saveSettings(); applyTheme(); }));
-    addTitle('Date format');
-    pop.append(segRow([['Jun 12', 'medium'], ['Fri, Jun 12', 'dow'], ['6/12', 'short'], ['ISO', 'iso']],
-      () => settings.dateFormat, v => { settings.dateFormat = v; saveSettings(); renderPage(); }));
+/* ---------------- settings dialog (categorized) ---------------- */
+// A focused, tabbed dialog for preferences (Appearance / Editing / Account), so the ⋮
+// menu can stay a short list of actions. Reuses the seg controls + overlay conventions.
+function showSettings(initialTab) {
+  const ov = document.createElement('div');
+  ov.className = 'overlay';
+  ov.innerHTML = `<div class="settings-dialog" role="dialog" aria-label="Settings">
+    <div class="settings-head">
+      <h2>Settings</h2>
+      <button class="iconbtn settings-close" aria-label="Close">×</button>
+    </div>
+    <div class="settings-main">
+      <nav class="settings-rail" aria-label="Settings categories"></nav>
+      <div class="settings-body"></div>
+    </div>
+  </div>`;
+  document.body.append(ov);
+  const rail = ov.querySelector('.settings-rail');
+  const body = ov.querySelector('.settings-body');
+  const close = () => ov.remove();
+  ov.addEventListener('mousedown', e => { if (e.target === ov) close(); });
+  ov.addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); close(); } });
+  ov.querySelector('.settings-close').addEventListener('click', close);
 
-    pop.append(document.createElement('hr'));
-    pop.append(menuItem(settings.showCompleted ? 'Hide completed' : 'Show completed', '☑', () => {
-      settings.showCompleted = !settings.showCompleted;
-      saveSettings();
-      renderPage();
-    }, { hint: 'Ctrl+O' }));
-    pop.append(menuItem(settings.embeds ? 'Disable video embeds' : 'Enable video embeds', '▶', () => {
-      settings.embeds = !settings.embeds;
-      saveSettings();
-      renderPage();
-    }));
-    pop.append(menuItem(settings.copyTag ? 'Stop tagging duplicates #copy' : 'Tag duplicates with #copy', '⧉', () => {
-      settings.copyTag = !settings.copyTag;
-      saveSettings();
-    }));
-    const toggle = (cond, on, off, icon, after) => menuItem(cond ? on : off, icon, () => { after(); saveSettings(); }, { keepOpen: false });
-    pop.append(
-      toggle(settings.arrows === 'always', 'Show arrows on hover only', 'Always show expand arrows', '▸',
-        () => { settings.arrows = settings.arrows === 'always' ? 'hover' : 'always'; applyTheme(); }),
-      toggle(settings.capitalize, 'Stop auto-capitalizing', 'Capitalize first word', 'A',
-        () => { settings.capitalize = !settings.capitalize; }),
-      toggle(settings.richTags, 'Plain tags only', 'Rich tags (emoji in tags)', '#',
-        () => { settings.richTags = !settings.richTags; renderPage(); }),
-      toggle(settings.markdownPaste !== false, 'Paste markdown as plain text', 'Convert markdown on paste', '↧',
-        () => { settings.markdownPaste = settings.markdownPaste === false; }),
-      toggle(settings.animations !== false, 'Turn off smooth animations', 'Turn on smooth animations', '✨',
-        () => { settings.animations = settings.animations === false; applyTheme(); }),
-    );
+  // building blocks, all appending into the current category's body
+  const group = title => {
+    const g = document.createElement('div');
+    g.className = 'set-group';
+    if (title) { const h = document.createElement('h3'); h.textContent = title; g.append(h); }
+    body.append(g);
+    return g;
+  };
+  const choice = (g, label, options, get, set) => {
+    const row = document.createElement('div');
+    row.className = 'set-row';
+    const l = document.createElement('span');
+    l.className = 'set-label';
+    l.textContent = label;
+    row.append(l, segRow(options, get, v => { set(v); saveSettings(); }));
+    g.append(row);
+  };
+  const bool = (g, label, get, set) =>
+    choice(g, label, [['On', true], ['Off', false]], get, set);
+  const action = (g, label, onClick, opts = {}) => {
+    const b = document.createElement('button');
+    b.className = 'set-action' + (opts.danger ? ' danger' : '');
+    b.textContent = label;
+    b.addEventListener('click', onClick);
+    g.append(b);
+  };
 
-    if (!SHARE_TOKEN) {
-      pop.append(document.createElement('hr'));
-      pop.append(
-        menuItem('Quick capture', '📥', () => window.showCapture(), { hint: 'Ctrl+Shift+Space' }),
-        menuItem('Trash', '🗑', () => showTrash()),
-        menuItem('Present', '▶', () => startPresent()),
-      );
-      const histPage = state.zoom !== ROOT ? window.historyPageOf?.(state.zoom) : null;
-      if (histPage) pop.append(menuItem('Page history', '🕘', () => window.showPageHistory(histPage)));
-      pop.append(menuItem('Device name…', '🏷', () => {
+  const tabs = [];
+  const addTab = (name, render) => tabs.push({ name, render });
+
+  addTab('Appearance', () => {
+    let g = group('Theme & colour');
+    choice(g, 'Theme', [['Light', 'light'], ['Auto', 'auto'], ['Dark', 'dark']],
+      () => settings.theme, v => { settings.theme = v; applyTheme(); });
+    choice(g, 'Accent', [['Clay', 'terracotta'], ['Sage', 'sage'], ['Indigo', 'indigo'], ['Ink', 'ink']],
+      () => settings.accent, v => { settings.accent = v; applyTheme(); });
+    choice(g, 'Font', [['Sans', 'default'], ['Serif', 'serif'], ['System', 'system'], ['Mono', 'mono']],
+      () => settings.font, v => { settings.font = v; applyTheme(); });
+    g = group('Layout');
+    choice(g, 'Density', [['Cozy', 'cozy'], ['Compact', 'compact']],
+      () => settings.density, v => { settings.density = v; applyTheme(); });
+    choice(g, 'Page width', [['Reading', 'reading'], ['Full', 'full']],
+      () => settings.width, v => { settings.width = v; applyTheme(); });
+    choice(g, 'Date format', [['Jun 12', 'medium'], ['Fri, Jun 12', 'dow'], ['6/12', 'short'], ['ISO', 'iso']],
+      () => settings.dateFormat, v => { settings.dateFormat = v; renderPage(); });
+    choice(g, 'Expand arrows', [['Always', 'always'], ['On hover', 'hover']],
+      () => settings.arrows === 'always' ? 'always' : 'hover', v => { settings.arrows = v; applyTheme(); });
+    g = group('Display');
+    bool(g, 'Show completed items', () => !!settings.showCompleted, v => { settings.showCompleted = v; renderPage(); });
+    bool(g, 'Smooth animations', () => settings.animations !== false, v => { settings.animations = v; applyTheme(); });
+  });
+
+  addTab('Editing', () => {
+    let g = group('Text');
+    bool(g, 'Capitalize first word', () => !!settings.capitalize, v => { settings.capitalize = v; });
+    bool(g, 'Rich tags (emoji in tags)', () => !!settings.richTags, v => { settings.richTags = v; renderPage(); });
+    bool(g, 'Convert markdown on paste', () => settings.markdownPaste !== false, v => { settings.markdownPaste = v; });
+    g = group('Behaviour');
+    bool(g, 'Tag duplicates with #copy', () => !!settings.copyTag, v => { settings.copyTag = v; });
+    bool(g, 'Video embeds', () => !!settings.embeds, v => { settings.embeds = v; renderPage(); });
+    choice(g, 'Week starts', [['Monday', 'mon'], ['Sunday', 'sun']],
+      () => settings.weekStart, v => { settings.weekStart = v; });
+  });
+
+  if (state.user && !SHARE_TOKEN) {
+    addTab('Account', () => {
+      let g = group('Signed in as ' + state.user.username);
+      action(g, 'Change password…', () => { close(); showChangePassword(); });
+      action(g, 'API keys…', () => { close(); showApiKeys(); });
+      if (state.user.isAdmin) action(g, 'Admin panel…', () => { close(); showAdminPanel(); });
+      g = group('This device');
+      const hint = document.createElement('div');
+      hint.className = 'set-hint';
+      hint.textContent = 'Device name: ' + window.getDeviceName();
+      g.append(hint);
+      action(g, 'Change device name…', () => {
         const n = prompt('Device name (shown in page history):', window.getDeviceName());
-        if (n != null) { window.setDeviceName(n); showToast('Device name: ' + window.getDeviceName()); }
-      }));
-      addTitle('Week starts');
-      pop.append(segRow([['Monday', 'mon'], ['Sunday', 'sun']],
-        () => settings.weekStart, v => { settings.weekStart = v; saveSettings(); }));
-    }
-    pop.append(document.createElement('hr'));
+        if (n != null) { window.setDeviceName(n); hint.textContent = 'Device name: ' + window.getDeviceName(); showToast('Device name: ' + window.getDeviceName()); }
+      });
+      g = group('');
+      action(g, 'Log out', async () => { await fetch('/api/logout', { method: 'POST' }); location.reload(); }, { danger: true });
+    });
+  }
+
+  const show = i => {
+    body.innerHTML = '';
+    tabs[i].render();
+    $$('button', rail).forEach((b, j) => b.classList.toggle('active', j === i));
+  };
+  tabs.forEach((t, i) => {
+    const b = document.createElement('button');
+    b.className = 'settings-tab';
+    b.textContent = t.name;
+    b.addEventListener('click', () => show(i));
+    rail.append(b);
+  });
+  show(Math.max(0, tabs.findIndex(t => t.name === initialTab)));
+}
+window.showSettings = showSettings;
+
+// Export format chooser, opened as a small submenu from the ⋮ menu's "Export" item.
+function openExportMenu(anchor) {
+  openPopover(anchor, pop => {
     pop.append(
-      menuItem('Expand all', '▾', () => setCollapseAll(false)),
-      menuItem('Collapse all', '▸', () => setCollapseAll(true)),
-      document.createElement('hr'),
       menuItem('Export as text', '↧', () => exportDoc('txt')),
       menuItem('Export as Markdown', '↧', () => exportDoc('md')),
       menuItem('Export as OPML', '↧', () => exportDoc('opml')),
       menuItem('Export as JSON', '↧', () => exportDoc('json')),
-      menuItem('Print', '🖨', () => { commitActiveText(); window.print(); }, { hint: 'Ctrl+P' }),
     );
-    if (!SHARE_TOKEN && !state.readOnly) {
-      pop.append(menuItem('Import…', '↥', () => $('#import-file').click()));
+  });
+}
+
+$('#btn-menu').addEventListener('click', e => {
+  if (currentPopover) { closeAllPopovers(); return; }
+  openPopover(e.currentTarget, pop => {
+    pop.append(menuItem('Settings…', '⚙', () => showSettings()));
+    if (!SHARE_TOKEN) {
+      pop.append(document.createElement('hr'));
+      pop.append(menuItem('Quick capture', '📥', () => window.showCapture(), { hint: 'Ctrl+Shift+Space' }));
+      const histPage = state.zoom !== ROOT ? window.historyPageOf?.(state.zoom) : null;
+      if (histPage) pop.append(menuItem('Page history', '🕘', () => window.showPageHistory(histPage)));
+    }
+    pop.append(menuItem('Present', '▶', () => startPresent()));
+    pop.append(document.createElement('hr'));
+    pop.append(
+      menuItem('Expand all', '▾', () => setCollapseAll(false)),
+      menuItem('Collapse all', '▸', () => setCollapseAll(true)),
+    );
+    pop.append(document.createElement('hr'));
+    pop.append(menuItem('Export', '↧', () => openExportMenu($('#btn-menu'))));
+    if (!SHARE_TOKEN && !state.readOnly) pop.append(menuItem('Import…', '↥', () => $('#import-file').click()));
+    pop.append(menuItem('Print', '🖨', () => { commitActiveText(); window.print(); }, { hint: 'Ctrl+P' }));
+    if (!SHARE_TOKEN) {
+      pop.append(document.createElement('hr'));
+      pop.append(menuItem('Trash', '🗑', () => showTrash()));
     }
     pop.append(document.createElement('hr'));
     pop.append(menuItem('Keyboard shortcuts', '⌘', () => showHelp(), { hint: 'Ctrl+/' }));
-    if (state.user && !SHARE_TOKEN) {
-      pop.append(document.createElement('hr'));
-      addTitle('Signed in as ' + state.user.username);
-      pop.append(menuItem('Change password…', '🔑', () => showChangePassword()));
-      pop.append(menuItem('API keys…', '🗝', () => showApiKeys()));
-      if (state.user.isAdmin) pop.append(menuItem('Admin panel…', '🛠', () => showAdminPanel()));
-      pop.append(menuItem('Log out', '🔒', async () => { await fetch('/api/logout', { method: 'POST' }); location.reload(); }));
-    } else if (state.authRequired && !SHARE_TOKEN) {
-      pop.append(menuItem('Lock (log out)', '🔒', async () => {
-        await fetch('/api/logout', { method: 'POST' });
-        location.reload();
-      }));
+    if (state.authRequired && !state.user && !SHARE_TOKEN) {
+      pop.append(menuItem('Lock (log out)', '🔒', async () => { await fetch('/api/logout', { method: 'POST' }); location.reload(); }));
     }
     const foot = document.createElement('div');
     foot.className = 'pop-title';
