@@ -497,7 +497,9 @@ function ensureDayInDoc(doc, iso) {
 }
 
 // quick-capture lands under today's journal in an "Inbox" bullet: today → Inbox → line(s)
-function captureText(g, text) {
+function captureText(g, text, device) {
+  const dev = String(device || '').slice(0, 60);
+  if (dev) g.historyDevice = dev;
   const doc = ensureDoc(g);
   const dayId = ensureDayInDoc(doc, todayIso());
   // drop stray empty bullets (e.g. an unused daily-note placeholder) so capture never
@@ -1357,8 +1359,9 @@ const server = http.createServer(async (req, res) => {
         if (!g) return send(res, 400, { error: 'no graph to capture into' });
         const raw = (await readBody(req, 1024 * 1024)).toString('utf8');
         let text = raw;
-        try { const j = JSON.parse(raw); if (typeof j.text === 'string') text = j.text; } catch { /* plain text body */ }
-        const count = captureText(g, text);
+        let deviceName = new URL(url, 'http://x').searchParams.get('deviceName') || '';
+        try { const j = JSON.parse(raw); if (typeof j.text === 'string') text = j.text; if (typeof j.deviceName === 'string') deviceName = j.deviceName; } catch { /* plain text body */ }
+        const count = captureText(g, text, deviceName);
         return send(res, 200, { ok: true, captured: count });
       }
 
@@ -1461,8 +1464,9 @@ const server = http.createServer(async (req, res) => {
         if (seg === 'capture' && method === 'POST') {
           const raw = (await readBody(req, 1024 * 1024)).toString('utf8');
           let text = raw;
-          try { const j = JSON.parse(raw); if (typeof j.text === 'string') text = j.text; } catch { /* plain text body */ }
-          return send(res, 200, { ok: true, captured: captureText(g, text) });
+          let deviceName = new URL(url, 'http://x').searchParams.get('deviceName') || '';
+          try { const j = JSON.parse(raw); if (typeof j.text === 'string') text = j.text; if (typeof j.deviceName === 'string') deviceName = j.deviceName; } catch { /* plain text body */ }
+          return send(res, 200, { ok: true, captured: captureText(g, text, deviceName) });
         }
         return send(res, 404, { error: 'not found' });
       }
