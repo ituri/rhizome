@@ -2111,6 +2111,8 @@ window.uploadAttachments = async function uploadAttachments(id, files) {
   snapshot();
   recOld(id); // capture the node before the async upload mutates its files
   let added = 0;
+  uploadingIds.add(id); renderPage();   // show a spinner on the bullet while uploading
+  try {
   for (const file of files) {
     if (file.size > 32 * 1024 * 1024) { showToast(`"${file.name}" is over the 32 MB limit`); continue; }
     try {
@@ -2132,10 +2134,15 @@ window.uploadAttachments = async function uploadAttachments(id, files) {
       showToast(`Could not upload "${file.name}"`);
     }
   }
+  } finally {
+    uploadingIds.delete(id);
+  }
   if (added) {
     renderPage();
     markDirty();
     showToast(`Attached ${added} file${added === 1 ? '' : 's'}`);
+  } else {
+    renderPage();   // clear the spinner even if nothing was added
   }
 };
 

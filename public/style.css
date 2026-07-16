@@ -1706,6 +1706,9 @@ time[datetime].today { color: oklch(0.5 0.14 150); background: oklch(0.55 0.14 1
 /* ---------------- attachments & embeds ---------------- */
 
 .attachments { margin: 2px 0 4px 26px; display: flex; flex-wrap: wrap; gap: 6px; }
+.att-uploading { display: flex; align-items: center; gap: 8px; margin: 2px 0 4px 26px; color: var(--ink-faint); font-size: 13px; }
+.att-spinner { width: 15px; height: 15px; border-radius: 50%; border: 2px solid var(--line); border-top-color: var(--accent); animation: att-spin 0.7s linear infinite; }
+@keyframes att-spin { to { transform: rotate(360deg); } }
 .attachments img.att-img {
   max-width: min(480px, 100%);
   max-height: 320px;

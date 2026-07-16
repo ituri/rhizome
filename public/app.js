@@ -82,6 +82,7 @@ const mobilebarEl = $('#mobilebar');
 const backlinksEl = $('#backlinks');
 
 const elById = new Map();
+const uploadingIds = new Set();   // node ids whose attachment is currently uploading (shows a spinner)
 
 /* ---------------- 3. utils ---------------- */
 
@@ -1953,6 +1954,12 @@ function mountItem(id, underMatch = false) {
   }
   const atts = buildAttachments(cn); // attachments are content — shown at every instance (handlers close over cn.id)
   if (atts) item.append(atts);
+  if (uploadingIds.has(cn.id)) {
+    const up = document.createElement('div');
+    up.className = 'att-uploading';
+    up.innerHTML = '<span class="att-spinner"></span><span>Uploading…</span>';
+    item.append(up);
+  }
   const embed = buildEmbed(cn);
   if (embed) item.append(embed);
   const qr = window.buildQueryResults?.(cn); // live {{query:…}} result list
