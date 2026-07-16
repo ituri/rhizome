@@ -763,6 +763,8 @@ body.dragging-item .content, body.dragging-item .note { cursor: grabbing; }
 .assets-tabs { display: flex; gap: 4px; padding: 4px 0 0; border-bottom: 1px solid var(--line-soft); margin-bottom: 6px; }
 .assets-tab { border: 0; background: none; padding: 7px 14px; border-radius: 8px 8px 0 0; cursor: pointer; color: var(--ink-soft); font-weight: 500; font-size: 14px; }
 .assets-tab.active { color: var(--ink); background: var(--line-soft); }
+.assets-search { width: 100%; margin: 10px 0 4px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); font: inherit; font-size: 14px; }
+.assets-search:focus { outline: none; border-color: var(--accent); }
 .assets-list { padding: 4px 0; display: flex; flex-direction: column; gap: 4px; }
 .asset-row { display: flex; align-items: center; gap: 12px; padding: 8px; border-radius: 10px; }
 .asset-row:hover { background: var(--line-soft); }

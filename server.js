@@ -1478,6 +1478,19 @@ const server = http.createServer(async (req, res) => {
             }
             return send(res, 200, { removed });
           }
+          if (method === 'POST' && isRename) {  // rename an unused file on disk
+            const body = await readJson(req);
+            const stored = storedFromUrl(`/files/${encodeURIComponent(String(body.name || ''))}`);
+            if (!stored) return send(res, 400, { error: 'bad name' });
+            if (allReferencedUrls(gid).has(`/files/${encodeURIComponent(stored)}`)) return send(res, 409, { error: 'file is in use' });
+            const safe = path.basename(String(body.newName || '')).replace(/[^\w.\- ()]/g, '_').slice(0, 120).trim();
+            if (!safe) return send(res, 400, { error: 'bad new name' });
+            let dest = safe;
+            if (dest !== stored && fs.existsSync(path.join(FILES_DIR, dest))) dest = `${uid()}-${safe}`;
+            try { fs.renameSync(path.join(FILES_DIR, stored), path.join(FILES_DIR, dest)); }
+            catch { return send(res, 500, { error: 'rename failed' }); }
+            return send(res, 200, { name: dest, url: `/files/${encodeURIComponent(dest)}` });
+          }
           return send(res, 404, { error: 'not found' });
         }
 

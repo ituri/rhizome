@@ -1895,8 +1895,17 @@ function fmtBytes(n) {
 
 // Asset manager: every file referenced in this graph (In use) + files no graph references (Unused)
 let assetsTab = 'used';   // 'used' | 'unused' — persists across re-renders
+let assetsQuery = '';     // fuzzy filter over file names
 function assetsViewActive() { return state.view === 'assets' && state.zoom === ROOT && !SHARE_TOKEN && !searchActive(); }
 window.assetsViewActive = assetsViewActive;
+// subsequence fuzzy match: every char of the query appears in order in the text
+function fuzzyMatch(query, text) {
+  const q = (query || '').toLowerCase(); if (!q) return true;
+  const s = (text || '').toLowerCase();
+  let i = 0;
+  for (const c of s) { if (c === q[i]) i++; if (i === q.length) return true; }
+  return false;
+}
 
 // Full-page asset manager: files referenced in this graph (In use) + files no graph references (Unused)
 window.renderAssetsView = function renderAssetsView(frag) {
@@ -1907,16 +1916,21 @@ window.renderAssetsView = function renderAssetsView(frag) {
       <button class="assets-tab" data-tab="used">In use</button>
       <button class="assets-tab" data-tab="unused">Unused</button>
     </div>
+    <input class="assets-search" type="search" placeholder="Search files" autocomplete="off" spellcheck="false">
     <div class="assets-list">Loading…</div>`;
   frag.append(view);
   const listEl = $('.assets-list', view);
+  const searchEl = $('.assets-search', view);
+  searchEl.value = assetsQuery;
   const jump = node => zoomTo(node);
   const isImageName = s => /\.(png|jpe?g|gif|webp|svg|bmp|heic|heif)$/i.test(s || '');
+  const matchAsset = a => fuzzyMatch(assetsQuery, a.name || a.url) || (a.refs || []).some(r => fuzzyMatch(assetsQuery, r.pageTitle || ''));
 
   $$('.assets-tab', view).forEach(t => {
     t.classList.toggle('active', t.dataset.tab === assetsTab);
     t.addEventListener('click', () => { if (assetsTab !== t.dataset.tab) { assetsTab = t.dataset.tab; renderPage(); } });
   });
+  searchEl.addEventListener('input', () => { assetsQuery = searchEl.value; assetsTab === 'unused' ? paintUnused() : paintUsed(); });
 
   function assetRow(a, { refs, unused } = {}) {
     const row = document.createElement('div');
@@ -1925,7 +1939,6 @@ window.renderAssetsView = function renderAssetsView(frag) {
     row.innerHTML = `${img ? `<img class="asset-thumb" loading="lazy" alt="">` : '<div class="asset-thumb asset-file">📎</div>'}
       <div class="asset-info"><div class="asset-name"></div><div class="asset-meta"></div><div class="asset-refs"></div></div>
       <div class="asset-actions"><a class="asset-dl" download title="Download">⇩</a><button class="asset-rename" title="Rename">Rename</button><button class="asset-del">Delete</button></div>`;
-    if (unused) $('.asset-rename', row).hidden = true;   // rename applies to referenced files
     if (img) $('.asset-thumb', row).src = fileHref(a.url) || '';
     $('.asset-name', row).textContent = a.name || a.url.split('/').pop();
     const bits = [fmtBytes(a.size)];
@@ -1945,14 +1958,21 @@ window.renderAssetsView = function renderAssetsView(frag) {
     return row;
   }
 
+  let usedData = null, unusedData = null;
+
   async function renderUsed() {
     listEl.innerHTML = 'Loading…';
-    let assets;
-    try { assets = (await (await fetch(apiBase + '/assets')).json()).assets || []; }
+    try { usedData = (await (await fetch(apiBase + '/assets')).json()).assets || []; }
     catch { listEl.innerHTML = '<div class="history-empty">Could not load assets.</div>'; return; }
-    if (!assets.length) { listEl.innerHTML = '<div class="history-empty">No files attached in this graph yet.</div>'; return; }
+    paintUsed();
+  }
+  function paintUsed() {
+    if (!usedData) return;
+    if (!usedData.length) { listEl.innerHTML = '<div class="history-empty">No files attached in this graph yet.</div>'; return; }
+    const items = usedData.filter(matchAsset);
     listEl.innerHTML = '';
-    for (const a of assets) {
+    if (!items.length) { listEl.innerHTML = '<div class="history-empty">No files match your search.</div>'; return; }
+    for (const a of items) {
       const row = assetRow(a, { refs: a.refs });
       $('.asset-rename', row).addEventListener('click', async () => {
         const name = prompt('Rename file:', a.name || '');
@@ -1979,25 +1999,40 @@ window.renderAssetsView = function renderAssetsView(frag) {
 
   async function renderUnused() {
     listEl.innerHTML = 'Loading…';
-    let orphans;
     try {
       const r = await fetch(apiBase + '/assets/orphans');
-      if (r.status === 403) { listEl.innerHTML = '<div class="history-empty">Only the graph owner can manage unused files.</div>'; return; }
-      orphans = (await r.json()).orphans || [];
+      if (r.status === 403) { unusedData = null; listEl.innerHTML = '<div class="history-empty">Only the graph owner can manage unused files.</div>'; return; }
+      unusedData = (await r.json()).orphans || [];
     } catch { listEl.innerHTML = '<div class="history-empty">Could not load unused files.</div>'; return; }
-    if (!orphans.length) { listEl.innerHTML = '<div class="history-empty">No unused files — everything is referenced by a note.</div>'; return; }
+    paintUnused();
+  }
+  function paintUnused() {
+    if (!unusedData) return;
+    if (!unusedData.length) { listEl.innerHTML = '<div class="history-empty">No unused files — everything is referenced by a note.</div>'; return; }
+    const items = unusedData.filter(matchAsset);
     listEl.innerHTML = '';
     const bar = document.createElement('div');
     bar.className = 'asset-orphanbar';
-    bar.innerHTML = `<span>${orphans.length} unused · ${fmtBytes(orphans.reduce((s, o) => s + (o.size || 0), 0))}</span><button class="asset-delall">Delete all</button>`;
+    bar.innerHTML = `<span>${items.length} unused · ${fmtBytes(items.reduce((s, o) => s + (o.size || 0), 0))}</span><button class="asset-delall">Delete all</button>`;
     $('.asset-delall', bar).addEventListener('click', async () => {
-      if (!confirm(`Delete all ${orphans.length} unused files? This can't be undone.`)) return;
-      try { await fetch(apiBase + '/assets/orphans/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ names: orphans.map(o => o.name) }) }); showToast('Deleted unused files'); renderUnused(); }
+      if (!items.length) return;
+      if (!confirm(`Delete all ${items.length} unused file(s)${assetsQuery ? ' matching your search' : ''}? This can't be undone.`)) return;
+      try { await fetch(apiBase + '/assets/orphans/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ names: items.map(o => o.name) }) }); showToast('Deleted unused files'); renderUnused(); }
       catch { showToast('Delete failed'); }
     });
     listEl.append(bar);
-    for (const o of orphans) {
+    if (!items.length) { const e = document.createElement('div'); e.className = 'history-empty'; e.textContent = 'No files match your search.'; listEl.append(e); return; }
+    for (const o of items) {
       const row = assetRow(o, { unused: true });
+      $('.asset-rename', row).addEventListener('click', async () => {
+        const suggested = (o.name || '').replace(/^[a-z0-9]{6,}-/, '');   // hide the stored uid prefix
+        const name = prompt('Rename file:', suggested);
+        if (name == null || !name.trim()) return;
+        try {
+          await fetch(apiBase + '/assets/orphans/rename', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: o.name, newName: name.trim() }) });
+          showToast('Renamed to ' + name.trim()); renderUnused();
+        } catch { showToast('Rename failed'); }
+      });
       $('.asset-del', row).addEventListener('click', async () => {
         if (!confirm(`Permanently delete the unused file "${o.name}"?`)) return;
         try { await fetch(apiBase + '/assets/orphans/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ names: [o.name] }) }); showToast('Deleted ' + o.name); renderUnused(); }
