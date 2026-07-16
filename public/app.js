@@ -48,6 +48,7 @@ const settings = Object.assign(
 const undoStack = [];
 const redoStack = [];
 let pendingOps = [];   // Route B: ops emitted from the journal, awaiting the next save
+let metaDirty = false; // doc.meta (pins/stars) changed — op-sync can't carry it, so force a whole-doc PUT
 let serverHasDoc = false; // false until we've loaded/seeded a doc on the server (then ops apply)
 let burst = { key: '', at: 0 };
 
@@ -908,6 +909,15 @@ function markDirty() {
   scheduleSave();
 }
 
+// pins/stars live in doc.meta, which the op-sync delta protocol doesn't carry. Route the
+// next save through the whole-doc PUT (its body includes doc.meta) so the change actually
+// reaches the server instead of being dropped by the empty-pendingOps early-return.
+function markMetaDirty() {
+  metaDirty = true;
+  markDirty();
+}
+window.markMetaDirty = markMetaDirty;
+
 // every doc that arrives from the network passes through the whitelist
 // serializer — guests with edit-share tokens can PUT arbitrary markup
 function sanitizeDocTexts(d) {
@@ -995,7 +1005,7 @@ async function doSave() {
     // Route B op delta-sync (default): send the ops the journal emitted — no baseline is
     // consulted, so the send path cannot drift. The server dedupes by op id and orders by
     // a monotonic version, so a re-send after a failure is safe. PUT remains the fallback.
-    if (settings.opSync && !SHARE_TOKEN && serverHasDoc) {
+    if (settings.opSync && !SHARE_TOKEN && serverHasDoc && !metaDirty) {
       commitActiveText(true); // flush the active edit into the op WITH re-decorate (so e.g. a
       commitUndoTxn();        // just-inserted date pill is styled), then finalize the op
       if (!pendingOps.length) {
@@ -1044,6 +1054,7 @@ async function doSave() {
     pendingOps = pendingOps.slice(opsBeforePut); // drop only ops the PUT body already contained
     serverHasDoc = true; // the whole doc was just sent — ops queued before it are now redundant
     if (changeSeq === seq) {
+      metaDirty = false; // doc.meta was just persisted in the PUT body
       dirty = false;
       setSaveUI('saved');
       localStorage.removeItem('tendril-offline');

@@ -90,7 +90,7 @@ window.toggleStar = function toggleStar() {
   const idx = stars.findIndex(s => (s.id || ROOT) === id && (s.q || '') === q);
   if (idx >= 0) { stars.splice(idx, 1); showToast('Star removed'); }
   else { stars.push({ id, q }); showToast(q ? 'Search starred' : 'Page starred'); }
-  markDirty();
+  markMetaDirty(); // stars live in doc.meta — force a whole-doc PUT so the server keeps them
   window.updateStarBtn();
   window.renderSidebar();
 };

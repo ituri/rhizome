@@ -425,7 +425,7 @@ function togglePin(id) {
   const m = meta();
   const i = m.pins.indexOf(id);
   if (i >= 0) m.pins.splice(i, 1); else m.pins.unshift(id);
-  markDirty();
+  markMetaDirty(); // pins live in doc.meta — force a whole-doc PUT so the server keeps them
   window.renderSidebar();
 }
 window.togglePin = togglePin;
@@ -458,7 +458,7 @@ window.renderSidebar = function renderSidebar() {
     rm.textContent = '×';
     rm.addEventListener('click', () => {
       meta().stars.splice(idx, 1);
-      markDirty();
+      markMetaDirty(); // stars live in doc.meta — force a whole-doc PUT so removal reaches the server
       window.renderSidebar();
       window.updateStarBtn();
     });
