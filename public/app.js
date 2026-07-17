@@ -318,7 +318,8 @@ function mdInline(plain) {
 const TAG_RE = /(^|[\s(])([#@][\p{L}\p{N}_][\p{L}\p{N}_\-\/]*)/gu;
 const TAG_RE_RICH = /(^|[\s(])([#@][\p{L}\p{N}_\p{Extended_Pictographic}][\p{L}\p{N}_\-\/\p{Extended_Pictographic}‍️]*)/gu;
 const tagRe = () => settings.richTags ? TAG_RE_RICH : TAG_RE;
-const URL_RE = /https?:\/\/[^\s<>"')]+[^\s<>"').,;:!?]/g;
+// http(s) URLs, plus bare www. hosts (linked as https://); trailing sentence punctuation excluded
+const URL_RE = /(?:https?:\/\/|\bwww\.)[^\s<>"')]+[^\s<>"').,;:!?]/gi;
 
 function highlightTermsOf() {
   if (!state.query) return null;
@@ -388,7 +389,7 @@ function decorate(html, opts = {}) {
       let html2 = escHtml(child.nodeValue);
       if (!inLink && !opts.plain) {
         html2 = html2.replace(URL_RE, m =>
-          `<a href="${escAttr(m)}" rel="noopener">${m}</a>`);
+          `<a href="${escAttr(/^www\./i.test(m) ? 'https://' + m : m)}" rel="noopener">${m}</a>`);
         html2 = html2.replace(tagRe(), (m, pre, tag) =>
           `${pre}<span class="tag${tag[0] === '@' ? ' mention' : ''}" data-tag="${escAttr(tag)}">${tag}</span>`);
       }
