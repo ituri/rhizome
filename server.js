@@ -722,6 +722,7 @@ async function handleV1(req, res, url, g, scope) {
       endpoints: [
         'GET    /api/v1/doc',
         'GET    /api/v1/version',
+        'GET    /api/v1/events              (SSE: {version} on connect + on every change)',
         'GET    /api/v1/search?q=&limit=',
         'GET    /api/v1/nodes/:id            (?tree=1&depth=N for the subtree)',
         'GET    /api/v1/nodes/:id/children',
@@ -735,6 +736,16 @@ async function handleV1(req, res, url, g, scope) {
   }
   if (path === '/api/v1/version' && method === 'GET') return send(res, 200, { version: g.store.version });
   if (path === '/api/v1/doc' && method === 'GET') return send(res, 200, { version: g.store.version, doc });
+  if (path === '/api/v1/events' && method === 'GET') {   // SSE — same hub as /api/g/:g/events
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store',
+      'Connection': 'keep-alive', 'X-Accel-Buffering': 'no',
+    });
+    res.write(`data: ${JSON.stringify({ version: g.store.version })}\n\n`);
+    g.sse.add(res);
+    req.on('close', () => g.sse.delete(res));
+    return;
+  }
   if (path === '/api/v1/search' && method === 'GET') {
     const q = u.searchParams.get('q') || '';
     const lim = parseInt(u.searchParams.get('limit') || '50', 10);

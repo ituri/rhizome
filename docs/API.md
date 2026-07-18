@@ -116,7 +116,8 @@ Auth: `Authorization: Bearer <token>` or `?token=`. The token is either the inst
 `RHIZOME_AGENT_TOKEN` (→ the admin's default graph, write scope) or a per-graph API key
 `rzk_…` (→ its bound graph; a `read` key may only GET, a `write` key may call everything —
 non-GET with a read key → **403**). A logged-in session also works (default graph).
-`GET /api/v1/doc`, `GET /api/v1/version`, `GET /api/v1/search?q=&limit=`,
+`GET /api/v1/doc`, `GET /api/v1/version`, `GET /api/v1/events` (**SSE** — `{version}` on
+connect and on every change, heartbeat `:hb`), `GET /api/v1/search?q=&limit=`,
 `GET /api/v1/nodes/:id` (`?tree=1&depth=N`), `GET /api/v1/nodes/:id/children`,
 `POST /api/v1/nodes {parent,text,note,done,format,index}`,
 `PATCH /api/v1/nodes/:id {text,note,done,collapsed,format}`,
