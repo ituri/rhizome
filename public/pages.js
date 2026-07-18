@@ -1153,14 +1153,45 @@ function buildRefGroups(target, rows) {
 // unlinked-references scan with a one-click Link action
 // whole-outline search results, grouped by page (reuses the reference layout)
 window.renderSearchResults = function renderSearchResults(frag) {
-  const rows = [...(state.matchSet || [])]
-    .filter(id => doc.nodes[id] && plainOf(N(contentIdOf(id)).text).trim()) // skip empty rows (bare mirrors, dividers)
-    .map(id => ({ id, html: N(contentIdOf(id)).text })); // mirrors show their transcluded content
-  const built = rows.length ? buildRefGroups(null, rows) : null;
+  const matched = [...(state.matchSet || [])]
+    .filter(id => doc.nodes[id] && plainOf(N(contentIdOf(id)).text).trim()); // skip empty rows (bare mirrors, dividers)
+  // a real page (top-level page or journal day) vs a bullet that merely mentions one
+  const isPageHit = id => (kidsOf(ROOT).includes(id) && !isCalRoot(id)) || N(id)?.cal === 'day';
+  const pages = matched.filter(isPageHit);
+  const mentions = matched.filter(id => !isPageHit(id));
+
   const view = document.createElement('div');
   view.className = 'search-results';
-  if (built) view.append(built.el);
-  else view.innerHTML = '<div class="ref-none">Nothing matches.</div>';
+
+  // real pages first, highlighted, with a type chip — they're the primary hit
+  if (pages.length) {
+    const sec = document.createElement('div');
+    sec.className = 'search-pages';
+    for (const id of pages) {
+      const a = document.createElement('a');
+      a.className = 'search-page';
+      a.href = '#/n/' + id;
+      const title = plainOf(N(id).text).trim() || 'Untitled';
+      a.innerHTML = `<span class="sp-title">${escHtml(title)}</span>` +
+        `<span class="chip accent">${N(id).cal === 'day' ? 'Journal' : 'Page'}</span>`;
+      sec.append(a);
+    }
+    view.append(sec);
+  }
+
+  // the mentions, grouped by their page (as before)
+  const built = mentions.length ? buildRefGroups(null, mentions.map(id => ({ id, html: N(contentIdOf(id)).text }))) : null;
+  if (built) {
+    if (pages.length) {
+      const h = document.createElement('div');
+      h.className = 'search-mentions-head';
+      h.textContent = 'Mentions';
+      view.append(h);
+    }
+    view.append(built.el);
+  } else if (!pages.length) {
+    view.innerHTML = '<div class="ref-none">Nothing matches.</div>';
+  }
   frag.append(view);
 };
 

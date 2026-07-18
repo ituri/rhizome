@@ -2214,6 +2214,14 @@ a.side-nav.current { background: var(--accent-softer); color: var(--ink); }
 .ref-row a { color: var(--ink-soft); text-decoration: none; }
 .ref-row a:hover { color: var(--accent); }
 .ref-none { color: var(--ink-faint); font-size: 13px; padding: 2px 0 6px; }
+/* search: real pages highlighted with a type chip, above the grouped mentions */
+.search-pages { margin-bottom: 12px; }
+.search-page { display: flex; align-items: center; gap: 10px; padding: 9px 12px; margin-bottom: 5px; border-radius: 9px; background: var(--accent-soft); color: var(--ink); text-decoration: none; font-weight: 600; font-size: 15px; }
+.search-page:hover { background: var(--accent-softer); }
+.search-page .sp-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.search-mentions-head { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-faint); font-weight: 600; margin: 10px 0 6px; }
+.chip { flex: none; font-size: 10.5px; font-weight: 500; padding: 2px 8px; border-radius: 999px; color: var(--ink-faint); background: color-mix(in oklab, var(--ink-faint) 13%, transparent); }
+.chip.accent { color: var(--accent); background: var(--bg-raised); }
 .unlinked-box { margin-top: 18px; }
 .unlinked-head { cursor: pointer; user-select: none; }
 .unlinked-caret { display: inline-block; transition: transform 0.15s; margin-right: 4px; }
