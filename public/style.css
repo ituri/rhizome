@@ -807,7 +807,7 @@ body.dragging-item .content, body.dragging-item .note { cursor: grabbing; }
 
 /* ---- settings dialog (categorized) ---- */
 .settings-dialog {
-  width: min(640px, 96vw);
+  width: min(820px, 96vw);
   background: var(--bg-raised);
   color: var(--ink);
   border-radius: 16px;
@@ -842,6 +842,8 @@ body.dragging-item .content, body.dragging-item .note { cursor: grabbing; }
 @media (max-width: 560px) {
   .settings-title { font-size: 18px; }
   .settings-search { max-width: 150px; }
+  /* on phones the one-line policy row would overflow — let it wrap again */
+  .sec-policy { flex-wrap: wrap; white-space: normal; }
 }
 .settings-main { display: flex; min-height: 0; flex: 1 1 auto; }
 .settings-rail { flex: none; width: 148px; border-right: 1px solid var(--line-soft); padding: 10px; display: flex; flex-direction: column; gap: 2px; overflow-y: auto; }
@@ -1103,7 +1105,7 @@ kbd {
 
 /* admin login-security section */
 .admin-h4 { margin: 12px 0 4px; font-size: 14px; }
-.sec-policy { font-size: 13px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.sec-policy { font-size: 13px; display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; white-space: nowrap; }
 .sec-policy input { width: 56px; font: inherit; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: none; color: var(--ink); }
 .sec-policy select { font: inherit; padding: 4px; border: 1px solid var(--line); border-radius: 6px; background: none; color: var(--ink); }
 .sec-policy .acct-save { padding: 6px 12px; }
