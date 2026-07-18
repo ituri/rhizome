@@ -466,73 +466,9 @@ window.editorInputHook = function editorInputHook(ctx) {
     return;
   }
 
-  // [[title]] typed out in full → link to that page immediately (created if
-  // needed, even when still empty), no popover interaction required
-  const wl = before.match(/\[\[([^[\]\n]+)\]\]$/);
-  if (wl && wl[1].trim() && ctx.field === 'text' && fmtOf(ctx.id) !== 'codeblock' && !state.readOnly) {
-    window.closeCaretPop();
-    const title = wl[1].trim();
-    const bracketStart = off - wl[0].length;
-    const sig = /[#@]/.test(before[bracketStart - 1] || '') ? before[bracketStart - 1] : ''; // #[[…]] / @[[…]] → tag
-    snapshot();
-    const pageId = getOrCreatePage(title);
-    selectPlainRange(ctx.el, bracketStart - (sig ? 1 : 0), off); // include the sigil
-    const sel = getSelection();
-    const r = sel.getRangeAt(0);
-    r.deleteContents();
-    insertInlineAtCaret(sel, r, window.makePageAnchor(pageId, title, sig));
-    scheduleCommit(ctx.el);
-    markDirty();
-    return;
-  }
-
-  // [text](url) typed out in full → inline named link (markdown), converted on the closing ')'
-  const mdl = before.match(/\[([^[\]\n]+)\]\((https?:\/\/[^\s()]+|www\.[^\s()]+|mailto:[^\s()]+)\)$/);
-  if (mdl && ctx.field === 'text' && fmtOf(ctx.id) !== 'codeblock' && !state.readOnly) {
-    window.closeCaretPop();
-    const text = mdl[1];
-    let href = mdl[2];
-    if (/^www\./i.test(href)) href = 'https://' + href;
-    const start = off - mdl[0].length;
-    snapshot();
-    selectPlainRange(ctx.el, start, off);
-    const sel = getSelection();
-    const r = sel.getRangeAt(0);
-    r.deleteContents();
-    const a = document.createElement('a');
-    a.href = href;
-    a.setAttribute('rel', 'noopener');
-    a.textContent = text;
-    insertInlineAtCaret(sel, r, a);
-    scheduleCommit(ctx.el);
-    markDirty();
-    return;
-  }
-
-  // inline markdown: **bold** / *italic* / `code` → a styled inline run, on the closing marker.
-  // The result is ordinary editable inline HTML (not an atomic token), so the cursor can go into
-  // it and change it afterwards.
-  if (ctx.field === 'text' && fmtOf(ctx.id) !== 'codeblock' && !state.readOnly) {
-    const inlineRules = [['b', /\*\*([^*\n]+?)\*\*$/], ['code', /`([^`\n]+?)`$/], ['i', /(?<!\*)\*([^*\n]+?)\*$/]];
-    for (const [tag, re] of inlineRules) {
-      const im = before.match(re);
-      if (im && im[1].trim()) {
-        window.closeCaretPop();
-        const start = off - im[0].length;
-        snapshot();
-        selectPlainRange(ctx.el, start, off);
-        const sel = getSelection();
-        const rr = sel.getRangeAt(0);
-        rr.deleteContents();
-        const node = document.createElement(tag);
-        node.textContent = im[1];
-        insertInlineAtCaret(sel, rr, node);
-        scheduleCommit(ctx.el);
-        markDirty();
-        return;
-      }
-    }
-  }
+  // reveal-on-focus: typed-out [[title]], [text](url) and inline **bold**/*italic*/`code`/etc.
+  // are left as raw editable markdown while the line is focused; they're resolved to stored HTML
+  // on commit (resolveEditSource in app.js). Only the [[ / (( autocomplete popups act live below.
 
   // [[ → internal-link autocomplete
   const lm = before.match(/\[\[([^\]\n]*)$/);

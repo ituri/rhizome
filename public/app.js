@@ -1355,6 +1355,8 @@ function commitPending(redecorateOk = false) {
     if (node.note !== v) { recOld(node.id); node.note = v; touch(node.id); markDirty(); }
   } else {
     let html = serializeEl(el);
+    // reveal: the editing DOM holds markdown source → resolve it back to stored HTML
+    if (ctx.field === 'text' && node.format !== 'codeblock') html = resolveEditSource(html);
     if (settings.capitalize && (ctx.field === 'text' || ctx.field === 'title')) html = applyCapitalize(html);
     if (node.text !== html) {
       recOld(node.id);
@@ -1365,10 +1367,12 @@ function commitPending(redecorateOk = false) {
       syncMirrorRows(node.id);
     }
     if (redecorateOk && document.activeElement === el && !composing && !window.caretPopOpen?.()) {
-      // the line is focused → keep block refs as their raw ((id)) source while editing
-      const display = ctx.field === 'text'
-        ? decorate(node.text, { plain: node.format === 'codeblock', editing: true })
-        : displayHtml(node);
+      // the line is focused → show its markdown source (links/formatting/refs raw) while editing
+      const display = ctx.field !== 'text'
+        ? displayHtml(node)
+        : node.format === 'codeblock'
+          ? decorate(node.text, { plain: true, editing: true })
+          : editSourceHtml(node.text);
       if (display !== el.innerHTML) {
         const off = caretOffsetIn(el);
         const selLen = getSelection().rangeCount ? getSelection().toString().length : 0;
@@ -4517,16 +4521,79 @@ let lastItemId = null;
 let titleBeforeEdit = null; // the page title as it was when editing began (to revert a colliding rename)
 // while a line is edited its block refs show their raw ((id)) source (Roam-style),
 // so they can be selected, edited or removed; on blur they render back to live text
-function blockRefsToSource(el) {
-  for (const a of el.querySelectorAll('a.block-ref')) {
-    const m = (a.getAttribute('href') || '').match(/#\/n\/([A-Za-z0-9]+)/);
-    a.replaceWith(document.createTextNode(m ? `((${m[1]}))` : ''));
+// reveal-on-focus: turn a bullet's rendered inline HTML into its editable MARKDOWN SOURCE, in
+// place (preserving the caret). Block refs → ((id)), page links → [[Name]], external links →
+// [text](url) (bare URLs stay bare), formatting <b>/<i>/<u>/<s>/<code> → ** * __ ~~ `. Highlight/
+// colour spans, tags, <time> stay as they are (not markdown). The inverse is resolveEditSource().
+const EDIT_MARK = { B: '**', STRONG: '**', I: '*', EM: '*', U: '__', S: '~~', STRIKE: '~~', DEL: '~~', CODE: '`' };
+function toEditSource(el) {
+  // formatting → markers, innermost first so nesting stays balanced
+  let f;
+  const fmtSel = 'b,strong,i,em,u,s,strike,del,code';
+  while ((f = [...el.querySelectorAll(fmtSel)].find(n => !n.querySelector(fmtSel)))) {
+    const mk = EDIT_MARK[f.tagName];
+    const frag = document.createDocumentFragment();
+    frag.append(document.createTextNode(mk));
+    while (f.firstChild) frag.append(f.firstChild);
+    frag.append(document.createTextNode(mk));
+    f.replaceWith(frag);
   }
+  // links → their markdown source
+  for (const a of el.querySelectorAll('a')) {
+    const href = a.getAttribute('href') || '';
+    if (a.classList.contains('block-ref')) {
+      const m = href.match(/#\/n\/([A-Za-z0-9]+)/);
+      a.replaceWith(document.createTextNode(m ? `((${m[1]}))` : ''));
+    } else if (a.classList.contains('tag')) {
+      a.replaceWith(document.createTextNode(a.getAttribute('data-tag') || a.textContent));
+    } else if (href.startsWith('#/n/')) {
+      a.replaceWith(document.createTextNode(`[[${a.textContent}]]`));
+    } else {
+      const text = a.textContent;
+      const bare = href === text || href === 'https://' + text;   // an auto-linked bare URL
+      a.replaceWith(document.createTextNode(bare ? text : `[${text}](${href})`));
+    }
+  }
+  el.normalize();
+}
+
+// the innerHTML for a bullet's editing view: its stored HTML shown as markdown source
+function editSourceHtml(text) {
+  const tpl = document.createElement('div');
+  tpl.innerHTML = text || '';
+  toEditSource(tpl);
+  return tpl.innerHTML;
+}
+
+// inverse of toEditSource: markdown source (as serialized from the editing DOM) → stored HTML.
+// Runs on commit, after serializeEl. ((id)) is already turned into a block-ref by serializeChildren.
+function resolveEditSource(html) {
+  let out = html;
+  const unesc = s => s.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+  // [text](url) → external link
+  out = out.replace(/\[([^[\]\n]+)\]\((https?:\/\/[^\s()]+|www\.[^\s()]+|mailto:[^\s()]+)\)/g, (m, text, url) => {
+    if (/^www\./i.test(url)) url = 'https://' + url;
+    return `<a href="${escAttr(url)}" rel="noopener">${text}</a>`;
+  });
+  // [[Name]] → internal page link (found or created)
+  out = out.replace(/\[\[([^[\]\n]+)\]\]/g, (m, name) => {
+    const plain = unesc(name).trim();
+    if (!plain) return m;
+    const id = getOrCreatePage(plain);
+    return id ? `<a href="#/n/${id}" rel="noopener">${name.trim()}</a>` : m;
+  });
+  // inline formatting → tags (code first; bold before italic so ** isn't eaten by *)
+  out = out.replace(/`([^`\n]+?)`/g, '<code>$1</code>');
+  out = out.replace(/\*\*([^\n]+?)\*\*/g, '<b>$1</b>');
+  out = out.replace(/__([^\n]+?)__/g, '<u>$1</u>');
+  out = out.replace(/~~([^\n]+?)~~/g, '<s>$1</s>');
+  out = out.replace(/(?<!\*)\*([^*\n]+?)\*(?!\*)/g, '<i>$1</i>');
+  return out;
 }
 
 pageEl.addEventListener('focusin', e => {
   const ctx = editableCtx(e.target);
-  if (ctx && ctx.field === 'text') blockRefsToSource(ctx.el);
+  if (ctx && ctx.field === 'text' && fmtOf(ctx.id) !== 'codeblock') toEditSource(ctx.el);
   if (ctx && ctx.field !== 'title' && ctx.field !== 'zoom-note') lastItemId = ctx.id;
   if (ctx && ctx.field === 'title') titleBeforeEdit = N(contentIdOf(ctx.id))?.text ?? null;
   if (isCoarse && ctx && !state.readOnly) mobilebarEl.hidden = false;

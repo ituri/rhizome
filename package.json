@@ -30,6 +30,7 @@
     "test:files": "node tests/test-files.js",
     "test:markdown": "node tests/test-markdown.js",
     "test:markdown-fmt": "node tests/test-markdown-fmt.js",
+    "test:web-reveal": "node tests/test-web-reveal.js",
     "bench:curve": "node --expose-gc bench/curve.js",
     "bench:profile": "node bench/profile.js",
     "bench:load": "node bench/load.js"

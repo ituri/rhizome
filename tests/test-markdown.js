@@ -21,11 +21,11 @@ const cookieFrom=sc=>{const m=(sc||'').match(/rz_session=([^;]+)/);return m?'rz_
   await content.click(); await sleep(200);
   await p.keyboard.type('See [Google](https://google.com) now', {delay: 15});
   await sleep(500);
-  // Live-Konvertierung im DOM
-  const dom=await p.evaluate(()=>{ const a=document.querySelector('.item[data-id="n1"] a[href="https://google.com"]');
-    return a?{text:a.textContent,ok:true}:{ok:false}; });
-  ok(dom.ok && dom.text==='Google','[Google](url) wird live zu <a href>Google</a>');
-  const txt=await p.evaluate(()=>document.querySelector('.item[data-id="n1"] .content')?.textContent||'');
+  // reveal: while editing, [text](url) stays RAW markdown (no live conversion to an anchor)
+  const dom=await p.evaluate(()=>{ const el=document.querySelector('.item[data-id="n1"] .content');
+    return {text:el?.textContent||'',anchors:el?.querySelectorAll('a').length??-1}; });
+  ok(dom.text.includes('[Google](https://google.com)') && dom.anchors===0,`[text](url) bleibt roh beim Editieren ("${dom.text}", a=${dom.anchors})`);
+  const txt=dom.text;
   ok(txt.includes('See ')&&txt.includes(' now'),`umgebender Text bleibt ("${txt}")`);
   // persistiert? blur + Server prüfen
   await p.evaluate(()=>window.commitActiveText&&window.commitActiveText()); await sleep(1200);
