@@ -1802,7 +1802,7 @@ function buildAttachments(n) {
       chip.href = url || '#';
       chip.target = '_blank';
       chip.rel = 'noopener';
-      chip.innerHTML = `<span>📎</span><span class="att-name">${escHtml(f.name || 'file')}</span>`;
+      chip.innerHTML = `<span>${icon('attachment')}</span><span class="att-name">${escHtml(f.name || 'file')}</span>`;
       if (!state.readOnly) {
         const rm = document.createElement('button');
         rm.className = 'att-remove';
@@ -1948,7 +1948,7 @@ function mountItem(id, underMatch = false) {
     const chip = document.createElement('button');
     chip.className = 'comment-chip';
     chip.title = 'Comments';
-    chip.innerHTML = `💬 ${cn.comments.length}`;
+    chip.innerHTML = `${icon('chat')} ${cn.comments.length}`;
     row.append(chip);
   }
 

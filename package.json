@@ -6,7 +6,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "lint": "eslint server.js db.js ops.js opsdoc.js cryptobox.js public/app.js public/app2.js public/pages.js bench",
+    "lint": "eslint server.js db.js ops.js opsdoc.js cryptobox.js public/icons.js public/app.js public/app2.js public/pages.js bench",
     "typecheck": "tsc --noEmit",
     "test:db": "node tests/test-db.js",
     "test:converge": "node tests/test-converge.js",

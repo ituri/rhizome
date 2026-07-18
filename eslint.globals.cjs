@@ -16,7 +16,7 @@ function topLevelNames(file) {
   return names;
 }
 
-const shared = new Set([...topLevelNames('public/app.js'), ...topLevelNames('public/app2.js'), ...topLevelNames('public/pages.js')]);
+const shared = new Set([...topLevelNames('public/icons.js'), ...topLevelNames('public/app.js'), ...topLevelNames('public/app2.js'), ...topLevelNames('public/pages.js')]);
 module.exports = {
   ...Object.fromEntries([...shared].map(n => [n, 'writable'])),
   L: 'readonly', // Leaflet, loaded lazily from /vendor/leaflet for location-page maps

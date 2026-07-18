@@ -233,56 +233,56 @@ function slashCommands(ctx) {
       fmtCmd('Heading 1', 'H₁', 'h1', '# '),
       fmtCmd('Heading 2', 'H₂', 'h2', '## '),
       fmtCmd('Heading 3', 'H₃', 'h3', '### '),
-      fmtCmd('To-do', '☑', 'todo', '[] '),
+      fmtCmd('To-do', icon('checkbox'), 'todo', '[] '),
       fmtCmd('Numbered list', '1.', 'number', '1. '),
-      fmtCmd('Quote', '❝', 'quote', '> '),
+      fmtCmd('Quote', icon('quotes'), 'quote', '> '),
       fmtCmd('Code block', '{ }', 'codeblock', '```'),
       fmtCmd('Divider', '—', 'divider', '---'),
-      fmtCmd('Board (kanban)', '▦', 'board'),
-      fmtCmd('Paragraph', '¶', 'p'),
+      fmtCmd('Board (kanban)', icon('dashboard'), 'board'),
+      fmtCmd('Paragraph', icon('paragraph'), 'p'),
       fmtCmd('Bullet (reset)', '•', 'bullet'),
     );
   }
   if (ctx.field === 'text') cmds.push(...(window.rhizomeSlashCommands?.(ctx, caretPop?.start ?? null) || []));
-  cmds.push({ label: 'Date…', icon: '📅', hint: '!!', fn: () => openDatePop(ctx) });
+  cmds.push({ label: 'Date…', icon: icon('calendar'), hint: '!!', fn: () => openDatePop(ctx) });
   if (ctx.field === 'text') {
     // template inserts first, so typing "/template" ranks insertion above "Save as template"
     for (const tpl of getTemplates().slice(0, 6)) {
-      cmds.push({ label: 'Template: ' + tpl.label, icon: '🧩', fn: () => insertTemplate(tpl.id, ctx) });
+      cmds.push({ label: 'Template: ' + tpl.label, icon: icon('template'), fn: () => insertTemplate(tpl.id, ctx) });
     }
     cmds.push(
       { label: 'Add note', icon: '≡', hint: 'Shift+Enter', fn: () => opAddNote(ctx) },
       { label: 'Complete', icon: '✓', hint: 'Ctrl+Enter', fn: () => opToggleDone(id) },
-      { label: 'Duplicate', icon: '⧉', hint: 'Ctrl+D', fn: () => opDuplicate(id) },
-      { label: 'Attach file', icon: '📎', fn: () => attachTo(id) },
-      { label: 'Comment', icon: '💬', fn: () => { const it = elById.get(id); window.showComments(it?.querySelector('.content') || document.body, id); } },
+      { label: 'Duplicate', icon: icon('copy'), hint: 'Ctrl+D', fn: () => opDuplicate(id) },
+      { label: 'Attach file', icon: icon('attachment'), fn: () => attachTo(id) },
+      { label: 'Comment', icon: icon('chat'), fn: () => { const it = elById.get(id); window.showComments(it?.querySelector('.content') || document.body, id); } },
       { label: 'Count items', icon: '#', fn: () => opCount(id) },
-      { label: 'Move to…', icon: '→', fn: () => openNodePicker('Move to…', t => moveItemTo(id, t), subtreeOf(id)) },
-      { label: 'Move to Today', icon: '▦', fn: () => moveItemToDay(id, dateOffset(0)) },
-      { label: 'Move to Tomorrow', icon: '▦', fn: () => moveItemToDay(id, dateOffset(1)) },
-      { label: 'Move to Next Week', icon: '▦', fn: () => moveItemToDay(id, dateOffset(7)) },
-      { label: 'Move to Date…', icon: '📅', fn: () => pickDate(nodeAnchor(id), iso => moveItemToDay(id, iso)) },
-      { label: 'Mirror', icon: '◇', hint: 'Alt+Shift+M', fn: () => opMirror(id) },
-      { label: 'Mirror here…', icon: '◈', fn: () => mirrorHere(id) },
-      { label: 'Mirror to…', icon: '◇', fn: () => openNodePicker('Mirror to…', t => mirrorItemTo(id, t), subtreeOf(id)) },
-      { label: 'Mirror to Today', icon: '◇', fn: () => mirrorItemToDate(id, dateOffset(0)) },
-      { label: 'Mirror to Date…', icon: '◇', fn: () => pickDate(nodeAnchor(id), iso => mirrorItemToDate(id, iso)) },
-      { label: 'Sort A → Z', icon: '↓', fn: () => opSort(id, 1) },
-      { label: 'Sort Z → A', icon: '↑', fn: () => opSort(id, -1) },
-      { label: 'Expand all', icon: '▾', fn: () => setSubtreeCollapsed(id, false) },
-      { label: 'Collapse all', icon: '▸', fn: () => setSubtreeCollapsed(id, true) },
-      { label: 'Save as template', icon: '🧩', fn: () => saveAsTemplate(id) },
-      { label: 'Export…', icon: '⬇', fn: () => exportNodePop(nodeAnchor(id), id) },
-      { label: 'Copy link', icon: '🔗', hint: 'Alt+Shift+L', fn: () => { navigator.clipboard?.writeText(location.origin + location.pathname + '#/n/' + id); showToast('Link copied'); } },
+      { label: 'Move to…', icon: icon('arrow--right'), fn: () => openNodePicker('Move to…', t => moveItemTo(id, t), subtreeOf(id)) },
+      { label: 'Move to Today', icon: icon('calendar'), fn: () => moveItemToDay(id, dateOffset(0)) },
+      { label: 'Move to Tomorrow', icon: icon('calendar'), fn: () => moveItemToDay(id, dateOffset(1)) },
+      { label: 'Move to Next Week', icon: icon('calendar'), fn: () => moveItemToDay(id, dateOffset(7)) },
+      { label: 'Move to Date…', icon: icon('calendar'), fn: () => pickDate(nodeAnchor(id), iso => moveItemToDay(id, iso)) },
+      { label: 'Mirror', icon: icon('intersect'), hint: 'Alt+Shift+M', fn: () => opMirror(id) },
+      { label: 'Mirror here…', icon: icon('intersect'), fn: () => mirrorHere(id) },
+      { label: 'Mirror to…', icon: icon('intersect'), fn: () => openNodePicker('Mirror to…', t => mirrorItemTo(id, t), subtreeOf(id)) },
+      { label: 'Mirror to Today', icon: icon('intersect'), fn: () => mirrorItemToDate(id, dateOffset(0)) },
+      { label: 'Mirror to Date…', icon: icon('intersect'), fn: () => pickDate(nodeAnchor(id), iso => mirrorItemToDate(id, iso)) },
+      { label: 'Sort A → Z', icon: icon('arrow--down'), fn: () => opSort(id, 1) },
+      { label: 'Sort Z → A', icon: icon('arrow--up'), fn: () => opSort(id, -1) },
+      { label: 'Expand all', icon: icon('chevron--down'), fn: () => setSubtreeCollapsed(id, false) },
+      { label: 'Collapse all', icon: icon('chevron--right'), fn: () => setSubtreeCollapsed(id, true) },
+      { label: 'Save as template', icon: icon('template'), fn: () => saveAsTemplate(id) },
+      { label: 'Export…', icon: icon('download'), fn: () => exportNodePop(nodeAnchor(id), id) },
+      { label: 'Copy link', icon: icon('link'), hint: 'Alt+Shift+L', fn: () => { navigator.clipboard?.writeText(location.origin + location.pathname + '#/n/' + id); showToast('Link copied'); } },
     );
     if (state.aiEnabled && !SHARE_TOKEN) {
-      cmds.push({ label: 'Ask AI…', icon: '✨', fn: () => askAI(id) });
-      for (const [label, instr] of AI_PRESETS) cmds.push({ label, icon: '✨', fn: () => aiRun(id, instr) });
+      cmds.push({ label: 'Ask AI…', icon: icon('magic-wand--filled'), fn: () => askAI(id) });
+      for (const [label, instr] of AI_PRESETS) cmds.push({ label, icon: icon('magic-wand--filled'), fn: () => aiRun(id, instr) });
     }
-    if (!SHARE_TOKEN) cmds.push({ label: 'Share', icon: '🌐', fn: () => showSharePop(nodeAnchor(id), id) });
-    cmds.push({ label: 'Delete', icon: '✕', fn: () => opDelete(id) });
+    if (!SHARE_TOKEN) cmds.push({ label: 'Share', icon: icon('share'), fn: () => showSharePop(nodeAnchor(id), id) });
+    cmds.push({ label: 'Delete', icon: icon('trash-can'), fn: () => opDelete(id) });
   }
-  cmds.push({ label: 'Present', icon: '▶', fn: () => startPresent() });
+  cmds.push({ label: 'Present', icon: icon('play--filled'), fn: () => startPresent() });
   return cmds;
 }
 
@@ -822,7 +822,7 @@ function exportNodePop(anchor, id) {
     t.textContent = 'Export this item & children';
     pop.append(t);
     for (const [label, fmt] of [['Plain text', 'txt'], ['Markdown', 'md'], ['OPML', 'opml'], ['JSON', 'json']]) {
-      pop.append(menuItem(label, '⬇', () => exportNode(id, fmt)));
+      pop.append(menuItem(label, icon('download'), () => exportNode(id, fmt)));
     }
   });
 }
@@ -835,7 +835,7 @@ function insertTemplatePop(anchor, ctx) {
     t.className = 'pop-title';
     t.textContent = 'Insert template';
     pop.append(t);
-    for (const tpl of tpls) pop.append(menuItem(tpl.label, '🧩', () => insertTemplate(tpl.id, ctx)));
+    for (const tpl of tpls) pop.append(menuItem(tpl.label, icon('template'), () => insertTemplate(tpl.id, ctx)));
   });
 }
 
@@ -892,7 +892,7 @@ function maybeDateSuggest(ctx) {
   const label = hit.iso2 ? `${formatDate(hit.iso)} – ${formatDate(hit.iso2)}` : formatDate(hit.iso);
   dateHintEl.innerHTML =
     `<div class="dh-row"><span class="dh-date">${escHtml(label)}</span>` +
-    `<span class="dh-cal" title="Open date picker">📅</span></div>` +
+    `<span class="dh-cal" title="Open date picker">${icon('calendar')}</span></div>` +
     `<div class="dh-foot">Press <kbd>Tab</kbd> or click here</div>`;
   dateHintEl.hidden = false;
   const rect = caretViewportRect();
@@ -1217,7 +1217,7 @@ window.showComments = function showComments(anchor, id) {
       chip.className = 'comment-chip';
       item.querySelector(':scope > .row').append(chip);
     }
-    chip.innerHTML = `💬 ${count}`;
+    chip.innerHTML = `${icon('chat')} ${count}`;
   };
   return pop;
 };
@@ -1459,12 +1459,12 @@ function openGraphMenu(anchor) {
       pop.append(menuItem((g.id === state.graphId ? '● ' : '') + g.name, g.role === 'owner' ? '◆' : '◇', () => switchGraph(g.id)));
     }
     pop.append(document.createElement('hr'));
-    pop.append(menuItem('New graph…', '＋', () => newGraph()));
+    pop.append(menuItem('New graph…', icon('add'), () => newGraph()));
     const cur = state.graphs.find(g => g.id === state.graphId);
     if (cur && cur.role === 'owner') {
-      pop.append(menuItem('Share graph…', '🤝', () => shareGraph(cur)));
-      pop.append(menuItem('Rename graph…', '✎', () => renameGraph(cur)));
-      if (state.graphs.length > 1) pop.append(menuItem('Delete graph…', '✕', () => deleteGraph(cur), { danger: true }));
+      pop.append(menuItem('Share graph…', icon('user--multiple'), () => shareGraph(cur)));
+      pop.append(menuItem('Rename graph…', icon('edit'), () => renameGraph(cur)));
+      if (state.graphs.length > 1) pop.append(menuItem('Delete graph…', icon('trash-can'), () => deleteGraph(cur), { danger: true }));
     }
   });
 }
@@ -1939,9 +1939,9 @@ window.renderAssetsView = function renderAssetsView(frag) {
     const row = document.createElement('div');
     row.className = 'asset-row';
     const img = looksLikeImage(a.name || a.url);
-    row.innerHTML = `${img ? `<img class="asset-thumb" loading="lazy" alt="">` : '<div class="asset-thumb asset-file">📎</div>'}
+    row.innerHTML = `${img ? `<img class="asset-thumb" loading="lazy" alt="">` : `<div class="asset-thumb asset-file">${icon('attachment')}</div>`}
       <div class="asset-info"><div class="asset-name"></div><div class="asset-meta"></div><div class="asset-refs"></div></div>
-      <div class="asset-actions"><a class="asset-dl" download title="Download">⇩</a><button class="asset-rename" title="Rename">Rename</button><button class="asset-del">Delete</button></div>`;
+      <div class="asset-actions"><a class="asset-dl" download title="Download">${icon('download')}</a><button class="asset-rename" title="Rename">Rename</button><button class="asset-del">Delete</button></div>`;
     if (img) $('.asset-thumb', row).src = fileHref(a.url) || '';
     $('.asset-name', row).textContent = a.name || a.url.split('/').pop();
     const bits = [fmtBytes(a.size)];
@@ -2237,7 +2237,7 @@ function renderSharePop(pop, id) {
     pop.append(modeNote);
     input.focus();
 
-    pop.append(menuItem('Revoke link', '✕', async () => {
+    pop.append(menuItem('Revoke link', icon('close'), async () => {
       await fetch(apiBase + '/shares/' + existing.token, { method: 'DELETE' });
       await fetchShares();
       elById.get(id)?.classList.toggle('shared-ring', state.shares.some(s => s.id === id));
@@ -2258,8 +2258,8 @@ function renderSharePop(pop, id) {
       showToast('Public link created & copied');
     };
     pop.append(
-      menuItem('View only', '👁', make('view'), { keepOpen: true }),
-      menuItem('Can edit', '✎', make('edit'), { keepOpen: true }),
+      menuItem('View only', icon('view'), make('view'), { keepOpen: true }),
+      menuItem('Can edit', icon('edit'), make('edit'), { keepOpen: true }),
     );
   }
 }
@@ -2331,7 +2331,7 @@ const AI_PRESETS = [
 
 // send a prompt + the item's subtree to the AI proxy and graft the reply in as sub-items
 async function aiRun(id, prompt) {
-  showToast('✨ Asking AI…');
+  showToast('Asking AI…');
   try {
     const res = await fetch('/api/ai', {
       method: 'POST',
@@ -2360,7 +2360,7 @@ function askAI(id) {
   openPopover(anchor, pop => {
     const title = document.createElement('div');
     title.className = 'pop-title';
-    title.textContent = '✨ Ask AI about this item';
+    title.textContent = 'Ask AI about this item';
     const row = document.createElement('div');
     row.className = 'comment-input-row';
     const ta = document.createElement('textarea');
@@ -2397,19 +2397,19 @@ window.showItemMenu = function showItemMenu(anchor, id) {
   if (isMirror(id) && !mirrorTarget(id)) {
     // broken mirror (original gone, nothing promoted — e.g. restored from an old trash)
     openPopover(anchor, pop => {
-      pop.append(menuItem('Delete mirror', '✕', () => opDelete(id), { danger: true }));
+      pop.append(menuItem('Delete mirror', icon('trash-can'), () => opDelete(id), { danger: true }));
     });
     return;
   }
   openPopover(anchor, pop => {
-    if (isMirror(id)) pop.append(menuItem('Open original', '◈', () => zoomTo(cid)));
+    if (isMirror(id)) pop.append(menuItem('Open original', icon('intersect'), () => zoomTo(cid)));
     if (!state.readOnly) {
       pop.append(
         menuItem(n.done ? 'Mark incomplete' : 'Complete', '✓', () => opToggleDone(id), { hint: 'Ctrl+Enter' }),
         menuItem(n.note != null ? 'Edit note' : 'Add note', '≡', () => opAddNote({ id, field: 'text' }), { hint: 'Shift+Enter' }),
       );
     }
-    pop.append(menuItem('Zoom in', '◎', () => zoomTo(cid), { hint: 'Alt+→' }));
+    pop.append(menuItem('Zoom in', icon('zoom--in'), () => zoomTo(cid), { hint: 'Alt+→' }));
     if (!state.readOnly) {
       // turn into…
       const title = document.createElement('div');
@@ -2433,43 +2433,43 @@ window.showItemMenu = function showItemMenu(anchor, id) {
       // variants beyond Mirror / Mirror to Today, no Count / Export (doc-wide
       // export stays in the main menu), no Present / Copy-as-text
       pop.append(
-        menuItem('Add date', '📅', () => openDatePop({ id, field: 'text', el: elById.get(id)?.querySelector('.content') }), { hint: '!!' }),
-        menuItem('Move to Today', '▦', () => moveItemToDay(id, dateOffset(0))),
-        menuItem('Move to Tomorrow', '▦', () => moveItemToDay(id, dateOffset(1))),
-        menuItem('Move to Date…', '📅', () => pickDate(anchor, iso => moveItemToDay(id, iso))),
+        menuItem('Add date', icon('calendar'), () => openDatePop({ id, field: 'text', el: elById.get(id)?.querySelector('.content') }), { hint: '!!' }),
+        menuItem('Move to Today', icon('calendar'), () => moveItemToDay(id, dateOffset(0))),
+        menuItem('Move to Tomorrow', icon('calendar'), () => moveItemToDay(id, dateOffset(1))),
+        menuItem('Move to Date…', icon('calendar'), () => pickDate(anchor, iso => moveItemToDay(id, iso))),
         document.createElement('hr'),
-        menuItem('Move to…', '→', () => openNodePicker('Move to…', t => moveItemTo(id, t), subtreeOf(id)), { hint: 'Alt+Ctrl+M' }),
-        menuItem('Mirror', '◇', () => opMirror(id), { hint: 'Alt+Shift+M' }),
-        menuItem('Mirror to Today', '◇', () => mirrorItemToDate(id, dateOffset(0))),
-        menuItem('Duplicate', '⧉', () => opDuplicate(id), { hint: 'Ctrl+D' }),
+        menuItem('Move to…', icon('arrow--right'), () => openNodePicker('Move to…', t => moveItemTo(id, t), subtreeOf(id)), { hint: 'Alt+Ctrl+M' }),
+        menuItem('Mirror', icon('intersect'), () => opMirror(id), { hint: 'Alt+Shift+M' }),
+        menuItem('Mirror to Today', icon('intersect'), () => mirrorItemToDate(id, dateOffset(0))),
+        menuItem('Duplicate', icon('copy'), () => opDuplicate(id), { hint: 'Ctrl+D' }),
         document.createElement('hr'),
-        menuItem('Comments', '💬', () => {
+        menuItem('Comments', icon('chat'), () => {
           const it = elById.get(id);
           window.showComments(it?.querySelector(':scope > .row') || anchor, id);
         }),
-        menuItem('Attach file', '📎', () => attachTo(id)),
-        menuItem('Save as template', '🧩', () => saveAsTemplate(cid)),
-        menuItem('Insert template…', '🧩', () => insertTemplatePop(anchor, { id, field: 'text' })),
+        menuItem('Attach file', icon('attachment'), () => attachTo(id)),
+        menuItem('Save as template', icon('template'), () => saveAsTemplate(cid)),
+        menuItem('Insert template…', icon('template'), () => insertTemplatePop(anchor, { id, field: 'text' })),
       );
       if (hasKids(cid)) pop.append(
-        menuItem('Sort A → Z', '↓', () => opSort(id, 1)),
-        menuItem('Sort Z → A', '↑', () => opSort(id, -1)),
-        menuItem('Expand all', '▾', () => setSubtreeCollapsed(id, false)),
-        menuItem('Collapse all', '▸', () => setSubtreeCollapsed(id, true)),
+        menuItem('Sort A → Z', icon('arrow--down'), () => opSort(id, 1)),
+        menuItem('Sort Z → A', icon('arrow--up'), () => opSort(id, -1)),
+        menuItem('Expand all', icon('chevron--down'), () => setSubtreeCollapsed(id, false)),
+        menuItem('Collapse all', icon('chevron--right'), () => setSubtreeCollapsed(id, true)),
       );
       if (state.aiEnabled) {
-        pop.append(menuItem('Ask AI…', '✨', () => askAI(id)));
-        for (const [label, instr] of AI_PRESETS) pop.append(menuItem(label, '✨', () => aiRun(id, instr)));
+        pop.append(menuItem('Ask AI…', icon('magic-wand--filled'), () => askAI(id)));
+        for (const [label, instr] of AI_PRESETS) pop.append(menuItem(label, icon('magic-wand--filled'), () => aiRun(id, instr)));
       }
     }
     pop.append(document.createElement('hr'));
     if (!SHARE_TOKEN && state.authRequired !== null) {
-      pop.append(menuItem(state.shares.some(s => s.id === id) ? 'Sharing…' : 'Share', '🌐', () => {
+      pop.append(menuItem(state.shares.some(s => s.id === id) ? 'Sharing…' : 'Share', icon('share'), () => {
         showSharePop(anchor, id);
       }));
     }
     pop.append(
-      menuItem('Copy link', '🔗', async () => {
+      menuItem('Copy link', icon('link'), async () => {
         await navigator.clipboard?.writeText(location.origin + location.pathname + '#/n/' + cid);
         showToast('Link copied');
       }, { hint: 'Alt+Shift+L' }),
@@ -2477,7 +2477,7 @@ window.showItemMenu = function showItemMenu(anchor, id) {
     if (!state.readOnly) {
       pop.append(
         document.createElement('hr'),
-        menuItem('Delete', '✕', () => opDelete(id), { hint: 'Ctrl+Shift+⌫', danger: true }),
+        menuItem('Delete', icon('trash-can'), () => opDelete(id), { hint: 'Ctrl+Shift+⌫', danger: true }),
       );
     }
     const tnode = N(cid);
@@ -2636,10 +2636,10 @@ window.showSettings = showSettings;
 function openExportMenu(anchor) {
   openPopover(anchor, pop => {
     pop.append(
-      menuItem('Export as text', '↧', () => exportDoc('txt')),
-      menuItem('Export as Markdown', '↧', () => exportDoc('md')),
-      menuItem('Export as OPML', '↧', () => exportDoc('opml')),
-      menuItem('Export as JSON', '↧', () => exportDoc('json')),
+      menuItem('Export as text', icon('download'), () => exportDoc('txt')),
+      menuItem('Export as Markdown', icon('download'), () => exportDoc('md')),
+      menuItem('Export as OPML', icon('download'), () => exportDoc('opml')),
+      menuItem('Export as JSON', icon('download'), () => exportDoc('json')),
     );
   });
 }
@@ -2647,31 +2647,31 @@ function openExportMenu(anchor) {
 $('#btn-menu').addEventListener('click', e => {
   if (currentPopover) { closeAllPopovers(); return; }
   openPopover(e.currentTarget, pop => {
-    pop.append(menuItem('Settings…', '⚙', () => showSettings()));
+    pop.append(menuItem('Settings…', icon('settings'), () => showSettings()));
     if (!SHARE_TOKEN) {
       pop.append(document.createElement('hr'));
-      pop.append(menuItem('Quick capture', '📥', () => window.showCapture(), { hint: 'Ctrl+Shift+Space' }));
+      pop.append(menuItem('Quick capture', icon('edit'), () => window.showCapture(), { hint: 'Ctrl+Shift+Space' }));
       const histPage = state.zoom !== ROOT ? window.historyPageOf?.(state.zoom) : null;
-      if (histPage) pop.append(menuItem('Page history', '🕘', () => window.showPageHistory(histPage)));
+      if (histPage) pop.append(menuItem('Page history', icon('recently-viewed'), () => window.showPageHistory(histPage)));
     }
-    pop.append(menuItem('Present', '▶', () => startPresent()));
+    pop.append(menuItem('Present', icon('play--filled'), () => startPresent()));
     pop.append(document.createElement('hr'));
     pop.append(
-      menuItem('Expand all', '▾', () => setCollapseAll(false)),
-      menuItem('Collapse all', '▸', () => setCollapseAll(true)),
+      menuItem('Expand all', icon('chevron--down'), () => setCollapseAll(false)),
+      menuItem('Collapse all', icon('chevron--right'), () => setCollapseAll(true)),
     );
     pop.append(document.createElement('hr'));
-    pop.append(menuItem('Export', '↧', () => openExportMenu($('#btn-menu'))));
-    if (!SHARE_TOKEN && !state.readOnly) pop.append(menuItem('Import…', '↥', () => $('#import-file').click()));
-    pop.append(menuItem('Print', '🖨', () => { commitActiveText(); window.print(); }, { hint: 'Ctrl+P' }));
+    pop.append(menuItem('Export', icon('download'), () => openExportMenu($('#btn-menu'))));
+    if (!SHARE_TOKEN && !state.readOnly) pop.append(menuItem('Import…', icon('upload'), () => $('#import-file').click()));
+    pop.append(menuItem('Print', icon('printer'), () => { commitActiveText(); window.print(); }, { hint: 'Ctrl+P' }));
     if (!SHARE_TOKEN) {
       pop.append(document.createElement('hr'));
-      pop.append(menuItem('Trash', '🗑', () => showTrash()));
+      pop.append(menuItem('Trash', icon('trash-can'), () => showTrash()));
     }
     pop.append(document.createElement('hr'));
-    pop.append(menuItem('Keyboard shortcuts', '⌘', () => showHelp(), { hint: 'Ctrl+/' }));
+    pop.append(menuItem('Keyboard shortcuts', icon('keyboard'), () => showHelp(), { hint: 'Ctrl+/' }));
     if (state.authRequired && !state.user && !SHARE_TOKEN) {
-      pop.append(menuItem('Lock (log out)', '🔒', async () => { await fetch('/api/logout', { method: 'POST' }); location.reload(); }));
+      pop.append(menuItem('Lock (log out)', icon('locked'), async () => { await fetch('/api/logout', { method: 'POST' }); location.reload(); }));
     }
     const foot = document.createElement('div');
     foot.className = 'pop-title';

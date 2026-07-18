@@ -917,12 +917,12 @@ window.rhizomeSlashCommands = function rhizomeSlashCommands(ctx, popStart) {
       // typing "[[" re-enters the normal autocomplete flow via the input hook
       fn: () => { refocus(); document.execCommand('insertText', false, '[['); },
     },
-    { label: 'Today', icon: '📅', fn: () => insertJournalLink(ctx, dateOffset(0), at) },
-    { label: 'Tomorrow', icon: '📅', fn: () => insertJournalLink(ctx, dateOffset(1), at) },
-    { label: 'Yesterday', icon: '📅', fn: () => insertJournalLink(ctx, dateOffset(-1), at) },
-    { label: 'Date Picker', icon: '📅', fn: () => pickDate(nodeAnchor(ctx.id), iso => insertJournalLink(ctx, iso, at)) },
+    { label: 'Today', icon: icon('calendar'), fn: () => insertJournalLink(ctx, dateOffset(0), at) },
+    { label: 'Tomorrow', icon: icon('calendar'), fn: () => insertJournalLink(ctx, dateOffset(1), at) },
+    { label: 'Yesterday', icon: icon('calendar'), fn: () => insertJournalLink(ctx, dateOffset(-1), at) },
+    { label: 'Date Picker', icon: icon('calendar'), fn: () => pickDate(nodeAnchor(ctx.id), iso => insertJournalLink(ctx, iso, at)) },
     {
-      label: 'Current Time', icon: '🕐',
+      label: 'Current Time', icon: icon('time'),
       fn: () => {
         refocus();
         const d = new Date();
@@ -962,7 +962,7 @@ function collectLinkedRefs(targets) {
     const n = doc.nodes[id];
     if (n.mirror && n.mirror !== id && targets.has(n.mirror)) {
       const host = parentOf(id) || id;
-      add(n.mirror, { id: host, label: '⧉ mirrored in ' + (plainOf(N(host)?.text || '').trim() || 'Untitled') });
+      add(n.mirror, { id: host, label: 'mirrored in ' + (plainOf(N(host)?.text || '').trim() || 'Untitled') });
     }
     if (!n.text) continue;
     const seen = new Set();

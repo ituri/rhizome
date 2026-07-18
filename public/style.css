@@ -679,6 +679,9 @@ body.dragging-item .content, body.dragging-item .note { cursor: grabbing; }
 }
 .popover button:hover, .popover label.pop-row:hover { background: var(--accent-softer); }
 .popover button .ic { width: 17px; text-align: center; color: var(--ink-faint); flex: none; }
+/* Carbon inline icons — inherit text color, sit on the text baseline */
+.ic-svg { width: 15px; height: 15px; fill: currentColor; display: inline-block; vertical-align: -2px; }
+.popover button .ic .ic-svg, .caret-pop .pop-item .ic .ic-svg { vertical-align: middle; }
 .popover button .kbd-hint { margin-left: auto; font-size: 11px; color: var(--ink-faint); }
 .popover hr { border: 0; border-top: 1px solid var(--line-soft); margin: 5px 8px; }
 .popover .pop-title {
