@@ -486,6 +486,29 @@ window.editorInputHook = function editorInputHook(ctx) {
     return;
   }
 
+  // [text](url) typed out in full → inline named link (markdown), converted on the closing ')'
+  const mdl = before.match(/\[([^[\]\n]+)\]\((https?:\/\/[^\s()]+|www\.[^\s()]+|mailto:[^\s()]+)\)$/);
+  if (mdl && ctx.field === 'text' && fmtOf(ctx.id) !== 'codeblock' && !state.readOnly) {
+    window.closeCaretPop();
+    const text = mdl[1];
+    let href = mdl[2];
+    if (/^www\./i.test(href)) href = 'https://' + href;
+    const start = off - mdl[0].length;
+    snapshot();
+    selectPlainRange(ctx.el, start, off);
+    const sel = getSelection();
+    const r = sel.getRangeAt(0);
+    r.deleteContents();
+    const a = document.createElement('a');
+    a.href = href;
+    a.setAttribute('rel', 'noopener');
+    a.textContent = text;
+    insertInlineAtCaret(sel, r, a);
+    scheduleCommit(ctx.el);
+    markDirty();
+    return;
+  }
+
   // [[ → internal-link autocomplete
   const lm = before.match(/\[\[([^\]\n]*)$/);
   if (lm && ctx.field === 'text' && fmtOf(ctx.id) !== 'codeblock') {
