@@ -876,7 +876,9 @@ body.dragging-item .content, body.dragging-item .note { cursor: grabbing; }
 }
 .jump-results { max-height: 46vh; overflow-y: auto; padding: 6px; }
 .jump-row {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 10px;
   width: 100%;
   border: 0;
   background: none;
@@ -887,7 +889,8 @@ body.dragging-item .content, body.dragging-item .note { cursor: grabbing; }
   cursor: pointer;
   color: var(--ink);
 }
-.jump-row .jr-text { font-size: 14.5px; }
+.jump-row .jr-main { flex: 1; min-width: 0; }
+.jump-row .jr-text { font-size: 14.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .jump-row .jr-text.done { text-decoration: line-through; color: var(--done); }
 .jump-row .jr-path {
   font-size: 11.5px;

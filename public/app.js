@@ -4066,12 +4066,23 @@ function searchNodes(q, limit = 14) {
   return out.slice(0, limit);
 }
 
+// the type chip (Page / Journal / Mention / New) shown on a jump/search row
+function jumpChip(it) {
+  if (it.createPage) return '<span class="chip accent">New</span>';
+  const n = it.id && doc.nodes[it.id];
+  if (!n) return '';
+  if (n.cal === 'day') return '<span class="chip accent">Journal</span>';
+  if ((doc.nodes[doc.root]?.children || []).includes(it.id) && n.cal !== 'root') return '<span class="chip accent">Page</span>';
+  return '<span class="chip">Mention</span>';
+}
+
 // one search-result row, shared by quick-jump, the node picker, and the link dialog
 function jumpRow(it, active, onClick, { showDone = false } = {}) {
   const b = document.createElement('button');
   b.className = 'jump-row' + (active ? ' active' : '');
-  b.innerHTML = `<div class="jr-text${showDone && it.done ? ' done' : ''}">${escHtml(it.plain.slice(0, 90))}</div>` +
-    (it.path ? `<div class="jr-path">${escHtml(it.path)}</div>` : '');
+  b.innerHTML = `<div class="jr-main"><div class="jr-text${showDone && it.done ? ' done' : ''}">${escHtml(it.plain.slice(0, 90))}</div>` +
+    (it.path ? `<div class="jr-path">${escHtml(it.path)}</div>` : '') +
+    `</div>` + jumpChip(it);
   b.addEventListener('click', onClick);
   return b;
 }
