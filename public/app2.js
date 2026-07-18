@@ -2298,7 +2298,10 @@ window.uploadAttachments = async function uploadAttachments(id, files) {
         method: 'POST',
         body: file,
       });
-      if (!res.ok) throw new Error('upload failed');
+      if (!res.ok) {
+        let err = ''; try { err = (await res.json()).error || ''; } catch { /* non-json */ }
+        throw new Error(err || 'upload failed');
+      }
       const data = await res.json();
       const n = N(id);
       if (!n.files) n.files = [];
@@ -2308,8 +2311,10 @@ window.uploadAttachments = async function uploadAttachments(id, files) {
       if (!plainOf(n.text || '').trim()) n.text = escHtml(data.name || 'image');
       touch(id);
       added++;
-    } catch {
-      showToast(`Could not upload "${file.name}"`);
+    } catch (e) {
+      const m = String((e && e.message) || '');
+      // surface the server's reason (e.g. a storage-quota block) instead of a generic failure
+      showToast(/quota|storage|limit/i.test(m) ? m : `Could not upload "${file.name}"`);
     }
   }
   } finally {
