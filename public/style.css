@@ -2304,6 +2304,13 @@ html, body { font-size: 14px; line-height: 1.5; }
 .caret-pop .kbd-hint { color: #8a9ba8; font-size: 12px; flex: none; }
 .caret-pop .pop-item .ic { flex: none; width: 22px; text-align: center; color: #8a9ba8; opacity: 0.85; font-size: 14px; }
 .caret-pop button.pop-item.active { background: #eef2f5; }
+/* type chip (Page / Journal / Block …) shown instead of an emoji icon */
+.caret-pop .pop-chip {
+  flex: none; font-size: 10.5px; font-weight: 500; letter-spacing: 0.02em;
+  padding: 2px 8px; border-radius: 999px;
+  color: var(--ink-faint); background: color-mix(in oklab, var(--ink-faint) 13%, transparent);
+}
+.caret-pop .pop-chip.accent { color: var(--accent); background: var(--accent-soft); }
 [data-theme="dark"] .caret-pop button.pop-item.active { background: rgba(255, 255, 255, 0.09); }
 
 /* Roam-style date-picker calendar */

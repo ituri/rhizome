@@ -209,7 +209,11 @@ function renderCaretItems(items, onPick, emptyMsg) {
     const b = document.createElement('button');
     b.className = 'pop-item' + (i === 0 ? ' active' : '');
     // rhizome: Roam row layout — label left, keyboard hint and icon right
-    b.innerHTML = `<span class="pop-label">${escHtml(it.label)}</span>${it.hint ? `<span class="kbd-hint">${escHtml(it.hint)}</span>` : ''}<span class="ic">${it.icon || '•'}</span>`;
+    // type indicator: a text chip (Page / Journal / Block …) when set, else the legacy icon glyph
+    const right = it.chip != null
+      ? `<span class="pop-chip${it.chipAccent ? ' accent' : ''}">${escHtml(it.chip)}</span>`
+      : `<span class="ic">${it.icon || '•'}</span>`;
+    b.innerHTML = `<span class="pop-label">${escHtml(it.label)}</span>${it.hint ? `<span class="kbd-hint">${escHtml(it.hint)}</span>` : ''}${right}`;
     b.addEventListener('mousedown', e => e.preventDefault());
     b.addEventListener('click', () => onPick(it));
     el.append(b);
@@ -299,14 +303,14 @@ function refreshCaretPop(query) {
     // rhizome: [[ searches pages and day pages like Roam (Ctrl+K links arbitrary items);
     // use the original-case `query` for the new-page title, `q` only for matching
     const found = searchPages(query, 8).filter(it => it.id !== caretPop.ctx.id);
-    const items = found.map(it => ({ label: it.plain.slice(0, 60), icon: it.day ? '📅' : it.alias ? '↷' : '↗', linkId: it.id }));
+    const items = found.map(it => ({ label: it.plain.slice(0, 60), chip: it.day ? 'Journal' : it.alias ? 'Alias' : 'Page', chipAccent: !it.alias, linkId: it.id }));
     if (query.trim() && !found.some(f => f.plain.trim().toLowerCase() === query.trim().toLowerCase())) {
-      items.push({ label: `Create page “${query.trim().slice(0, 40)}”`, icon: '＋', create: query.trim() });
+      items.push({ label: `Create page “${query.trim().slice(0, 40)}”`, chip: 'New', chipAccent: true, create: query.trim() });
     }
     renderCaretItems(items, it => pickLink(it), 'Search for a page — type to create one');
   } else if (caretPop.type === 'blockref') {
     const found = searchNodes(query, 8).filter(it => it.id !== caretPop.ctx.id);
-    const items = found.map(it => ({ label: it.plain.slice(0, 60), icon: '⟨⟩', path: it.path, blockId: it.id }));
+    const items = found.map(it => ({ label: it.plain.slice(0, 60), chip: 'Block', path: it.path, blockId: it.id }));
     renderCaretItems(items, it => pickBlockRef(it), query.trim() ? 'No matching blocks' : 'Search for a block to reference');
   }
 }
