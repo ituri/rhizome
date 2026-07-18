@@ -198,6 +198,11 @@ async function geocodeAndRetitle(pageId, coords) {
     const address = r.ok ? (await r.json()).address : '';
     // bail if the page vanished or its title changed meanwhile (e.g. a concurrent edit)
     if (!address || !N(pageId) || !parseCoords(plainOf(N(pageId).text))) return;
+    // a second geo capture at the same place gets a fresh coordinate title (GPS jitter),
+    // so find-or-create can't match it — and both geocode to the same address. Renaming
+    // would silently duplicate the title; fold into the existing page instead.
+    const existing = findPageByTitle(address);
+    if (existing && existing !== pageId) { mergeLocationPage(pageId, existing, address); return; }
     snapshot();
     const first = kidsOf(pageId)[0];
     if (!(first && parseCoords(plainOf(N(first).text)))) {
@@ -219,6 +224,26 @@ async function geocodeAndRetitle(pageId, coords) {
     renderPage();
   } catch { /* offline / geocoder down — leave the raw-coords title as-is, retry next visit */ }
   finally { geocoding.delete(pageId); }
+}
+
+// fold a freshly geocoded coordinate page into the page that already carries the address:
+// move its bullets over, re-point (and relabel) every link, then trash the empty duplicate.
+// The fresh GPS fix is dropped — the target page keeps its own coords bullet.
+function mergeLocationPage(pageId, target, address) {
+  snapshot();
+  for (const kid of [...kidsOf(pageId)]) moveNode(kid, target, kidsOf(target).length);
+  const needle = `#/n/${pageId}"`;
+  for (const k of Object.keys(doc.nodes)) {
+    const t = doc.nodes[k].text;
+    if (!t || !t.includes(needle)) continue;
+    recOld(k);
+    doc.nodes[k].text = relabelCoordLinks(t.replaceAll(needle, `#/n/${target}"`), target, address);
+    N(k).m = Date.now();
+  }
+  markDirty();
+  if (state.zoom === pageId) location.hash = '#/n/' + target;
+  opDelete(pageId, { toast: false });
+  showToast(`Merged into the existing “${address}” page`);
 }
 
 // the coordinate of the first location page a text links to, else null
