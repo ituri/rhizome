@@ -723,6 +723,7 @@ async function handleV1(req, res, url, g, scope) {
         'GET    /api/v1/doc',
         'GET    /api/v1/version',
         'GET    /api/v1/events              (SSE: {version} on connect + on every change)',
+        'POST   /api/v1/capture             {text} or raw text → today\'s journal Inbox',
         'GET    /api/v1/search?q=&limit=',
         'GET    /api/v1/nodes/:id            (?tree=1&depth=N for the subtree)',
         'GET    /api/v1/nodes/:id/children',
@@ -745,6 +746,12 @@ async function handleV1(req, res, url, g, scope) {
     g.sse.add(res);
     req.on('close', () => g.sse.delete(res));
     return;
+  }
+  if (path === '/api/v1/capture' && method === 'POST') {   // → today's journal Inbox
+    const raw = (await readBody(req, 1024 * 1024)).toString('utf8');
+    let text = raw, deviceName = u.searchParams.get('deviceName') || '';
+    try { const j = JSON.parse(raw); if (typeof j.text === 'string') text = j.text; if (typeof j.deviceName === 'string') deviceName = j.deviceName; } catch { /* plain text body */ }
+    return send(res, 200, { ok: true, captured: captureText(g, text, deviceName) });
   }
   if (path === '/api/v1/search' && method === 'GET') {
     const q = u.searchParams.get('q') || '';
