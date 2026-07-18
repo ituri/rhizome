@@ -3491,7 +3491,14 @@ pageEl.addEventListener('focusout', e => {
   if (ctx.field === 'title') titleBeforeEdit = null;
   // rhizome: leaving a line renders its block refs back to the live target text
   if (ctx.field === 'text' && doc.nodes[ctx.id] && document.activeElement !== ctx.el) {
-    const display = displayHtml(N(contentIdOf(ctx.id)));
+    const cid = contentIdOf(ctx.id);
+    // resolve any raw markdown left in the stored text (idempotent on already-HTML content) — heals
+    // bullets that were saved as literal source and would otherwise render as **foo** until re-edited
+    if (N(cid).format !== 'codeblock') {
+      const resolved = resolveEditSource(N(cid).text);
+      if (resolved !== N(cid).text) { recOld(cid); N(cid).text = resolved; touch(cid); markDirty(); syncMirrorRows(cid); }
+    }
+    const display = displayHtml(N(cid));
     if (ctx.el.innerHTML !== display) ctx.el.innerHTML = display;
   }
   if ((ctx.field === 'note' || ctx.field === 'zoom-note') && doc.nodes[ctx.id]) {
