@@ -703,10 +703,14 @@ async function readJson(req) {
   return JSON.parse((await readBody(req)).toString('utf8') || '{}');
 }
 
-async function handleV1(req, res, url, g) {
-  if (!apiAuthed(req, url)) return send(res, 401, { error: 'unauthorized — set RHIZOME_AGENT_TOKEN and send Authorization: Bearer <token>' });
+async function handleV1(req, res, url, g, scope) {
+  if (!scope) { // no rzk_ key on the request — fall back to session / agent token (write scope)
+    if (!apiAuthed(req, url)) return send(res, 401, { error: 'unauthorized — send Authorization: Bearer <rzk_… API key or agent token>' });
+    scope = 'write';
+  }
   if (apiRateLimited('v1:' + (reqToken(req, url) || req.socket.remoteAddress))) return send(res, 429, { error: 'rate limited — slow down' });
   if (!g) return send(res, 404, { error: 'no graph available' });
+  if (scope !== 'write' && req.method !== 'GET') return send(res, 403, { error: 'read-only key — a write-scoped key is required' });
   const doc = ensureDoc(g);
   const path = url.split('?')[0];
   const method = req.method;
@@ -1396,8 +1400,12 @@ const server = http.createServer(async (req, res) => {
     /* ---- MCP server (JSON-RPC over HTTP): a key/agent-token client reads + edits its graph ---- */
     if (url.split('?')[0] === '/mcp') return await handleMcp(req, res, url);
 
-    /* ---- per-node REST API (agent token or session cookie) — targets the admin's graph ---- */
-    if (url.startsWith('/api/v1')) return await handleV1(req, res, url, getGraph(defaultGraphId()));
+    /* ---- per-node REST API — agent token / session → the admin's graph; an rzk_ key → its graph at its scope ---- */
+    if (url.startsWith('/api/v1')) {
+      const key = apiKeyFor(req, url);
+      if (key) return await handleV1(req, res, url, getGraph(key.graphId), key.scope);
+      return await handleV1(req, res, url, getGraph(defaultGraphId()));
+    }
 
     /* ---- share access (token-scoped, no cookie needed) ---- */
     const shareMatch = url.match(/^\/api\/share\/([a-f0-9]{24,})\/doc(\?.*)?$/);
