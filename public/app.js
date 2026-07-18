@@ -2247,13 +2247,18 @@ function opSplit(ctx) {
     return tmp.innerHTML;
   })());
 
+  // reveal: both halves come straight from the editing DOM (raw markdown) → resolve to stored HTML
+  const doResolve = ctx.field === 'text' && n.format !== 'codeblock';
+  const beforeText = doResolve ? resolveEditSource(beforeHtml) : beforeHtml;
+  const afterText = doResolve ? resolveEditSource(afterHtml) : afterHtml;
+
   snapshot();
   recOld(n.id);
-  n.text = beforeHtml;
+  n.text = beforeText;
   touch(n.id);
   // a split item inherits to-do / numbered format so lists stay homogeneous
   const inherit = (n.format === 'todo' || n.format === 'number') ? { format: n.format } : {};
-  const nid = makeNode(afterHtml, inherit);
+  const nid = makeNode(afterText, inherit);
   if (ctx.field === 'title') {
     insertAt(id, 0, nid);
   } else if (kidsOf(n.id).length && isExpandedInView(id)) {
