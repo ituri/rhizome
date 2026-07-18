@@ -37,7 +37,10 @@ function applyOpsToDoc(doc, ops, trashFn) {
     switch (op.kind) {
       case 'insert': {
         if (doc.nodes[op.node]) break;                       // idempotent
+        const now = Date.now();
         const node = { ...(op.data || {}), id: op.node, children: [] };
+        if (node.c == null) node.c = now;                    // created / modified time (server-set;
+        if (node.m == null) node.m = now;                    // clients read them for "last edited")
         node.$hlc = { struct: op.hlc, text: op.hlc, flags: op.hlc, meta: op.hlc };
         doc.nodes[op.node] = node;
         const par = doc.nodes[op.parent] || doc.nodes.root;
@@ -56,7 +59,7 @@ function applyOpsToDoc(doc, ops, trashFn) {
         let changed = false;
         for (const k in (op.patch || {})) if (op.hlc > base[GROUP[k] || 'meta']) { n[k] = op.patch[k]; changed = true; }
         for (const k of (op.unset || [])) if (op.hlc > base[GROUP[k] || 'meta']) { delete n[k]; changed = true; }
-        if (changed) { for (const g in base) if (op.hlc > base[g]) setHlc(n, g, op.hlc); out.push(op); }
+        if (changed) { for (const g in base) if (op.hlc > base[g]) setHlc(n, g, op.hlc); n.m = Date.now(); out.push(op); }
         break;
       }
       case 'move': {
@@ -66,7 +69,7 @@ function applyOpsToDoc(doc, ops, trashFn) {
         if (oldP && doc.nodes[oldP]) { const a = doc.nodes[oldP].children; const i = a.indexOf(op.node); if (i >= 0) a.splice(i, 1); }
         const par = doc.nodes[op.parent];
         par.children.splice(clamp(op.ord, par.children.length), 0, op.node);
-        pm[op.node] = op.parent; setHlc(n, 'struct', op.hlc);
+        pm[op.node] = op.parent; setHlc(n, 'struct', op.hlc); n.m = Date.now();
         out.push(op);
         break;
       }
