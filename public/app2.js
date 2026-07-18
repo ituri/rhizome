@@ -1601,11 +1601,27 @@ function renderApiKeys(ov) {
 function renderAdminPanel(ov) {
   ov.innerHTML = `<div class="set-subpanel admin-panel">
     <div class="admin-invite"></div>
+    <div class="admin-quota"></div>
     <div class="admin-users">Loading…</div>
     <div class="admin-security"></div>
   </div>`;
-  const fmtBytes = b => b >= 1e6 ? (b / 1e6).toFixed(1) + ' MB' : b >= 1e3 ? Math.round(b / 1e3) + ' KB' : b + ' B';
   const fmtDate = t => t ? new Date(t).toLocaleString() : '—';
+  const GB = 1e9;
+  const loadQuota = async () => {
+    const q = await (await fetch('/api/admin/quota')).json();
+    const box = ov.querySelector('.admin-quota');
+    box.innerHTML = `<h4 class="admin-h4">Storage quota (per user)</h4>
+      <div class="quota-policy">Limit <input class="q-bytes" type="number" min="0" step="0.1" value="${q.bytes ? (q.bytes / GB) : 0}"> GB
+      · soft tolerance <input class="q-tol" type="number" min="0" max="100" value="${q.tolerancePct || 0}"> %
+      <button class="acct-save q-save">Save</button>
+      <span class="quota-hint">0 = unlimited. Applies to every user unless overridden below.</span></div>`;
+    box.querySelector('.q-save').addEventListener('click', async () => {
+      const bytes = Math.max(0, Math.round(parseFloat(box.querySelector('.q-bytes').value) * GB || 0));
+      const tolerancePct = Math.max(0, parseInt(box.querySelector('.q-tol').value, 10) || 0);
+      await fetch('/api/admin/quota', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ bytes, tolerancePct }) });
+      showToast('Quota saved'); loadUsers();
+    });
+  };
   const loadInvite = async () => {
     const { code } = await (await fetch('/api/admin/invite')).json();
     const box = ov.querySelector('.admin-invite');
@@ -1623,13 +1639,25 @@ function renderAdminPanel(ov) {
     box.innerHTML = '';
     const table = document.createElement('table');
     table.className = 'admin-table';
-    table.innerHTML = '<thead><tr><th>User</th><th>Last login</th><th>Notes</th><th>Storage</th><th></th></tr></thead>';
+    table.innerHTML = '<thead><tr><th>User</th><th>Notes</th><th>Used / quota</th><th></th></tr></thead>';
     const tb = document.createElement('tbody');
     for (const u of users) {
       const tr = document.createElement('tr');
       const badge = u.isAdmin ? ' <span class="admin-badge">admin</span>' : '';
-      tr.innerHTML = `<td>${escHtml(u.username)}${badge}</td><td>${escHtml(fmtDate(u.lastLogin))}</td><td>${u.notes}</td><td>${fmtBytes(u.bytes)}</td>`;
+      const quotaLabel = u.quotaBytes > 0 ? `${fmtBytes(u.quotaBytes)}${u.quotaSource === 'user' ? '*' : ''}` : '∞';
+      tr.innerHTML = `<td>${escHtml(u.username)}${badge}</td><td>${u.notes}</td><td>${fmtBytes(u.used)} / ${quotaLabel}</td>`;
       const td = document.createElement('td');
+      const q = document.createElement('button');
+      q.className = 'key-copy'; q.textContent = 'quota'; q.title = 'Set a per-user quota override';
+      q.addEventListener('click', async () => {
+        const cur = u.quotaSource === 'user' && u.quotaBytes ? String(u.quotaBytes / 1e9) : '';
+        const v = prompt(`Per-user quota for “${u.username}” in GB (empty = use the global default):`, cur);
+        if (v === null) return;
+        const bytes = Math.max(0, Math.round(parseFloat(v) * 1e9 || 0));
+        await fetch(`/api/admin/users/${u.id}/quota`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ bytes }) });
+        showToast('Quota updated'); loadUsers();
+      });
+      td.append(q);
       if (u.id !== state.user.id) {
         const x = document.createElement('button');
         x.className = 'side-remove side-del'; x.textContent = '×'; x.title = 'Delete user';
@@ -1679,6 +1707,7 @@ function renderAdminPanel(ov) {
       `<div class="${e.ok ? 'sec-ok' : 'sec-fail'}">${escHtml(fmtDate(e.ts))} · ${escHtml(e.username || '?')} · ${escHtml(e.ip || '')} · ${e.ok ? 'ok' : 'fail'}</div>`).join('');
   };
   loadInvite();
+  loadQuota();
   loadUsers();
   loadSecurity();
 }
@@ -1866,9 +1895,10 @@ function renderHistoryDiff(panel, oldDoc, newDoc) {
 // human-readable file size
 function fmtBytes(n) {
   if (n == null) return '';
-  if (n < 1024) return n + ' B';
-  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
-  return (n / (1024 * 1024)).toFixed(1) + ' MB';
+  if (n < 1e3) return n + ' B';
+  if (n < 1e6) return (n / 1e3).toFixed(1) + ' KB';
+  if (n < 1e9) return (n / 1e6).toFixed(1) + ' MB';
+  return (n / 1e9).toFixed(2) + ' GB';
 }
 
 // Asset manager: every file referenced in this graph (In use) + files no graph references (Unused)
@@ -2481,6 +2511,32 @@ function segRow(options, getCurrent, onPick) {
   return seg;
 }
 
+// Storage statistics for the signed-in user: pages, note bytes, image bytes, and (if the admin
+// set one) a quota bar with the used %, the x/x total, and the soft-tolerance band colour.
+function renderStats(host) {
+  host.innerHTML = '<div class="set-subpanel"><div class="stats-body">Loading…</div></div>';
+  const box = host.querySelector('.stats-body');
+  (async () => {
+    let s;
+    try { s = await (await fetch('/api/me/stats')).json(); } catch { box.textContent = 'Could not load statistics.'; return; }
+    const rows = [['Pages', String(s.pages)], ['Notes', fmtBytes(s.noteBytes)], ['Images & files', fmtBytes(s.fileBytes)], ['Total', fmtBytes(s.totalBytes)]];
+    box.innerHTML = rows.map(([k, v]) => `<div class="stat-row"><span class="stat-k">${k}</span><span class="stat-v">${escHtml(v)}</span></div>`).join('');
+    if (s.quotaBytes > 0) {
+      const pct = s.totalBytes / s.quotaBytes * 100;
+      const hardPct = 100 + (s.tolerancePct || 0);
+      const band = pct <= 100 ? 'ok' : pct <= hardPct ? 'soft' : 'over';
+      box.insertAdjacentHTML('beforeend', `<div class="quota-wrap quota-${band}">
+        <div class="quota-head"><span>${pct.toFixed(pct < 10 ? 1 : 0)}% used</span><span>${fmtBytes(s.totalBytes)} / ${fmtBytes(s.quotaBytes)}</span></div>
+        <div class="quota-bar"><div class="quota-fill" style="width:${Math.min(100, pct)}%"></div></div>
+        ${band === 'soft' ? `<div class="quota-note">Over your quota — within the ${s.tolerancePct}% grace. Free space soon.</div>` : ''}
+        ${band === 'over' ? '<div class="quota-note">Storage full — new uploads are blocked until you free space.</div>' : ''}
+      </div>`);
+    } else {
+      box.insertAdjacentHTML('beforeend', '<div class="quota-none">No storage limit set.</div>');
+    }
+  })();
+}
+
 /* ---------------- settings dialog (categorized) ---------------- */
 // A focused, tabbed dialog for preferences (Appearance / Editing / Account), so the ⋮
 // menu can stay a short list of actions. Reuses the seg controls + overlay conventions.
@@ -2589,6 +2645,7 @@ function showSettings(initialTab) {
       let g = group('Signed in as ' + state.user.username);
       action(g, 'Change password…', () => pushSub('Change password', host => renderChangePassword(host, () => showTab(currentTab))));
       action(g, 'API keys…', () => pushSub('API keys', renderApiKeys));
+      action(g, 'Statistics…', () => pushSub('Statistics', renderStats));
       if (state.user.isAdmin) action(g, 'Admin panel…', () => pushSub('Admin panel', renderAdminPanel));
       g = group('This device');
       const hint = document.createElement('div');

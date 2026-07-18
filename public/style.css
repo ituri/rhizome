@@ -1109,6 +1109,23 @@ kbd {
 .sec-policy input { width: 56px; font: inherit; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: none; color: var(--ink); }
 .sec-policy select { font: inherit; padding: 4px; border: 1px solid var(--line); border-radius: 6px; background: none; color: var(--ink); }
 .sec-policy .acct-save { padding: 6px 12px; }
+/* statistics + storage quota */
+.stat-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--line-soft); font-size: 14px; }
+.stat-k { color: var(--ink-soft); }
+.stat-v { font-weight: 600; }
+.quota-wrap { margin-top: 16px; }
+.quota-head { display: flex; justify-content: space-between; font-size: 13px; color: var(--ink-soft); margin-bottom: 6px; }
+.quota-bar { height: 10px; border-radius: 999px; background: var(--line-soft); overflow: hidden; }
+.quota-fill { height: 100%; border-radius: 999px; background: var(--accent); transition: width 0.3s; }
+.quota-soft .quota-fill { background: oklch(0.74 0.15 70); }
+.quota-over .quota-fill { background: oklch(0.58 0.19 28); }
+.quota-note { margin-top: 8px; font-size: 12.5px; color: oklch(0.55 0.19 28); }
+.quota-soft .quota-note { color: oklch(0.52 0.13 70); }
+.quota-none { margin-top: 16px; font-size: 13px; color: var(--ink-faint); }
+.quota-policy { font-size: 13px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.quota-policy input { width: 72px; font: inherit; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: none; color: var(--ink); }
+.quota-policy .acct-save { padding: 6px 12px; }
+.quota-hint { flex-basis: 100%; color: var(--ink-faint); font-size: 12px; margin-top: 2px; }
 .sec-locked { font-size: 13px; margin: 6px 0; }
 .sec-chip { background: var(--accent-softer); padding: 2px 6px; border-radius: 6px; margin-right: 6px; }
 .sec-log { font-size: 12px; margin-top: 6px; }

@@ -1334,6 +1334,58 @@ function allReferencedUrls(currentGid) {
   return urls;
 }
 
+/* ---------- usage stats & storage quota ---------- */
+
+// content-based usage for a user, summed over the graphs they own: page count, note-text bytes,
+// and referenced-file bytes (deduped). Pages = top-level nodes (child of root, not the calendar
+// container) plus journal days (cal === 'day') — matching the client's page definition.
+function userStats(userId) {
+  const owned = accounts.graphsForUser(userId).filter(g => g.ownerId === userId);
+  let pages = 0, noteBytes = 0, fileBytes = 0;
+  const seenFiles = new Set();
+  for (const g of owned) {
+    const doc = getGraph(g.id).store.doc;
+    if (!doc || !doc.nodes) continue;
+    const root = doc.root || 'root';
+    for (const id in doc.nodes) {
+      const n = doc.nodes[id];
+      noteBytes += Buffer.byteLength(n.text || '', 'utf8') + Buffer.byteLength(n.note || '', 'utf8');
+      for (const f of (n.files || [])) {
+        if (!f || !f.url || seenFiles.has(f.url)) continue;
+        seenFiles.add(f.url);
+        const name = storedFromUrl(f.url);
+        const st = name && fileStat(name);
+        if (st) fileBytes += st.size;
+      }
+      if (n.cal === 'day') pages++;
+    }
+    for (const cid of (doc.nodes[root]?.children || [])) {
+      if (doc.nodes[cid] && doc.nodes[cid].cal !== 'root') pages++;
+    }
+  }
+  return { pages, noteBytes, fileBytes, totalBytes: noteBytes + fileBytes };
+}
+
+const fmtBytes = b => b >= 1e9 ? (b / 1e9).toFixed(2) + ' GB' : b >= 1e6 ? (b / 1e6).toFixed(1) + ' MB' : b >= 1e3 ? Math.round(b / 1e3) + ' KB' : b + ' B';
+
+// global quota config (bytes, 0 = unlimited) + a soft-overshoot tolerance in percent
+function quotaConfig() {
+  return {
+    bytes: Number(accounts.getSetting('quotaBytes')) || 0,
+    tolerancePct: Number(accounts.getSetting('quotaTolerancePct')) || 0,
+  };
+}
+// the quota that applies to one user: a per-user override (settings key quota:<id>) wins over the
+// global default; tolerance stays global. Returns { bytes, tolerancePct, hardCap, source }.
+function effectiveQuota(userId) {
+  const g = quotaConfig();
+  const per = accounts.getSetting('quota:' + userId);
+  const overridden = per != null && String(per).trim() !== '';
+  const bytes = overridden ? (Number(per) || 0) : g.bytes;
+  const hardCap = bytes > 0 ? Math.floor(bytes * (1 + g.tolerancePct / 100)) : 0;
+  return { bytes, tolerancePct: g.tolerancePct, hardCap, source: overridden ? 'user' : 'global' };
+}
+
 /* ---------- server ---------- */
 
 const server = http.createServer(async (req, res) => {
@@ -1391,6 +1443,13 @@ const server = http.createServer(async (req, res) => {
           inviteRequired: !!currentInviteCode(),
           ai: !!AI_KEY,
         });
+      }
+      // usage stats + the storage quota that applies to the signed-in user (for the Statistics view)
+      if (url === '/api/me/stats' && req.method === 'GET') {
+        const u = currentUser(req);
+        if (!u) return send(res, 401, { error: 'unauthorized' });
+        const q = effectiveQuota(u.id);
+        return send(res, 200, { ...userStats(u.id), quotaBytes: q.bytes, tolerancePct: q.tolerancePct });
       }
       // cross-device user preferences (shared web ⇄ iOS): a small merged JSON blob
       if (url === '/api/account/prefs') {
@@ -1590,7 +1649,9 @@ const server = http.createServer(async (req, res) => {
             for (const f of ['outline.db', 'outline.db-wal']) { try { bytes += fs.statSync(path.join(dir, f)).size; } catch { /* none */ } }
             try { for (const bk of fs.readdirSync(path.join(dir, 'backups'))) bytes += fs.statSync(path.join(dir, 'backups', bk)).size; } catch { /* none */ }
           }
-          return { id: u.id, username: u.username, isAdmin: !!u.is_admin, lastLogin: u.last_login, created: u.created, graphs: owned.length, notes, bytes };
+          const q = effectiveQuota(u.id);
+          return { id: u.id, username: u.username, isAdmin: !!u.is_admin, lastLogin: u.last_login, created: u.created,
+            graphs: owned.length, notes, bytes, used: userStats(u.id).totalBytes, quotaBytes: q.bytes, quotaSource: q.source };
         });
         return send(res, 200, { users });
       }
@@ -1622,6 +1683,27 @@ const server = http.createServer(async (req, res) => {
           accounts.setSetting('invite_code', code || null); // empty → clear (falls back to the env default)
           return send(res, 200, { code: currentInviteCode() });
         }
+      }
+      // storage quota: a global default (bytes) + a soft-overshoot tolerance (percent)
+      if (url === '/api/admin/quota') {
+        const admin = requireAdmin(req);
+        if (!admin) return send(res, 403, { error: 'admin only' });
+        if (req.method === 'GET') return send(res, 200, quotaConfig());
+        if (req.method === 'PUT') {
+          const b = await readJson(req);
+          accounts.setSetting('quotaBytes', Math.max(0, Math.floor(Number(b.bytes) || 0)) || null);
+          accounts.setSetting('quotaTolerancePct', Math.max(0, Math.floor(Number(b.tolerancePct) || 0)) || null);
+          return send(res, 200, quotaConfig());
+        }
+      }
+      // per-user quota override (bytes; empty/0 → fall back to the global default)
+      const quotaUserM = url.match(/^\/api\/admin\/users\/([A-Za-z0-9]+)\/quota$/);
+      if (quotaUserM && req.method === 'PUT') {
+        if (!requireAdmin(req)) return send(res, 403, { error: 'admin only' });
+        const b = await readJson(req);
+        const bytes = Math.max(0, Math.floor(Number(b.bytes) || 0));
+        accounts.setSetting('quota:' + quotaUserM[1], bytes > 0 ? bytes : null);
+        return send(res, 200, { ...effectiveQuota(quotaUserM[1]) });
       }
       // login security (Phase: fail2ban): lockout policy, locked accounts, the login log
       if (url === '/api/admin/security') {
@@ -1881,6 +1963,15 @@ const server = http.createServer(async (req, res) => {
         const safe = path.basename(rawName).replace(/[^\w.\- ()]/g, '_').slice(0, 120) || 'file';
         const data = await readBody(req, MAX_UPLOAD);
         if (!data.length) return send(res, 400, { error: 'empty upload' });
+        // storage quota: block a session user's upload once it would push them past the hard cap
+        // (quota + tolerance). Notes are never blocked; agent-token / open-instance uploads skip this.
+        const upUser = currentUser(req);
+        if (upUser) {
+          const q = effectiveQuota(upUser.id);
+          if (q.hardCap > 0 && userStats(upUser.id).totalBytes + data.length > q.hardCap) {
+            return send(res, 413, { error: `storage quota exceeded (${fmtBytes(userStats(upUser.id).totalBytes)} of ${fmtBytes(q.bytes)})` });
+          }
+        }
         const stored = `${crypto.randomBytes(12).toString('hex')}-${safe}`; // 96-bit unguessable prefix
         await fsp.writeFile(path.join(FILES_DIR, stored), cryptobox.encrypt(data));
         return send(res, 200, { url: `/files/${encodeURIComponent(stored)}`, name: safe, size: data.length });
