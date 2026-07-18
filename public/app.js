@@ -940,6 +940,16 @@ function sanitizeDocTexts(d) {
 function graftMissing(serverDoc) {
   if (!serverDoc || !serverDoc.nodes) return;
   sanitizeDocTexts(serverDoc);
+  // reconcile the CONTENT of nodes present on both sides by last-modified: if the server's copy
+  // is newer (another device edited it after us), take its content so the whole-doc PUT fallback
+  // doesn't silently clobber that edit. Structure (children) is left to the graft/move logic.
+  const CONTENT = ['text', 'note', 'done', 'collapsed', 'format', 'files', 'cal', 'cd', 'cm', 'cy'];
+  for (const id in serverDoc.nodes) {
+    const sn = serverDoc.nodes[id], ln = doc.nodes[id];
+    if (!ln || (sn.m || 0) <= (ln.m || 0)) continue;
+    for (const k of CONTENT) { if (k in sn) ln[k] = sn[k]; else delete ln[k]; }
+    ln.m = sn.m;
+  }
   const queue = [serverDoc.root];
   while (queue.length) {
     const pid = queue.shift();

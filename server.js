@@ -705,6 +705,7 @@ async function readJson(req) {
 
 async function handleV1(req, res, url, g) {
   if (!apiAuthed(req, url)) return send(res, 401, { error: 'unauthorized — set RHIZOME_AGENT_TOKEN and send Authorization: Bearer <token>' });
+  if (apiRateLimited('v1:' + (reqToken(req, url) || req.socket.remoteAddress))) return send(res, 429, { error: 'rate limited — slow down' });
   if (!g) return send(res, 404, { error: 'no graph available' });
   const doc = ensureDoc(g);
   const path = url.split('?')[0];
@@ -860,6 +861,7 @@ async function handleMcp(req, res, url) {
   else if (AGENT_TOKEN && timingSafeEq(reqToken(req, url), AGENT_TOKEN)) { g = getGraph(defaultGraphId()); scope = 'write'; }
   else if (accounts.userCount() === 0) { g = getGraph(defaultGraphId()); scope = 'write'; } // fresh/open instance
   if (!g) return send(res, 401, { error: 'unauthorized — send Authorization: Bearer <rzk_… API key>' }, { ...cors, 'WWW-Authenticate': 'Bearer' });
+  if (apiRateLimited('mcp:' + (key ? key.id : req.socket.remoteAddress))) return send(res, 429, { error: 'rate limited — slow down' }, cors);
 
   let msg;
   try { msg = await readJson(req); }
@@ -1035,7 +1037,13 @@ function isAuthed(req) {
   if (accounts.userCount() === 0) return true;
   return !!currentUser(req);
 }
-const sessionCookie = token => `rz_session=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${Math.floor(SESSION_MAX_AGE / 1000)}`;
+// true when the request reached us over TLS (directly or via a terminating proxy that
+// forwards the scheme) — used to set the cookie's Secure flag only when it won't break http dev
+const isHttps = req => {
+  const xf = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim().toLowerCase();
+  return xf === 'https' || !!req.socket.encrypted;
+};
+const sessionCookie = (token, secure) => `rz_session=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${Math.floor(SESSION_MAX_AGE / 1000)}${secure ? '; Secure' : ''}`;
 // the signed-in user if they are an admin, else null
 function requireAdmin(req) { const u = currentUser(req); return u && u.is_admin ? u : null; }
 // the effective registration invite code: an admin-rotated DB value overrides the env default
@@ -1056,6 +1064,18 @@ function recordAttempt(ip, ok) {
   attempts.set(ip, a);
 }
 
+// coarse fixed-window rate limit for token/key-authenticated API endpoints (capture, v1, mcp).
+// Bounds a leaked key's blast radius; the interactive web client is session-authed and untouched.
+const apiHits = new Map();
+function apiRateLimited(key, max = 300, windowMs = 60000) {
+  const now = Date.now();
+  let a = apiHits.get(key);
+  if (!a || now > a.resetAt) { a = { count: 0, resetAt: now + windowMs }; apiHits.set(key, a); }
+  a.count += 1;
+  if (apiHits.size > 5000) for (const [k, v] of apiHits) if (now > v.resetAt) apiHits.delete(k); // cheap GC
+  return a.count > max;
+}
+
 /* ---------- share helpers ---------- */
 
 // a file is shared if it sits inside any shared subtree — check each share against its own graph
@@ -1065,6 +1085,30 @@ function fileIsShared(urlPath) {
     const doc = g && g.store.doc;
     if (!doc || !doc.nodes[share.id]) continue;
     if (subtreeIds(doc, share.id).some(id => (doc.nodes[id].files || []).some(f => f && f.url === urlPath))) return true;
+  }
+  return false;
+}
+
+// does any node in this graph's doc reference the file url?
+function graphReferencesUrl(doc, urlPath) {
+  if (!doc || !doc.nodes) return false;
+  for (const id in doc.nodes) {
+    for (const f of (doc.nodes[id].files || [])) if (f && f.url === urlPath) return true;
+  }
+  return false;
+}
+
+// files are global on disk, but access is scoped: readable only if the instance is open, the
+// file sits inside a public share, or the requester is a member of a graph that references it.
+// (Previously any logged-in user could read any file by guessing its url.)
+function userCanReadFile(req, urlPath) {
+  if (accounts.userCount() === 0) return true;      // fresh/open instance
+  if (fileIsShared(urlPath)) return true;           // inside a public share link
+  const u = currentUser(req);
+  if (!u) return false;
+  if (u.is_admin) return true;                      // admins can read any attachment on their instance
+  for (const g of accounts.graphsForUser(u.id)) {
+    if (graphReferencesUrl(getGraph(g.id).store.doc, urlPath)) return true;
   }
   return false;
 }
@@ -1379,7 +1423,7 @@ const server = http.createServer(async (req, res) => {
         accounts.setLastLogin(user.id);
         const token = accounts.newSession(user.id);
         recordAttempt(ip, true);
-        return send(res, 200, { user: { id: user.id, username: user.username } }, { 'Set-Cookie': sessionCookie(token) });
+        return send(res, 200, { user: { id: user.id, username: user.username } }, { 'Set-Cookie': sessionCookie(token, isHttps(req)) });
       }
       if (url === '/api/login' && req.method === 'POST') {
         if (throttled(ip)) return send(res, 429, { error: 'too many attempts — try again in 10 minutes' });
@@ -1412,7 +1456,7 @@ const server = http.createServer(async (req, res) => {
         accounts.unlockUser(user.id); // success clears the failure counter + any timed lock
         accounts.setLastLogin(user.id);
         const token = accounts.newSession(user.id);
-        return send(res, 200, { user: { id: user.id, username: user.username } }, { 'Set-Cookie': sessionCookie(token) });
+        return send(res, 200, { user: { id: user.id, username: user.username } }, { 'Set-Cookie': sessionCookie(token, isHttps(req)) });
       }
       if (url === '/api/logout' && req.method === 'POST') {
         accounts.dropSession(cookies(req).rz_session || '');
@@ -1610,6 +1654,7 @@ const server = http.createServer(async (req, res) => {
         const key = user ? null : apiKeyFor(req, url); // a write-scoped API key captures into its graph
         const allowed = !!user || (key && key.scope === 'write') || accounts.userCount() === 0;
         if (!allowed) return send(res, 401, { error: 'unauthorized' });
+        if (!user && apiRateLimited('cap:' + (key ? key.id : req.socket.remoteAddress))) return send(res, 429, { error: 'rate limited — slow down' });
         // a session captures into its own first graph; an API key into its graph; open mode → default graph
         const gid = user ? accounts.graphsForUser(user.id)[0]?.id : (key ? key.graphId : defaultGraphId());
         const g = gid && getGraph(gid);
@@ -1836,7 +1881,7 @@ const server = http.createServer(async (req, res) => {
         const safe = path.basename(rawName).replace(/[^\w.\- ()]/g, '_').slice(0, 120) || 'file';
         const data = await readBody(req, MAX_UPLOAD);
         if (!data.length) return send(res, 400, { error: 'empty upload' });
-        const stored = `${uid()}-${safe}`;
+        const stored = `${crypto.randomBytes(12).toString('hex')}-${safe}`; // 96-bit unguessable prefix
         await fsp.writeFile(path.join(FILES_DIR, stored), cryptobox.encrypt(data));
         return send(res, 200, { url: `/files/${encodeURIComponent(stored)}`, name: safe, size: data.length });
       }
@@ -1871,8 +1916,9 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (url.startsWith('/files/')) {
-      // attachments are private unless they sit inside a shared subtree
-      if (!isAuthed(req) && !fileIsShared(decodeURIComponent(url.split('?')[0]))) {
+      // attachments are private: only a member of a graph that references the file (or a
+      // public share, or an open instance) may read it — compare the raw url as stored in node.files
+      if (!userCanReadFile(req, url.split('?')[0])) {
         return send(res, 401, { error: 'unauthorized' });
       }
       return serveUserFile(req, res, url);
