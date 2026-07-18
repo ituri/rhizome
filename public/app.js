@@ -1813,6 +1813,12 @@ function buildAttachments(n) {
       chip.target = '_blank';
       chip.rel = 'noopener';
       chip.innerHTML = `<span>${icon('attachment')}</span><span class="att-name">${escHtml(f.name || 'file')}</span>`;
+      // click → in-app preview overlay (PDFs render inline); the href stays as a download fallback
+      chip.addEventListener('click', e => {
+        if (e.target.closest('.att-remove') || !url) return;
+        e.preventDefault();
+        openFilePreview(f, url);
+      });
       if (!state.readOnly) {
         const rm = document.createElement('button');
         rm.className = 'att-remove';
@@ -1825,6 +1831,31 @@ function buildAttachments(n) {
     }
   }
   return wrap;
+}
+
+// in-app preview of a non-image attachment: PDFs embed inline; other types offer download/open
+function openFilePreview(f, url) {
+  const name = f.name || 'file';
+  const isPdf = /\.pdf$/i.test(name) || /\.pdf(\?|$)/i.test(url) || (f.type || '').includes('pdf');
+  const ov = document.createElement('div');
+  ov.className = 'overlay file-preview-ov';
+  ov.tabIndex = -1;
+  ov.innerHTML = `<div class="file-preview" role="dialog" aria-label="${escAttr(name)}">
+      <div class="fp-head">
+        <span class="fp-name">${escHtml(name)}</span>
+        <a class="fp-dl" href="${escAttr(url)}" target="_blank" rel="noopener" download title="Open / download">${icon('download')}</a>
+        <button class="fp-close" aria-label="Close">✕</button>
+      </div>
+      ${isPdf
+      ? `<iframe class="fp-frame" src="${escAttr(url)}" title="${escAttr(name)}"></iframe>`
+      : `<div class="fp-noprev">${icon('attachment')}<p>No inline preview for this file type.</p><a class="textbtn" href="${escAttr(url)}" target="_blank" rel="noopener" download>Download “${escHtml(name)}”</a></div>`}
+    </div>`;
+  document.body.append(ov);
+  const close = () => ov.remove();
+  ov.addEventListener('mousedown', e => { if (e.target === ov) close(); });
+  ov.addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); close(); } });
+  ov.querySelector('.fp-close').addEventListener('click', close);
+  ov.focus();
 }
 
 function removeAttachment(id, url) {

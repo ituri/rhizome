@@ -1860,6 +1860,17 @@ time[datetime].today { color: oklch(0.5 0.14 150); background: oklch(0.55 0.14 1
 .att-chip:hover { background: var(--accent-soft); }
 .att-chip .att-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .att-remove { border: 0; background: none; color: var(--ink-faint); cursor: pointer; padding: 0 0 0 2px; }
+/* in-app file preview (PDFs embed inline) */
+.file-preview-ov { align-items: center; justify-content: center; }
+.file-preview { width: min(1000px, 94vw); height: min(88vh, 1200px); background: var(--bg-raised); border-radius: 14px; box-shadow: var(--shadow); display: flex; flex-direction: column; overflow: hidden; animation: pop-in 0.18s var(--ease-out); }
+.fp-head { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-bottom: 1px solid var(--line-soft); flex: none; }
+.fp-name { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1 1 auto; }
+.fp-dl { flex: none; color: var(--ink-soft); display: inline-flex; padding: 4px; border-radius: 8px; }
+.fp-dl:hover { background: var(--line-soft); color: var(--ink); }
+.fp-close { flex: none; border: 0; background: none; font-size: 18px; line-height: 1; cursor: pointer; color: var(--ink-faint); padding: 2px 4px; }
+.fp-frame { flex: 1 1 auto; width: 100%; border: 0; background: var(--bg-inset, #fff); }
+.fp-noprev { flex: 1 1 auto; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; color: var(--ink-faint); }
+.fp-noprev .ic-svg { width: 40px; height: 40px; }
 .att-remove:hover { color: oklch(0.55 0.18 28); }
 
 .embed { margin: 4px 0 8px 26px; }

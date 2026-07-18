@@ -27,6 +27,7 @@
     "test:mcp": "node tests/test-mcp.js",
     "test:security": "node tests/test-security.js",
     "test:quota": "node tests/test-quota.js",
+    "test:files": "node tests/test-files.js",
     "bench:curve": "node --expose-gc bench/curve.js",
     "bench:profile": "node bench/profile.js",
     "bench:load": "node bench/load.js"
