@@ -1542,12 +1542,9 @@ async function deleteGraph(g) {
 }
 
 // per-graph API keys the user manages (for the r capture command, scripts, agents)
-async function showApiKeys() {
-  const ov = document.createElement('div');
-  ov.className = 'overlay';
-  ov.innerHTML = `<div class="acct-dialog admin-panel" role="dialog" aria-label="API keys">
-    <h3>API keys</h3>
-    <p class="keys-note">Keys let scripts (like the <code>r</code> capture command) reach one graph. The full key is shown once — copy it now.</p>
+function renderApiKeys(ov) {
+  ov.innerHTML = `<div class="set-subpanel">
+    <p class="keys-note">Keys let scripts (like the <code>r</code> capture command) and the MCP server reach one graph. The full key is shown once — copy it now.</p>
     <div class="keys-list">Loading…</div>
     <div class="key-created" hidden></div>
     <div class="keys-new">
@@ -1557,14 +1554,8 @@ async function showApiKeys() {
       <button class="acct-save key-add">Create</button>
     </div>
     <p class="acct-error keys-error" hidden></p>
-    <div class="acct-actions"><button class="acct-cancel">Close</button></div>
   </div>`;
-  document.body.append(ov);
   const err = ov.querySelector('.keys-error');
-  const close = () => ov.remove();
-  ov.addEventListener('mousedown', e => { if (e.target === ov) close(); });
-  ov.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
-  ov.querySelector('.acct-cancel').addEventListener('click', close);
   const gsel = ov.querySelector('.key-graph');
   for (const g of state.graphs) { const o = document.createElement('option'); o.value = g.id; o.textContent = g.name; gsel.append(o); }
   gsel.value = state.graphId;
@@ -1607,21 +1598,12 @@ async function showApiKeys() {
 }
 
 // admin-only: list users with stats, delete users, view/rotate the invite code
-async function showAdminPanel() {
-  const ov = document.createElement('div');
-  ov.className = 'overlay';
-  ov.innerHTML = `<div class="acct-dialog admin-panel" role="dialog" aria-label="Admin panel">
-    <h3>Admin panel</h3>
+function renderAdminPanel(ov) {
+  ov.innerHTML = `<div class="set-subpanel admin-panel">
     <div class="admin-invite"></div>
     <div class="admin-users">Loading…</div>
     <div class="admin-security"></div>
-    <div class="acct-actions"><button class="acct-cancel">Close</button></div>
   </div>`;
-  document.body.append(ov);
-  const close = () => ov.remove();
-  ov.addEventListener('mousedown', e => { if (e.target === ov) close(); });
-  ov.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
-  ov.querySelector('.acct-cancel').addEventListener('click', close);
   const fmtBytes = b => b >= 1e6 ? (b / 1e6).toFixed(1) + ' MB' : b >= 1e3 ? Math.round(b / 1e3) + ' KB' : b + ' B';
   const fmtDate = t => t ? new Date(t).toLocaleString() : '—';
   const loadInvite = async () => {
@@ -1701,22 +1683,14 @@ async function showAdminPanel() {
   loadSecurity();
 }
 
-function showChangePassword() {
-  const ov = document.createElement('div');
-  ov.className = 'overlay';
-  ov.innerHTML = `<div class="acct-dialog" role="dialog" aria-label="Change password">
-    <h3>Change password</h3>
+function renderChangePassword(ov, done) {
+  ov.innerHTML = `<div class="set-subpanel acct-form">
     <input type="password" class="acct-current" placeholder="Current password" autocomplete="current-password">
     <input type="password" class="acct-new" placeholder="New password (min 6)" autocomplete="new-password">
     <p class="acct-error" hidden></p>
-    <div class="acct-actions"><button class="acct-cancel">Cancel</button><button class="acct-save">Change password</button></div>
+    <button class="acct-save set-action">Change password</button>
   </div>`;
-  document.body.append(ov);
   const err = ov.querySelector('.acct-error');
-  const close = () => ov.remove();
-  ov.addEventListener('mousedown', e => { if (e.target === ov) close(); });
-  ov.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
-  ov.querySelector('.acct-cancel').addEventListener('click', close);
   const submit = async () => {
     err.hidden = true;
     const current = ov.querySelector('.acct-current').value;
@@ -1724,12 +1698,12 @@ function showChangePassword() {
     const res = await fetch('/api/account/password', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ current, next }),
     });
-    if (res.ok) { close(); showToast('Password changed'); }
+    if (res.ok) { showToast('Password changed'); done && done(); }
     else { err.textContent = (await res.json()).error || 'Could not change password'; err.hidden = false; }
   };
   ov.querySelector('.acct-save').addEventListener('click', submit);
   ov.querySelector('.acct-new').addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
-  ov.querySelector('.acct-current').focus();
+  setTimeout(() => ov.querySelector('.acct-current').focus(), 0);
 }
 
 /* ---------------- K. trash ---------------- */
@@ -2515,7 +2489,11 @@ function showSettings(initialTab) {
   ov.className = 'overlay';
   ov.innerHTML = `<div class="settings-dialog" role="dialog" aria-label="Settings">
     <div class="settings-head">
-      <h2>Settings</h2>
+      <button class="iconbtn settings-back" aria-label="Back" hidden>${icon('arrow--left')}</button>
+      <h2 class="settings-title">Settings</h2>
+      <div class="settings-search-wrap">
+        <input class="settings-search" type="search" placeholder="Search settings…" aria-label="Search settings" autocomplete="off">
+      </div>
       <button class="iconbtn settings-close" aria-label="Close">×</button>
     </div>
     <div class="settings-main">
@@ -2526,9 +2504,19 @@ function showSettings(initialTab) {
   document.body.append(ov);
   const rail = ov.querySelector('.settings-rail');
   const body = ov.querySelector('.settings-body');
+  const backBtn = ov.querySelector('.settings-back');
+  const titleEl = ov.querySelector('.settings-title');
+  const searchEl = ov.querySelector('.settings-search');
   const close = () => ov.remove();
   ov.addEventListener('mousedown', e => { if (e.target === ov) close(); });
-  ov.addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); close(); } });
+  ov.addEventListener('keydown', e => {
+    if (e.key !== 'Escape') return;
+    e.preventDefault();
+    // Esc steps back out of a sub-view or clears a search before closing the dialog
+    if (!backBtn.hidden) { showTab(currentTab); }
+    else if (searchEl.value) { searchEl.value = ''; showTab(currentTab); }
+    else close();
+  });
   ov.querySelector('.settings-close').addEventListener('click', close);
 
   // building blocks, all appending into the current category's body
@@ -2599,9 +2587,9 @@ function showSettings(initialTab) {
   if (state.user && !SHARE_TOKEN) {
     addTab('Account', () => {
       let g = group('Signed in as ' + state.user.username);
-      action(g, 'Change password…', () => { close(); showChangePassword(); });
-      action(g, 'API keys…', () => { close(); showApiKeys(); });
-      if (state.user.isAdmin) action(g, 'Admin panel…', () => { close(); showAdminPanel(); });
+      action(g, 'Change password…', () => pushSub('Change password', host => renderChangePassword(host, () => showTab(currentTab))));
+      action(g, 'API keys…', () => pushSub('API keys', renderApiKeys));
+      if (state.user.isAdmin) action(g, 'Admin panel…', () => pushSub('Admin panel', renderAdminPanel));
       g = group('This device');
       const hint = document.createElement('div');
       hint.className = 'set-hint';
@@ -2616,19 +2604,81 @@ function showSettings(initialTab) {
     });
   }
 
-  const show = i => {
-    body.innerHTML = '';
-    tabs[i].render();
-    $$('button', rail).forEach((b, j) => b.classList.toggle('active', j === i));
-  };
-  tabs.forEach((t, i) => {
+  // ---- navigation: top-level category vs. an in-dialog sub-view (with a back arrow) ----
+  let currentTab = 0;
+  const railBtns = tabs.map((t, i) => {
     const b = document.createElement('button');
     b.className = 'settings-tab';
     b.textContent = t.name;
-    b.addEventListener('click', () => show(i));
+    b.addEventListener('click', () => { searchEl.value = ''; showTab(i); });
     rail.append(b);
+    return b;
   });
-  show(Math.max(0, tabs.findIndex(t => t.name === initialTab)));
+
+  function showTab(i) {
+    currentTab = i;
+    backBtn.hidden = true;
+    titleEl.textContent = 'Settings';
+    body.className = 'settings-body';
+    body.innerHTML = '';
+    tabs[i].render();
+    railBtns.forEach((b, j) => b.classList.toggle('active', j === i));
+  }
+  function pushSub(title, render) {
+    backBtn.hidden = false;
+    titleEl.textContent = title;
+    railBtns.forEach(b => b.classList.remove('active'));
+    body.className = 'settings-body in-sub';
+    body.innerHTML = '';
+    const host = document.createElement('div');
+    body.append(host);
+    render(host);
+  }
+  backBtn.addEventListener('click', () => showTab(currentTab));
+
+  // ---- search: harvest every setting/action label, then filter into a flat result list ----
+  const index = [];
+  tabs.forEach((t, i) => {
+    body.innerHTML = '';
+    tabs[i].render();
+    body.querySelectorAll('.set-label').forEach(l => index.push({ label: l.textContent, tab: i }));
+    body.querySelectorAll('.set-action').forEach(a => index.push({ label: a.textContent, tab: i }));
+  });
+  body.innerHTML = '';
+
+  const flash = label => {
+    const el = [...body.querySelectorAll('.set-label, .set-action')].find(x => x.textContent === label);
+    if (!el) return;
+    const row = el.closest('.set-row') || el;
+    row.classList.add('set-hit');
+    row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    setTimeout(() => row.classList.remove('set-hit'), 1600);
+  };
+  const runSearch = () => {
+    const q = searchEl.value.trim().toLowerCase();
+    if (!q) { showTab(currentTab); return; }
+    backBtn.hidden = true;
+    titleEl.textContent = 'Search';
+    railBtns.forEach(b => b.classList.remove('active'));
+    body.className = 'settings-body';
+    body.innerHTML = '';
+    const seen = new Set();
+    const hits = index.filter(e => e.label.toLowerCase().includes(q) && !seen.has(e.tab + '|' + e.label) && seen.add(e.tab + '|' + e.label));
+    if (!hits.length) { body.innerHTML = '<div class="ref-none">No matching settings.</div>'; return; }
+    const g = document.createElement('div');
+    g.className = 'set-group';
+    for (const e of hits) {
+      const b = document.createElement('button');
+      b.className = 'set-search-result';
+      b.innerHTML = `<span class="ssr-label">${escHtml(e.label)}</span><span class="ssr-tab">${escHtml(tabs[e.tab].name)}</span>`;
+      b.addEventListener('click', () => { searchEl.value = ''; showTab(e.tab); flash(e.label); });
+      g.append(b);
+    }
+    body.append(g);
+  };
+  searchEl.addEventListener('input', runSearch);
+
+  showTab(Math.max(0, tabs.findIndex(t => t.name === initialTab)));
 }
 window.showSettings = showSettings;
 

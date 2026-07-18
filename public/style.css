@@ -818,9 +818,31 @@ body.dragging-item .content, body.dragging-item .note { cursor: grabbing; }
   overflow: hidden;
   animation: pop-in 0.18s var(--ease-out);
 }
-.settings-head { display: flex; align-items: center; justify-content: space-between; padding: 15px 20px; border-bottom: 1px solid var(--line-soft); }
-.settings-head h2 { font-family: var(--serif); font-style: italic; font-weight: 500; font-size: 22px; margin: 0; }
-.settings-close { border: 0; background: none; font-size: 20px; line-height: 1; cursor: pointer; color: var(--ink-faint); padding: 0 4px; }
+.settings-head { display: flex; align-items: center; gap: 10px; padding: 12px 18px; border-bottom: 1px solid var(--line-soft); }
+.settings-head h2, .settings-title { font-family: var(--serif); font-style: italic; font-weight: 500; font-size: 22px; margin: 0; flex: none; }
+.settings-back { flex: none; border: 0; background: none; cursor: pointer; color: var(--ink-soft); padding: 2px 4px; display: inline-flex; align-items: center; border-radius: 8px; }
+.settings-back:hover { background: var(--line-soft); color: var(--ink); }
+.settings-back .ic-svg { width: 19px; height: 19px; }
+.settings-search-wrap { flex: 1 1 auto; display: flex; justify-content: flex-end; min-width: 0; }
+.settings-search { width: 100%; max-width: 230px; font: inherit; font-size: 13.5px; padding: 7px 12px; border: 1px solid var(--line); border-radius: 999px; background: none; color: var(--ink); }
+.settings-search:focus { border-color: var(--accent); outline: none; }
+.settings-close { flex: none; border: 0; background: none; font-size: 20px; line-height: 1; cursor: pointer; color: var(--ink-faint); padding: 0 4px; }
+/* in-dialog sub-view (API keys, admin, password) + settings search results */
+.settings-body.in-sub { padding-top: 16px; }
+.set-subpanel { display: flex; flex-direction: column; gap: 12px; }
+.set-subpanel .acct-error { color: oklch(0.55 0.18 28); font-size: 13px; margin: 0; }
+.acct-form input { display: block; width: 100%; font: inherit; padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px; background: none; color: var(--ink); }
+.acct-form input:focus { border-color: var(--accent); outline: none; }
+.set-subpanel .acct-save { width: auto; text-align: center; align-self: flex-start; }
+.set-search-result { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; border: 0; background: none; font: inherit; font-size: 14px; color: var(--ink); padding: 9px 10px; border-radius: 8px; cursor: pointer; text-align: left; }
+.set-search-result:hover { background: var(--line-soft); }
+.ssr-tab { flex: none; font-size: 12px; color: var(--ink-faint); }
+@keyframes setHit { 0% { background: var(--accent-soft); } 100% { background: transparent; } }
+.set-hit { animation: setHit 1.6s ease-out; border-radius: 8px; }
+@media (max-width: 560px) {
+  .settings-title { font-size: 18px; }
+  .settings-search { max-width: 150px; }
+}
 .settings-main { display: flex; min-height: 0; flex: 1 1 auto; }
 .settings-rail { flex: none; width: 148px; border-right: 1px solid var(--line-soft); padding: 10px; display: flex; flex-direction: column; gap: 2px; overflow-y: auto; }
 .settings-tab { border: 0; background: none; text-align: left; font: inherit; font-size: 14px; font-weight: 500; color: var(--ink-soft); padding: 8px 12px; border-radius: 8px; cursor: pointer; }
