@@ -509,6 +509,31 @@ window.editorInputHook = function editorInputHook(ctx) {
     return;
   }
 
+  // inline markdown: **bold** / *italic* / `code` → a styled inline run, on the closing marker.
+  // The result is ordinary editable inline HTML (not an atomic token), so the cursor can go into
+  // it and change it afterwards.
+  if (ctx.field === 'text' && fmtOf(ctx.id) !== 'codeblock' && !state.readOnly) {
+    const inlineRules = [['b', /\*\*([^*\n]+?)\*\*$/], ['code', /`([^`\n]+?)`$/], ['i', /(?<!\*)\*([^*\n]+?)\*$/]];
+    for (const [tag, re] of inlineRules) {
+      const im = before.match(re);
+      if (im && im[1].trim()) {
+        window.closeCaretPop();
+        const start = off - im[0].length;
+        snapshot();
+        selectPlainRange(ctx.el, start, off);
+        const sel = getSelection();
+        const rr = sel.getRangeAt(0);
+        rr.deleteContents();
+        const node = document.createElement(tag);
+        node.textContent = im[1];
+        insertInlineAtCaret(sel, rr, node);
+        scheduleCommit(ctx.el);
+        markDirty();
+        return;
+      }
+    }
+  }
+
   // [[ → internal-link autocomplete
   const lm = before.match(/\[\[([^\]\n]*)$/);
   if (lm && ctx.field === 'text' && fmtOf(ctx.id) !== 'codeblock') {
