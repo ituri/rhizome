@@ -1923,7 +1923,12 @@ function mountItem(id, underMatch = false) {
   }
   if (!mirror && mirrorCounts.has(id)) item.classList.add('mirrored'); // original of ≥1 mirror → diamond too
   if (cn.done) item.classList.add('done');
-  if (cn.files && cn.files.length) item.classList.add('has-files');
+  if (cn.files && cn.files.length) {
+    item.classList.add('has-files');
+    // a row whose attachments are all non-image chips needs a slightly different vertical pull
+    // than the image case, so the bullet dot lines up with the chip's centre
+    if (cn.files.every(f => !looksLikeImage(f.name || f.url))) item.classList.add('has-file-chip');
+  }
   if (kidsOf(cn.id).length) item.classList.add('has-children');
   if (!expanded) item.classList.add('collapsed');
   if (state.shares.some(s => s.id === id)) item.classList.add('shared-ring');

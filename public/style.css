@@ -472,6 +472,7 @@ button { font-family: inherit; }
 .item.has-files > .row:focus-within > .content { height: auto; min-height: 1.2em; padding: 3px 0; overflow: visible; opacity: 1; }
 .item.has-files:has(> .row:focus-within) > .attachments { display: none; }
 .item.has-files > .attachments { margin-top: -23px; }   /* sit the image beside the bullet dot */
+.item.has-file-chip > .attachments { margin-top: -26.5px; }   /* centre the bullet on a file chip (shorter than an image) */
 
 .item.done > .row .content {
   color: var(--done);
