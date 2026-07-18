@@ -1857,6 +1857,10 @@ time[datetime].today { color: oklch(0.5 0.14 150); background: oklch(0.55 0.14 1
   padding: 4px 10px;
   text-decoration: none;
   max-width: 280px;
+  /* the row (position:relative) overlaps the up-pulled chip and would swallow its clicks;
+     lift the chip above it so tapping the file name actually opens the preview */
+  position: relative;
+  z-index: 1;
 }
 .att-chip:hover { background: var(--accent-soft); }
 .att-chip .att-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -23,13 +23,19 @@ const PDF=Buffer.from('%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\n%%EOF');
   await p.setCookie({name:'rz_session',value:ck.split('=')[1],domain:'localhost',path:'/'});
   await p.goto(base+'/#/n/n1',{waitUntil:'domcontentloaded'}); await sleep(1500);
   ok(await p.$('.att-chip')!==null,'Nicht-Bild-Anhang rendert als Chip (nicht als Bild)');
-  const res=await p.evaluate(()=>{ document.querySelector('.att-name').click();
-    const ov=document.querySelector('.file-preview-ov');
-    return { overlay: !!ov, frame: ov ? (ov.querySelector('.fp-frame')||{}).getAttribute?.('src')||null : null }; });
-  ok(res.overlay,'Klick auf den Chip öffnet die In-App-Vorschau');
-  ok(res.frame && res.frame.includes('.pdf'),`PDF im iframe eingebettet (${res.frame})`);
-  const closed=await p.evaluate(()=>{ document.querySelector('.fp-close').click(); return !document.querySelector('.file-preview-ov'); });
-  ok(closed,'Schließen-Button entfernt die Vorschau');
+  // der Chip darf NICHT von der Row ueberlagert sein, sonst verschluckt sie den Klick
+  const hit=await p.evaluate(()=>{ const n=document.querySelector('.att-name'); const r=n.getBoundingClientRect();
+    const top=document.elementFromPoint(r.left+r.width/2, r.top+r.height/2); return !!top?.closest?.('.att-chip'); });
+  ok(hit,'die Chip-Klickflaeche liegt frei (wird nicht von der Row ueberlagert)');
+  const fileResps=[]; p.on('response',r=>{ if(r.url().includes('/files/')) fileResps.push(r.status()); });
+  await (await p.$('.att-name')).click();   // ECHTER Mausklick (kein synthetisches .click())
+  await sleep(500);
+  ok(await p.$('.file-preview-ov')!==null,'echter Klick auf den Chip oeffnet die In-App-Vorschau');
+  const frame=await p.$eval('.fp-frame',e=>e.getAttribute('src')).catch(()=>null);
+  ok(frame && frame.includes('.pdf'),`PDF im iframe eingebettet (${frame})`);
+  ok(fileResps.some(s=>s===200),`iframe laedt das PDF (Status ${fileResps.join(',')||'keiner'})`);
+  await (await p.$('.fp-close')).click(); await sleep(200);
+  ok(await p.$('.file-preview-ov')===null,'Schliessen-Button entfernt die Vorschau');
   console.log('PAGE ERRORS:',errs.length?errs:'keine'); if(errs.length)fail++;
   console.log(fail?`\n${fail} FEHLGESCHLAGEN`:'\nAlle PDF/File-Checks bestanden');
   await b.close(); srv.kill(); process.exit(fail?1:0);
