@@ -244,10 +244,10 @@ function onKey(key) {
   if (key.name === 'tab') { S.focus = S.focus === 'pages' ? 'outline' : 'pages'; return draw(); }
 
   if (S.focus === 'pages') {
-    if (key.name === 'down' || key.ch === 'j') S.pageSel = Math.min(S.pages.length - 1, S.pageSel + 1);
+    if (key.name === 'down' || key.ch === 'j') S.pageSel = Math.min(Math.max(0, S.pages.length - 1), S.pageSel + 1);
     else if (key.name === 'up' || key.ch === 'k') S.pageSel = Math.max(0, S.pageSel - 1);
     else if (key.ch === 'g' || key.name === 'home') S.pageSel = 0;
-    else if (key.ch === 'G' || key.name === 'end') S.pageSel = S.pages.length - 1;
+    else if (key.ch === 'G' || key.name === 'end') S.pageSel = Math.max(0, S.pages.length - 1);
     else if (key.name === 'enter' || key.ch === 'l' || key.name === 'right') { S.zoom = []; S.focus = 'outline'; }
     if (['down', 'up', 'home', 'end'].includes(key.name) || 'jkgG'.includes(key.ch || '·')) { S.zoom = []; S.sel = 0; S.scroll = 0; }
     buildRows();
@@ -256,9 +256,10 @@ function onKey(key) {
 
   // outline pane
   const cur = S.rows[S.sel];
-  if (key.name === 'down' || key.ch === 'j') S.sel = Math.min(S.rows.length - 1, S.sel + 1);
+  const last = Math.max(0, S.rows.length - 1);
+  if (key.name === 'down' || key.ch === 'j') S.sel = Math.min(last, S.sel + 1);
   else if (key.name === 'up' || key.ch === 'k') S.sel = Math.max(0, S.sel - 1);
-  else if (key.name === 'pgdn') S.sel = Math.min(S.rows.length - 1, S.sel + contentHeight());
+  else if (key.name === 'pgdn') S.sel = Math.min(last, S.sel + contentHeight());
   else if (key.name === 'pgup') S.sel = Math.max(0, S.sel - contentHeight());
   else if (key.ch === 'g' || key.name === 'home') S.sel = 0;
   else if (key.ch === 'G' || key.name === 'end') S.sel = Math.max(0, S.rows.length - 1);
@@ -397,6 +398,15 @@ function drawResults(W, H) {
 function quit() {
   out.write('\x1b[?25h\x1b[?1049l');
   process.exit(0);
+}
+
+// leave the terminal usable if we crash: restore main screen + cursor first
+for (const ev of ['uncaughtException', 'unhandledRejection']) {
+  process.on(ev, e => {
+    out.write('\x1b[?25h\x1b[?1049l');
+    console.error('rz-tui crashed:', e);
+    process.exit(1);
+  });
 }
 
 async function main() {
