@@ -481,7 +481,7 @@ function calRootInDoc(doc) {
   if (id && doc.nodes[id] && doc.nodes[id].cal === 'root') return id;
   id = Object.keys(doc.nodes).find(k => doc.nodes[k].cal === 'root');
   if (id) { doc.meta.calendar = id; return id; }
-  id = addChild(doc, doc.root, makeNode('📅 Calendar', { cal: 'root' }));
+  id = addChild(doc, doc.root, makeNode('Calendar', { cal: 'root' }));
   doc.meta.calendar = id;
   return id;
 }

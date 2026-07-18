@@ -1355,7 +1355,7 @@ function calRoot(create) {
   id = Object.keys(doc.nodes).find(k => N(k).cal === 'root');
   if (id) { meta().calendar = id; return id; }
   if (!create) return null;
-  const cid = makeNode('📅 Calendar', { cal: 'root' });
+  const cid = makeNode('Calendar', { cal: 'root' });
   insertAt(ROOT, kidsOf(ROOT).length, cid);
   meta().calendar = cid;
   return cid;
