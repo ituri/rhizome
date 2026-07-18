@@ -811,6 +811,178 @@ async function handleV1(req, res, url, g) {
   return send(res, 404, { error: 'not found' });
 }
 
+/* ---------- MCP server (Model Context Protocol, JSON-RPC 2.0 over Streamable HTTP) ----------
+   Hosted at POST /mcp. Lets an MCP client (Claude Desktop/Code, claude.ai connectors) read and
+   edit one graph. Auth: an API key (Authorization: Bearer rzk_…) whose scope gates the write
+   tools; the agent token or an open instance also work (→ default graph, write). Implemented
+   natively — no SDK — so the core server stays zero-dependency. Stateless: no Mcp-Session-Id. */
+
+const MCP_PROTOCOL = '2025-06-18';
+const MCP_SERVER = { name: 'rhizome', version: require('./package.json').version };
+const MCP_WRITE_TOOLS = new Set(['create_node', 'update_node', 'move_node', 'delete_node', 'capture']);
+
+const MCP_TOOLS = [
+  { name: 'search', description: 'Full-text search the graph. Returns matching nodes with their id, plain text, breadcrumb path and done state.',
+    inputSchema: { type: 'object', properties: { query: { type: 'string', description: 'space-separated terms (AND)' }, limit: { type: 'integer', description: 'max results (default 50, max 200)' } }, required: ['query'] } },
+  { name: 'list_pages', description: 'List the top-level pages (direct children of the root). Start here to discover the graph.',
+    inputSchema: { type: 'object', properties: {} } },
+  { name: 'get_node', description: 'Read a single node by id. With tree=true, returns the whole subtree (optionally limited by depth).',
+    inputSchema: { type: 'object', properties: { id: { type: 'string' }, tree: { type: 'boolean', description: 'include descendants' }, depth: { type: 'integer', description: 'subtree depth limit when tree=true' } }, required: ['id'] } },
+  { name: 'create_node', description: 'Create a node under a parent (default root). Text is inline HTML-ish markup; [[Page]] links and #tags work. Returns the new node.',
+    inputSchema: { type: 'object', properties: { parent: { type: 'string', description: "parent node id (default 'root')" }, text: { type: 'string' }, note: { type: 'string' }, done: { type: 'boolean' }, format: { type: 'string', description: 'bullet | todo | h1 | h2 | h3 | quote | codeblock | number | board' }, index: { type: 'integer', description: 'position among siblings (default end)' } }, required: ['text'] } },
+  { name: 'update_node', description: 'Edit a node in place: change its text, note, done state, format or collapsed flag. Only the fields you pass are changed.',
+    inputSchema: { type: 'object', properties: { id: { type: 'string' }, text: { type: 'string' }, note: { type: 'string' }, done: { type: 'boolean' }, format: { type: 'string' }, collapsed: { type: 'boolean' } }, required: ['id'] } },
+  { name: 'move_node', description: 'Move a node (and its subtree) under a new parent, optionally at a given index.',
+    inputSchema: { type: 'object', properties: { id: { type: 'string' }, parent: { type: 'string' }, index: { type: 'integer' } }, required: ['id', 'parent'] } },
+  { name: 'delete_node', description: 'Delete a node and its subtree. Returns how many nodes were removed.',
+    inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } },
+  { name: 'capture', description: "Quick-capture text into today's journal under an Inbox bullet (indentation nests). Handy for jotting without picking a location.",
+    inputSchema: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] } },
+];
+
+function mcpResult(id, result) { return { jsonrpc: '2.0', id, result }; }
+function mcpErr(id, code, message) { return { jsonrpc: '2.0', id: id ?? null, error: { code, message } }; }
+
+async function handleMcp(req, res, url) {
+  const cors = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Authorization, Content-Type, Mcp-Session-Id, MCP-Protocol-Version',
+    'Access-Control-Max-Age': '86400',
+  };
+  if (req.method === 'OPTIONS') { res.writeHead(204, cors); return res.end(); }
+  if (req.method !== 'POST') return send(res, 405, { error: 'method not allowed — POST JSON-RPC to /mcp' }, cors);
+
+  // Resolve the target graph + write scope from the credential.
+  const key = apiKeyFor(req, url);
+  let g = null, scope = 'read';
+  if (key) { g = getGraph(key.graphId); scope = key.scope; }
+  else if (AGENT_TOKEN && timingSafeEq(reqToken(req, url), AGENT_TOKEN)) { g = getGraph(defaultGraphId()); scope = 'write'; }
+  else if (accounts.userCount() === 0) { g = getGraph(defaultGraphId()); scope = 'write'; } // fresh/open instance
+  if (!g) return send(res, 401, { error: 'unauthorized — send Authorization: Bearer <rzk_… API key>' }, { ...cors, 'WWW-Authenticate': 'Bearer' });
+
+  let msg;
+  try { msg = await readJson(req); }
+  catch { return send(res, 400, mcpErr(null, -32700, 'parse error'), cors); }
+
+  if (Array.isArray(msg)) {
+    const out = [];
+    for (const m of msg) { const r = await mcpDispatch(m, g, scope); if (r) out.push(r); }
+    if (!out.length) { res.writeHead(202, cors); return res.end(); }
+    return send(res, 200, out, cors);
+  }
+  const resp = await mcpDispatch(msg, g, scope);
+  if (!resp) { res.writeHead(202, cors); return res.end(); } // a notification → no body
+  return send(res, 200, resp, cors);
+}
+
+async function mcpDispatch(m, g, scope) {
+  if (!m || m.jsonrpc !== '2.0' || typeof m.method !== 'string') return mcpErr(m && m.id, -32600, 'invalid request');
+  const { id, method, params } = m;
+  const isNotification = id === undefined || id === null;
+  switch (method) {
+    case 'initialize':
+      return mcpResult(id, {
+        protocolVersion: (params && typeof params.protocolVersion === 'string') ? params.protocolVersion : MCP_PROTOCOL,
+        capabilities: { tools: { listChanged: false } },
+        serverInfo: MCP_SERVER,
+        instructions: 'Rhizome is a page-based outliner. Call list_pages to discover pages, search to find nodes, get_node (tree=true) to read a subtree, then the write tools to edit. Node ids are opaque strings; the tree lives in each node\'s children array.',
+      });
+    case 'ping': return mcpResult(id, {});
+    case 'tools/list': return mcpResult(id, { tools: MCP_TOOLS });
+    case 'resources/list': return mcpResult(id, { resources: [] });
+    case 'prompts/list': return mcpResult(id, { prompts: [] });
+    case 'tools/call': return await mcpCallTool(id, params || {}, g, scope);
+    default:
+      if (isNotification) return null; // notifications/initialized, notifications/cancelled, …
+      return mcpErr(id, -32601, 'method not found: ' + method);
+  }
+}
+
+async function mcpCallTool(id, params, g, scope) {
+  const name = params.name;
+  const args = params.arguments || {};
+  const doc = ensureDoc(g);
+  const ok = obj => mcpResult(id, { content: [{ type: 'text', text: typeof obj === 'string' ? obj : JSON.stringify(obj, null, 2) }] });
+  const fail = message => mcpResult(id, { content: [{ type: 'text', text: 'Error: ' + message }], isError: true });
+  if (MCP_WRITE_TOOLS.has(name) && scope !== 'write') return fail('this API key is read-only; create a write-scoped key to use ' + name);
+  try {
+    switch (name) {
+      case 'search': {
+        const q = String(args.query || '');
+        return ok({ results: q.trim() ? apiSearch(doc, q, Math.min(parseInt(args.limit, 10) || 50, 200)) : [] });
+      }
+      case 'list_pages': {
+        const root = doc.root || 'root';
+        const pages = (doc.nodes[root].children || []).map(cid => {
+          const v = nodeView(doc, cid);
+          return { id: v.id, title: v.plain || 'Untitled', format: v.format, children: v.children.length };
+        });
+        return ok({ pages });
+      }
+      case 'get_node': {
+        const nid = String(args.id || '');
+        if (!doc.nodes[nid]) return fail('node not found: ' + nid);
+        return ok(args.tree ? nodeTree(doc, nid, args.depth != null ? parseInt(args.depth, 10) : undefined) : nodeView(doc, nid));
+      }
+      case 'create_node': {
+        const parent = String(args.parent || 'root');
+        if (!doc.nodes[parent]) return fail('unknown parent: ' + parent);
+        const now = Date.now();
+        const node = { id: uid(), text: sanitizeServerHtml(String(args.text || '')), note: args.note != null ? String(args.note) : null, done: !!args.done, collapsed: false, children: [], c: now, m: now };
+        if (args.format) node.format = String(args.format);
+        doc.nodes[node.id] = node;
+        nodeInsert(doc, parent, args.index, node.id);
+        commitDoc(g, doc, 'mcp');
+        return ok(nodeView(doc, node.id));
+      }
+      case 'update_node': {
+        const nid = String(args.id || '');
+        if (!doc.nodes[nid]) return fail('node not found: ' + nid);
+        const n = doc.nodes[contentIdInDoc(doc, nid)]; // content writes hit the owner (mirror-safe)
+        if ('text' in args) n.text = sanitizeServerHtml(String(args.text));
+        if ('note' in args) n.note = args.note == null ? null : String(args.note);
+        if ('done' in args) n.done = !!args.done;
+        if ('format' in args) { if (args.format) n.format = String(args.format); else delete n.format; }
+        if ('collapsed' in args) doc.nodes[nid].collapsed = !!args.collapsed;
+        n.m = Date.now();
+        commitDoc(g, doc, 'mcp');
+        return ok(nodeView(doc, nid));
+      }
+      case 'move_node': {
+        const nid = String(args.id || '');
+        if (!doc.nodes[nid]) return fail('node not found: ' + nid);
+        const target = String(args.parent || 'root');
+        if (!doc.nodes[target]) return fail('unknown target parent: ' + target);
+        if (target === nid || subtreeIds(doc, nid).includes(target)) return fail('cannot move a node into itself or its own subtree');
+        nodeDetach(doc, nid);
+        nodeInsert(doc, target, args.index, nid);
+        doc.nodes[nid].m = Date.now();
+        commitDoc(g, doc, 'mcp');
+        return ok(nodeView(doc, nid));
+      }
+      case 'delete_node': {
+        const nid = String(args.id || '');
+        if (nid === 'root' || nid === doc.root) return fail('cannot delete the root');
+        if (!doc.nodes[nid]) return fail('node not found: ' + nid);
+        promoteDoomedInDoc(doc, nid); // mirrors of anything inside survive (client parity)
+        const count = nodeDelete(doc, nid);
+        commitDoc(g, doc, 'mcp');
+        return ok({ deleted: count });
+      }
+      case 'capture': {
+        const text = String(args.text || '');
+        if (!text.trim()) return fail('nothing to capture');
+        return ok({ captured: captureText(g, text, 'mcp') });
+      }
+      default:
+        return fail('unknown tool: ' + name);
+    }
+  } catch (e) {
+    return fail(e && e.message ? e.message : String(e));
+  }
+}
+
 /* ---------- helpers ---------- */
 
 function send(res, status, body, headers = {}) {
@@ -1125,6 +1297,9 @@ const server = http.createServer(async (req, res) => {
   const url = req.url || '/';
 
   try {
+    /* ---- MCP server (JSON-RPC over HTTP): a key/agent-token client reads + edits its graph ---- */
+    if (url.split('?')[0] === '/mcp') return await handleMcp(req, res, url);
+
     /* ---- per-node REST API (agent token or session cookie) — targets the admin's graph ---- */
     if (url.startsWith('/api/v1')) return await handleV1(req, res, url, getGraph(defaultGraphId()));
 
@@ -1717,5 +1892,6 @@ server.listen(PORT, HOST, () => {
   const users = accounts.userCount();
   console.log(users ? `Accounts: ${users} user(s), login required${TOTP_SECRET ? ' + TOTP MFA' : ''}${INVITE_CODE ? ', registration by invite code' : ''}` : 'Accounts: none yet — open access (set RHIZOME_ADMIN_PASSWORD to lock down)');
   if (AGENT_TOKEN) console.log('Node API: /api/v1 (agent token enabled)');
+  console.log('MCP server: POST /mcp (auth with a write/read-scoped API key)');
   if (AI_KEY) console.log(`Ask AI: enabled (${AI_MODEL})`);
 });

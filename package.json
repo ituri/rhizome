@@ -24,6 +24,7 @@
     "test:pages": "node tests/test-pages.js",
     "test:daily": "node tests/test-daily.js",
     "test:refs": "node tests/test-refs.js",
+    "test:mcp": "node tests/test-mcp.js",
     "bench:curve": "node --expose-gc bench/curve.js",
     "bench:profile": "node bench/profile.js",
     "bench:load": "node bench/load.js"

@@ -105,7 +105,7 @@ Status as of 2026-07-13. ✅ implemented (covered by the e2e suites in [`tests/`
 | **API & AI** | Per-node REST API (`/api/v1`) | ✅ | CRUD, move, complete, search, tree; SSE-visible writes |
 | | Self-describing endpoint index (`GET /api/v1`) | ✅ | |
 | | OpenAPI spec + Swagger-style docs page | ❌ | Discussed; decided to keep as-is for now |
-| | MCP server | ❌ | Declined — REST API is sufficient |
+| | MCP server (`/mcp`) | ✅ | Hosted JSON-RPC/Streamable-HTTP; read+write tools, per-graph API-key auth; native (zero-dep) |
 | | ✨ Ask AI (Anthropic key, server proxy) | ✅ | Free-form prompt + canned actions (Summarize, Find tasks, Draft outline, Fix grammar, Make shorter); results insert as sub-items |
 | **Out of scope** (Workflowy parity) | Tables, Side Pane, Dashboard (Workflowy Labs) | ❌ | Sizable features; Dashboard abandoned upstream |
 | | Daily email summaries / mention emails | ❌ | Needs SMTP; contradicts zero-dependency |

@@ -120,6 +120,44 @@ Enabled when `RHIZOME_AGENT_TOKEN` is set. Auth: `Authorization: Bearer <token>`
 `POST /api/v1/nodes/:id/complete {done}`, `POST /api/v1/nodes/:id/move {parent,index}`,
 `DELETE /api/v1/nodes/:id`.
 
+## MCP server `/mcp` (Model Context Protocol)
+
+A hosted [MCP](https://modelcontextprotocol.io) endpoint so an MCP client (Claude Desktop,
+Claude Code, claude.ai connectors) can read **and** edit one graph. JSON-RPC 2.0 over the
+Streamable-HTTP transport, implemented natively (no SDK — the core server stays zero-dependency).
+
+- **Endpoint:** `POST /mcp` (a single JSON-RPC request or a batch array). Stateless — no
+  `Mcp-Session-Id`. `GET`/SSE is not offered (no server-initiated messages); `OPTIONS` is
+  answered for CORS.
+- **Auth:** `Authorization: Bearer rzk_…` — a per-graph API key (Account → API keys). The key's
+  scope gates writes: a `read` key may only call the read tools; a `write` key may call all of
+  them. The instance agent token (`RHIZOME_AGENT_TOKEN`) and a fresh open instance also work
+  (→ the default graph, write scope). No/invalid credential → **401**.
+- **Methods:** `initialize`, `ping`, `tools/list`, `tools/call`, empty `resources/list` /
+  `prompts/list`; notifications (`notifications/initialized`, …) get `202` with no body.
+
+**Tools** (all operate on the key's graph):
+
+| Tool | Scope | Arguments | Does |
+|---|---|---|---|
+| `search` | read | `{query, limit?}` | full-text search → `{id, plain, path, done}[]` |
+| `list_pages` | read | — | top-level pages (children of root) |
+| `get_node` | read | `{id, tree?, depth?}` | one node, or its subtree with `tree:true` |
+| `create_node` | write | `{parent?, text, note?, done?, format?, index?}` | create a node (text is inline HTML-ish; `[[Page]]`/`#tag` work) |
+| `update_node` | write | `{id, text?, note?, done?, format?, collapsed?}` | edit in place (only the fields you pass) |
+| `move_node` | write | `{id, parent, index?}` | reparent a node + its subtree |
+| `delete_node` | write | `{id}` | delete a node + subtree → `{deleted}` |
+| `capture` | write | `{text}` | quick-capture into today's journal Inbox |
+
+Tool failures (unknown node, read-only key, move into own subtree) come back as a normal
+`tools/call` result with `isError:true` and a text message, not a transport error.
+
+Connect from Claude Code:
+```sh
+claude mcp add --transport http rhizome https://rhizome.syslinx.org/mcp \
+  --header "Authorization: Bearer rzk_…"
+```
+
 ## Server environment (ops)
 
 `PORT`, `HOST`, `DATA_DIR`, `RHIZOME_ADMIN_USER` (default `phil`), `RHIZOME_ADMIN_PASSWORD`
