@@ -2658,6 +2658,7 @@ function showSettings(initialTab) {
     g = group('Display');
     bool(g, 'Show completed items', () => !!settings.showCompleted, v => { settings.showCompleted = v; renderPage(); });
     bool(g, 'Smooth animations', () => settings.animations !== false, v => { settings.animations = v; applyTheme(); });
+    bool(g, 'Live hover preview', () => settings.hoverPreview !== false, v => { settings.hoverPreview = v; if (!v) window.__closeHoverPreview?.(); });
   });
 
   addTab('Editing', () => {

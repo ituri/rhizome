@@ -2495,3 +2495,31 @@ body.rightbar-open .rightbar {
 .query-block { margin: 4px 0 10px; padding: 6px 10px; border-left: 2px solid var(--accent); background: var(--bg-soft, rgba(127,127,127,.06)); border-radius: 4px; }
 .query-head { font-size: 12px; font-weight: 600; color: var(--ink-faint); margin-bottom: 4px; }
 .query-block .ref-group { margin: 6px 0 8px; }
+
+/* Live hover preview (preview.js) — a floating, editable transclusion of a link/ref target */
+.hover-preview {
+  position: fixed;
+  z-index: 90;
+  width: min(440px, calc(100vw - 16px));
+  max-height: min(52vh, 460px);
+  overflow: auto;
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  padding: 4px 10px 8px;
+  animation: hp-fade 0.12s var(--ease-out, ease-out);
+}
+@keyframes hp-fade { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
+.hp-head {
+  position: sticky; top: 0;
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 0 6px; margin-bottom: 2px;
+  background: var(--bg-raised);
+  border-bottom: 1px solid var(--line-soft, var(--line));
+}
+.hp-title { font-size: 12px; font-weight: 600; color: var(--ink-faint); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hp-open { font-size: 13px; line-height: 1; padding: 2px 6px; border: none; background: none; color: var(--accent); cursor: pointer; border-radius: 5px; }
+.hp-open:hover { background: var(--accent-soft, rgba(127,127,127,.12)); }
+.hp-body.tree { position: relative; font-size: 0.95em; }
+.hp-body .item > .row .bullet { cursor: default; }

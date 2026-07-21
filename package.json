@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node server.js",
     "tui": "node tui.js",
-    "lint": "eslint server.js tui.js db.js ops.js opsdoc.js cryptobox.js public/icons.js public/app.js public/app2.js public/pages.js bench",
+    "lint": "eslint server.js tui.js db.js ops.js opsdoc.js cryptobox.js public/icons.js public/app.js public/app2.js public/pages.js public/preview.js bench",
     "typecheck": "tsc --noEmit",
     "test:db": "node tests/test-db.js",
     "test:converge": "node tests/test-converge.js",
@@ -33,6 +33,7 @@
     "test:markdown": "node tests/test-markdown.js",
     "test:markdown-fmt": "node tests/test-markdown-fmt.js",
     "test:web-reveal": "node tests/test-web-reveal.js",
+    "test:hoverpreview": "node tests/test-hover-preview.js",
     "test:web-split": "node tests/test-web-split.js",
     "test:geomerge": "node tests/test-geo-merge.js",
     "test:georaw": "node tests/test-geo-raw.js",

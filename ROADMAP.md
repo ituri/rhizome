@@ -21,7 +21,7 @@ Status: ⬜ geplant · 🚧 in Arbeit · ✅ umgesetzt · ❌ verworfen
 |---|---|---|---|
 | ⬜ | **Spaced Repetition / Flashcards** | `{{card}}`-Marker, SM-2-Intervalle als Block-Attribute, Review-Ansicht (`#/review`) | Höchster Hebel: meistgefeiertes Roam-Feature, fehlt komplett, 100 % lokal/zero-dep |
 | ⬜ | **Query Builder mit Ergebnis-Views** | Visuelles Query-Bauen + Tabellen-/Kanban-/Kalender-Rendering der Treffer | Baut auf vorhandener `{{query}}`-Engine auf |
-| ⬜ | **Live Hover-Preview** | Editierbare Vorschau über `[[links]]` / `((refs))` beim Hover | Kleiner Aufwand, großer Power-User-Feel (vgl. Roam42) |
+| ✅ | **Live Hover-Preview** | Editierbare Vorschau über `[[links]]` / `((refs))` beim Hover | Umgesetzt 2026-07-21 (`public/preview.js`): editierbare Transklusion des Ziels, synct über den Op-Pfad; nur bei echtem Pointer (hover), abschaltbar |
 | ⬜ | **Globale Command Palette** | Fuzzy-Zugriff auf alle Aktionen (Ctrl+P) | Ergänzt Slash-Menü + Ctrl+K |
 
 ## Phase 2 — Zeit & Struktur
