@@ -185,13 +185,15 @@ window.renderGeo = function renderGeo() {
       }).catch(() => { el.hidden = true; });
     }
   }
-  if (coords && parseCoords(plainOf(N(state.zoom).text)) && !geocoding.has(state.zoom)) {
+  // auto-geocode a still-raw coordinate title — unless the page is flagged geo:"raw"
+  // (the user tagged it coordinates-only, e.g. via the iOS location button's long-press)
+  if (coords && N(state.zoom).geo !== 'raw' && parseCoords(plainOf(N(state.zoom).text)) && !geocoding.has(state.zoom)) {
     geocodeAndRetitle(state.zoom, coords);
   }
 };
 
 async function geocodeAndRetitle(pageId, coords) {
-  if (state.readOnly) return;
+  if (state.readOnly || N(pageId)?.geo === 'raw') return;   // coordinates-only page → never retitle
   geocoding.add(pageId);
   try {
     const r = await fetch(`/api/geocode?lat=${coords.lat}&lon=${coords.lon}`);

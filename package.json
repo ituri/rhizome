@@ -34,6 +34,7 @@
     "test:web-reveal": "node tests/test-web-reveal.js",
     "test:web-split": "node tests/test-web-split.js",
     "test:geomerge": "node tests/test-geo-merge.js",
+    "test:georaw": "node tests/test-geo-raw.js",
     "bench:curve": "node --expose-gc bench/curve.js",
     "bench:profile": "node bench/profile.js",
     "bench:load": "node bench/load.js"

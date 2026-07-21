@@ -3,7 +3,7 @@
    on return); the network refreshes the cache in the background. */
 'use strict';
 
-const CACHE = 'rhizome-shell-v8';
+const CACHE = 'rhizome-shell-v9';
 const SHELL = ['/', '/index.html', '/style.css', '/app.js', '/app2.js', '/pages.js', '/serialize-worker.js',
   '/manifest.webmanifest', '/icon.svg', '/icon-192.png', '/icon-512.png', '/apple-touch-icon.png'];
 

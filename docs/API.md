@@ -71,7 +71,7 @@ as `deviceName` in the `ops`/`doc` bodies (a page also counts a journal day as i
 
 Access is denied with **403** for a non-member (or a key bound to another graph), **401** when unauthenticated.
 
-**Data model:** one flat node map. `doc.nodes[id] = {id, text, note, done, collapsed, children:[ids], format?, mirror?, c, m, …}`; the tree is the `children` id-arrays; `doc.root` is the root id. Pages are children of root; the calendar subtree (`cal:'day'` nodes with `cd:'YYYY-MM-DD'`) holds daily notes.
+**Data model:** one flat node map. `doc.nodes[id] = {id, text, note, done, collapsed, children:[ids], format?, mirror?, geo?, c, m, …}`; the tree is the `children` id-arrays; `doc.root` is the root id. Pages are children of root; the calendar subtree (`cal:'day'` nodes with `cd:'YYYY-MM-DD'`) holds daily notes. A location page may carry `geo:"raw"` — the user tagged it coordinates-only, so clients must not reverse-geocode/retitle it.
 
 ## Files, capture, AI (session required unless noted)
 
