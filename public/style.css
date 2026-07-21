@@ -891,6 +891,7 @@ body.dragging-item .content, body.dragging-item .note { cursor: grabbing; }
   animation: pop-in 0.18s var(--ease-out);
 }
 #jump-input,
+#cmd-input,
 .np-input {
   width: 100%;
   border: 0;
