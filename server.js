@@ -724,6 +724,7 @@ async function handleV1(req, res, url, g, scope) {
         'GET    /api/v1/version',
         'GET    /api/v1/events              (SSE: {version} on connect + on every change)',
         'POST   /api/v1/capture             {text} or raw text → today\'s journal Inbox',
+        'GET    /api/v1/journal/today        find-or-create today\'s journal day node (+ its children)',
         'GET    /api/v1/search?q=&limit=',
         'GET    /api/v1/nodes/:id            (?tree=1&depth=N for the subtree)',
         'GET    /api/v1/nodes/:id/children',
@@ -752,6 +753,13 @@ async function handleV1(req, res, url, g, scope) {
     let text = raw, deviceName = u.searchParams.get('deviceName') || '';
     try { const j = JSON.parse(raw); if (typeof j.text === 'string') text = j.text; if (typeof j.deviceName === 'string') deviceName = j.deviceName; } catch { /* plain text body */ }
     return send(res, 200, { ok: true, captured: captureText(g, text, deviceName) });
+  }
+  if (path === '/api/v1/journal/today' && method === 'GET') {   // find-or-create today's day node
+    if (scope !== 'write') return send(res, 403, { error: 'a write-scoped key is required (this may create the day node)' });
+    const before = Object.keys(doc.nodes).length;
+    const dayId = ensureDayInDoc(doc, todayIso());
+    if (Object.keys(doc.nodes).length !== before) commitDoc(g, doc);
+    return send(res, 200, nodeTree(doc, dayId, 1));   // the day + its children (with plain text)
   }
   if (path === '/api/v1/search' && method === 'GET') {
     const q = u.searchParams.get('q') || '';
