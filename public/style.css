@@ -2523,3 +2523,11 @@ body.rightbar-open .rightbar {
 .hp-open:hover { background: var(--accent-soft, rgba(127,127,127,.12)); }
 .hp-body.tree { position: relative; font-size: 0.95em; }
 .hp-body .item > .row .bullet { cursor: default; }
+
+/* Command palette (palette.js) — reuses the .overlay/.jump/.jump-row shell */
+.cmd-group { padding: 8px 14px 3px; font-size: 10.5px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-faint); }
+.cmd-row .cmd-hint {
+  flex: none; font-size: 11px; color: var(--ink-faint);
+  border: 1px solid var(--line-soft, var(--line)); border-radius: 5px;
+  padding: 1px 6px; white-space: nowrap; letter-spacing: 0.02em;
+}
