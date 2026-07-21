@@ -38,7 +38,7 @@ Status: ⬜ geplant · 🚧 in Arbeit · ✅ umgesetzt · ❌ verworfen
 |---|---|---|---|
 | ⬜ | **Graph-View** | Zero-dep SVG/Canvas-Force-Layout aus dem Backlink-Graphen | Roams ikonisches Feature, hoher „Wow"-Wert |
 | ⬜ | **PDF-Highlights → Blocks** | PDF-Viewer, Markierungen werden zu verlinkten Blocks | Researcher-Workflow, client-seitig aufwändig |
-| ⬜ | **Web-Clipper** | Browser-Extension, die in die Capture-API schreibt | Ergänzt vorhandene Capture-API |
+| ✅ | **Web-Clipper** | Firefox-Extension, clippt die Seite als Link unter einen frei wählbaren Node | Umgesetzt 2026-07-21 (eigenes Repo `~/dev/rhizome-clipper`): MV3, schreibt über `/api/v1` (rzk-Key), Ziel-Node + Server frei konfigurierbar |
 | ⬜ | **LaTeX / Math-Rendering** | `$$…$$` rendern | Nur wenn eine gekapselte Client-Lib akzeptiert wird (Bruch mit zero-dep → bewusste Entscheidung) |
 | ⬜ | **Mermaid / Diagramme** | Diagramm-Blocks | Wie LaTeX: Dependency-Abwägung nötig |
 
