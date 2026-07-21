@@ -3056,7 +3056,7 @@ function onKeydown(e) {
     showJump();
     return;
   }
-  if (mod && e.shiftKey && (e.key === 'p' || e.key === 'P')) { e.preventDefault(); window.openCommandPalette?.(); return; }
+  if (e.altKey && e.shiftKey && (e.key === 'p' || e.key === 'P' || e.code === 'KeyP')) { e.preventDefault(); window.openCommandPalette?.(); return; }
   if (mod && (e.key === '/' || e.key === '?')) { e.preventDefault(); showHelp(); return; }
   if (mod && e.key === "'") { e.preventDefault(); if (SHARE_TOKEN) zoomTo(HOME); else location.hash = '#/'; return; } // rhizome: home = daily notes
   if (mod && !e.shiftKey && (e.key === 'o' || e.key === 'O')) {
@@ -4290,7 +4290,7 @@ const HELP = [
     ['Daily Notes', "Ctrl+'"],
     ['Expand / collapse', 'Ctrl+↓ / Ctrl+↑'],
     ['Find or create a page', 'Ctrl+K'],
-    ['Command palette', 'Ctrl+Shift+P'],
+    ['Command palette', 'Alt+Shift+P'],
     ['Star this page', 'Ctrl+Shift+8'],
     ['Show / hide completed', 'Ctrl+O'],
   ]],

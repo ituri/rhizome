@@ -1,4 +1,4 @@
-/* Global command palette (Ctrl+Shift+P) — fuzzy access to every app-level action.
+/* Global command palette (Alt+Shift+P) — fuzzy access to every app-level action.
  * Complements the '/' slash menu (block actions) and Ctrl+K (jump to a page/block).
  * Uses globals from app.js (state, settings, zoomTo, showSettings, …) like pages.js. */
 (function () {

@@ -1,4 +1,4 @@
-// Global command palette: Ctrl+Shift+P opens it, fuzzy-filters commands, and Enter runs one.
+// Global command palette: Alt+Shift+P opens it, fuzzy-filters commands, and Enter runs one.
 const { spawn } = require('child_process');
 const os = require('os'), fs = require('fs'), path = require('path');
 const puppeteer = require('/home/phil/dev/rhizome/tests/node_modules/puppeteer-core');
@@ -23,12 +23,12 @@ const cookieFrom = sc => { const m = (sc || '').match(/rz_session=([^;]+)/); ret
   await p.setCookie({ name: 'rz_session', value: ck.split('=')[1], domain: 'localhost', path: '/' });
   await p.goto(base + '/#/', { waitUntil: 'domcontentloaded' }); await sleep(1500);
 
-  // Ctrl+Shift+P opens the palette
-  await p.keyboard.down('Control'); await p.keyboard.down('Shift');
+  // Alt+Shift+P opens the palette
+  await p.keyboard.down('Alt'); await p.keyboard.down('Shift');
   await p.keyboard.press('P');
-  await p.keyboard.up('Shift'); await p.keyboard.up('Control');
+  await p.keyboard.up('Shift'); await p.keyboard.up('Alt');
   await sleep(300);
-  ok(await p.evaluate(() => !document.getElementById('cmd-overlay').hidden), 'Ctrl+Shift+P opens the palette');
+  ok(await p.evaluate(() => !document.getElementById('cmd-overlay').hidden), 'Alt+Shift+P opens the palette');
   ok(await p.evaluate(() => document.querySelectorAll('#cmd-results .cmd-row').length > 5), 'palette lists commands');
   ok(await p.evaluate(() => !!document.querySelector('#cmd-results .cmd-group')), 'commands are grouped when unfiltered');
 
@@ -48,9 +48,10 @@ const cookieFrom = sc => { const m = (sc || '').match(/rz_session=([^;]+)/); ret
   ok(await p.evaluate(() => location.hash === '#/pages'), `Enter runs the command (hash="${await p.evaluate(() => location.hash)}")`);
   ok(await p.evaluate(() => document.getElementById('cmd-overlay').hidden), 'palette closes after running');
 
-  // Escape closes without running
-  await p.keyboard.down('Control'); await p.keyboard.down('Shift'); await p.keyboard.press('P'); await p.keyboard.up('Shift'); await p.keyboard.up('Control');
+  // reopen (confirms Alt+Shift+P works a second time), then Escape closes without running
+  await p.keyboard.down('Alt'); await p.keyboard.down('Shift'); await p.keyboard.press('P'); await p.keyboard.up('Shift'); await p.keyboard.up('Alt');
   await sleep(200);
+  ok(await p.evaluate(() => !document.getElementById('cmd-overlay').hidden), 'Alt+Shift+P reopens the palette');
   await p.keyboard.press('Escape');
   await sleep(200);
   ok(await p.evaluate(() => document.getElementById('cmd-overlay').hidden), 'Escape closes the palette');
