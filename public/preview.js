@@ -56,6 +56,18 @@
     try { body.append(mountItem(id, false)); } finally { transcludeStack.pop(); }
 
     p.append(head, body);
+    // the panel lives outside #tree, so the tree's link-click handler doesn't reach it —
+    // navigate internal links (and open external ones) from here (focus was already blocked
+    // by the #page pointerdown guard, so the anchor survives to this click)
+    p.addEventListener('click', e => {
+      const a = e.target.closest('a[href]');
+      if (!a || a.classList.contains('bullet') || a.classList.contains('att-chip')) return;
+      const href = a.getAttribute('href') || '';
+      const m = href.match(/#\/n\/([A-Za-z0-9]+)/);
+      e.preventDefault();
+      if (m && doc.nodes[m[1]]) { const t = m[1]; close(true); zoomTo(t); }
+      else if (/^https?:/.test(href)) window.open(href, '_blank', 'noopener');
+    });
     p.addEventListener('mouseenter', () => clearTimeout(closeTimer));
     p.addEventListener('mouseleave', scheduleClose);
     // keep open while the user is editing inside it; close shortly after focus leaves

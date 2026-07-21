@@ -3746,6 +3746,16 @@ function insertForest(ctx, forest) {
 
 let drag = null;
 
+// Internal links ([[page]], #tag, ((ref))) reveal to markdown source on focus (reveal-on-focus),
+// which detaches the <a> before the click can navigate. Block the focus on pointerdown so the
+// anchor survives and the click handler follows it. Capture phase, on #page so it also covers the
+// hover-preview panel (which lives outside #tree). Left-button only; bullets keep their drag.
+pageEl.addEventListener('pointerdown', e => {
+  if (e.button !== 0) return;
+  const a = e.target.closest?.('a[href]');
+  if (a && !a.classList.contains('bullet') && !a.classList.contains('att-chip')) e.preventDefault();
+}, true);
+
 treeEl.addEventListener('pointerdown', e => {
   if (e.button !== 0) return;
   const bullet = e.target.closest('.bullet');
