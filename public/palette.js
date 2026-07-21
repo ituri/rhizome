@@ -50,6 +50,12 @@
         run: () => window.showPageHistory?.(window.historyPageOf(state.zoom)) },
       { group: 'Page', label: 'Present', run: () => startPresent() },
       { group: 'Page', label: 'Export…', run: () => openExportMenu(document.getElementById('btn-menu')) },
+      { group: 'Page', label: 'Delete this page…', when: () => writable() && !atHome, run: () => {
+        const title = plainOf(N(state.zoom).text).trim() || 'this page';
+        if (!confirm(`Delete “${title}” and everything in it? It moves to the trash.`)) return;
+        opDelete(state.zoom);       // sends it to the trash (recoverable) and leaves the page
+        location.hash = '#/';       // back to the journal
+      } },
 
       // App
       { group: 'App', label: 'Settings…', run: () => showSettings() },

@@ -36,6 +36,7 @@
     "test:hoverpreview": "node tests/test-hover-preview.js",
     "test:cmdpalette": "node tests/test-command-palette.js",
     "test:journaltoday": "node tests/test-journal-today.js",
+    "test:palettedelete": "node tests/test-palette-delete.js",
     "test:linkclick": "node tests/test-link-click.js",
     "test:web-split": "node tests/test-web-split.js",
     "test:geomerge": "node tests/test-geo-merge.js",
