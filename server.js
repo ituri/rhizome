@@ -1676,12 +1676,41 @@ const server = http.createServer(async (req, res) => {
             try { for (const bk of fs.readdirSync(path.join(dir, 'backups'))) bytes += fs.statSync(path.join(dir, 'backups', bk)).size; } catch { /* none */ }
           }
           const q = effectiveQuota(u.id);
-          return { id: u.id, username: u.username, isAdmin: !!u.is_admin, lastLogin: u.last_login, created: u.created,
+          return { id: u.id, username: u.username, email: u.email || null, isAdmin: !!u.is_admin, lastLogin: u.last_login, created: u.created,
             graphs: owned.length, notes, bytes, used: userStats(u.id).totalBytes, quotaBytes: q.bytes, quotaSource: q.source };
         });
         return send(res, 200, { users });
       }
-      const adminDelM = url.match(/^\/api\/admin\/users\/([A-Za-z0-9]+)$/);
+      const adminUserM = url.match(/^\/api\/admin\/users\/([A-Za-z0-9]+)$/);
+      if (adminUserM && req.method === 'PATCH') {
+        const admin = requireAdmin(req);
+        if (!admin) return send(res, 403, { error: 'admin only' });
+        const target = accounts.userById(adminUserM[1]);
+        if (!target) return send(res, 404, { error: 'user not found' });
+        const body = await readJson(req);
+        // username: same rule as registration; must stay unique (case-insensitive)
+        if (body.username != null) {
+          const username = String(body.username).trim();
+          if (!/^[\w.\- ]{2,40}$/.test(username)) return send(res, 400, { error: 'username must be 2–40 chars (letters, numbers, . _ - space)' });
+          const clash = accounts.userByName(username);
+          if (clash && clash.id !== target.id) return send(res, 409, { error: 'that username is taken' });
+          accounts.setUsername(target.id, username);
+        }
+        // email: optional — empty string clears it, otherwise a light shape check
+        if (body.email != null) {
+          const email = String(body.email).trim();
+          if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return send(res, 400, { error: 'that email address looks invalid' });
+          accounts.setEmail(target.id, email);
+        }
+        // password: reset without knowing the current one (admin action)
+        if (body.password != null) {
+          if (String(body.password).length < 6) return send(res, 400, { error: 'password must be at least 6 characters' });
+          accounts.setPassword(target.id, String(body.password));
+        }
+        const u = accounts.userById(target.id);
+        return send(res, 200, { user: { id: u.id, username: u.username, email: u.email || null, isAdmin: !!u.is_admin } });
+      }
+      const adminDelM = adminUserM;
       if (adminDelM && req.method === 'DELETE') {
         const admin = requireAdmin(req);
         if (!admin) return send(res, 403, { error: 'admin only' });

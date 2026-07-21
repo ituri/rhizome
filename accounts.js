@@ -94,6 +94,7 @@ class Accounts {
     if (!cols.has('is_admin')) this.db.exec('ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0');
     if (!cols.has('failed_count')) this.db.exec('ALTER TABLE users ADD COLUMN failed_count INTEGER NOT NULL DEFAULT 0');
     if (!cols.has('locked_until')) this.db.exec('ALTER TABLE users ADD COLUMN locked_until INTEGER'); // 0 = manual lock, >now = timed, null/past = open
+    if (!cols.has('email')) this.db.exec('ALTER TABLE users ADD COLUMN email TEXT'); // optional, admin-editable
   }
 
   /* ---------------- users ---------------- */
@@ -112,6 +113,9 @@ class Accounts {
 
   setLastLogin(userId) { this.db.prepare('UPDATE users SET last_login = ? WHERE id = ?').run(now(), userId); }
   setAdmin(userId, on) { this.db.prepare('UPDATE users SET is_admin = ? WHERE id = ?').run(on ? 1 : 0, userId); }
+  // rename a user (caller validates format + uniqueness); the UNIQUE index is the backstop
+  setUsername(userId, username) { this.db.prepare('UPDATE users SET username = ? WHERE id = ?').run(String(username).trim(), userId); }
+  setEmail(userId, email) { this.db.prepare('UPDATE users SET email = ? WHERE id = ?').run(email ? String(email).trim() : null, userId); }
   deleteUser(userId) {
     this.db.prepare('DELETE FROM api_keys WHERE user_id = ?').run(userId);
     this.db.prepare('DELETE FROM sessions WHERE user_id = ?').run(userId);
@@ -120,7 +124,7 @@ class Accounts {
   }
   // for the admin panel — note/storage stats are added by the server (per-graph)
   listUsers() {
-    return this.db.prepare('SELECT id, username, is_admin, last_login, created FROM users ORDER BY created').all();
+    return this.db.prepare('SELECT id, username, email, is_admin, last_login, created FROM users ORDER BY created').all();
   }
   adminCount() { return this.db.prepare('SELECT COUNT(*) AS c FROM users WHERE is_admin = 1').get().c; }
 

@@ -1629,8 +1629,13 @@ function renderAdminPanel(ov) {
       const tr = document.createElement('tr');
       const badge = u.isAdmin ? ' <span class="admin-badge">admin</span>' : '';
       const quotaLabel = u.quotaBytes > 0 ? `${fmtBytes(u.quotaBytes)}${u.quotaSource === 'user' ? '*' : ''}` : '∞';
-      tr.innerHTML = `<td>${escHtml(u.username)}${badge}</td><td>${u.notes}</td><td>${fmtBytes(u.used)} / ${quotaLabel}</td>`;
+      const email = u.email ? `<div class="admin-email">${escHtml(u.email)}</div>` : '';
+      tr.innerHTML = `<td>${escHtml(u.username)}${badge}${email}</td><td>${u.notes}</td><td>${fmtBytes(u.used)} / ${quotaLabel}</td>`;
       const td = document.createElement('td');
+      const e = document.createElement('button');
+      e.className = 'key-copy'; e.textContent = 'edit'; e.title = 'Change name, email or password';
+      e.addEventListener('click', () => openUserEditor(u, tr, loadUsers));
+      td.append(e);
       const q = document.createElement('button');
       q.className = 'key-copy'; q.textContent = 'quota'; q.title = 'Set a per-user quota override';
       q.addEventListener('click', async () => {
@@ -1694,6 +1699,45 @@ function renderAdminPanel(ov) {
   loadQuota();
   loadUsers();
   loadSecurity();
+}
+
+// admin: inline editor for a user's name / email / password, shown as a row under theirs.
+// Only the fields you fill are sent; a blank password leaves it unchanged.
+function openUserEditor(u, tr, reload) {
+  if (tr.nextSibling && tr.nextSibling.classList?.contains('admin-edit-row')) { tr.nextSibling.remove(); return; }
+  const row = document.createElement('tr');
+  row.className = 'admin-edit-row';
+  const cell = document.createElement('td');
+  cell.colSpan = 4;
+  cell.innerHTML = `<div class="admin-edit">
+    <label>Name <input class="ae-username" type="text" value="${escHtml(u.username)}" autocomplete="off"></label>
+    <label>Email <input class="ae-email" type="email" value="${escHtml(u.email || '')}" placeholder="(none)" autocomplete="off"></label>
+    <label>New password <input class="ae-pass" type="password" placeholder="leave blank to keep" autocomplete="new-password"></label>
+    <p class="acct-error ae-error" hidden></p>
+    <div class="admin-edit-actions">
+      <button class="acct-save ae-save">Save</button>
+      <button class="key-copy ae-cancel">Cancel</button>
+    </div>
+  </div>`;
+  row.append(cell);
+  tr.after(row);
+  const err = cell.querySelector('.ae-error');
+  cell.querySelector('.ae-cancel').addEventListener('click', () => row.remove());
+  cell.querySelector('.ae-username').focus();
+  cell.querySelector('.ae-save').addEventListener('click', async () => {
+    err.hidden = true;
+    const patch = {};
+    const username = cell.querySelector('.ae-username').value.trim();
+    const email = cell.querySelector('.ae-email').value.trim();
+    const pass = cell.querySelector('.ae-pass').value;
+    if (username !== u.username) patch.username = username;
+    if (email !== (u.email || '')) patch.email = email;
+    if (pass) patch.password = pass;
+    if (!Object.keys(patch).length) { row.remove(); return; }
+    const r = await fetch('/api/admin/users/' + u.id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) });
+    if (r.ok) { showToast('User updated'); reload(); }
+    else { err.textContent = (await r.json()).error || 'Could not update user'; err.hidden = false; }
+  });
 }
 
 function renderChangePassword(ov, done) {
