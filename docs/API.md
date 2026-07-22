@@ -79,7 +79,7 @@ Access is denied with **403** for a non-member (or a key bound to another graph)
 |---|---|---|---|
 | POST | `/api/upload?name=<file>` | raw bytes | `{url:"/files/…", name, size}` (max 32 MB). |
 | GET | `/files/<name>` | — | the uploaded file (private unless inside a shared subtree). |
-| POST | `/api/capture?token=<rzk_…>` | `{text}` or raw text | `{ok, captured}`. Auth via a session or a **write-scoped API key** (`rzk_…`). Session → your first graph; API key → its graph. Lands under today's journal → `Inbox`; indentation (tabs / 2 spaces) nests. |
+| POST | `/api/capture?token=<rzk_…>` | `{text, bullet?}` or raw text | `{ok, captured}`. Auth via a session or a **write-scoped API key** (`rzk_…`). Session → your first graph; API key → its graph. Lands under today's journal → the `bullet` bullet (default `Inbox`, find-or-created); indentation (tabs / 2 spaces) nests. |
 | POST | `/api/ai` | `{prompt, context?}` | `{text}` (only if `ANTHROPIC_API_KEY` is set). |
 | GET | `/api/geocode?lat=&lon=` | — | `{address}` — reverse-geocode a coordinate to a short address (for location pages). Server-side + cached; geocoder configurable via `RHIZOME_GEOCODER_URL` (default public Nominatim). |
 
@@ -118,7 +118,7 @@ Auth: `Authorization: Bearer <token>` or `?token=`. The token is either the inst
 non-GET with a read key → **403**). A logged-in session also works (default graph).
 `GET /api/v1/doc`, `GET /api/v1/version`, `GET /api/v1/events` (**SSE** — `{version}` on
 connect and on every change, heartbeat `:hb`), `POST /api/v1/capture` (`{text}` or raw text
-→ today's journal Inbox), `GET /api/v1/journal/today` (find-or-create today's day node, returns
+→ today's journal, under the `bullet` bullet (default `Inbox`)), `GET /api/v1/journal/today` (find-or-create today's day node, returns
 it + its children; write scope), `GET /api/v1/search?q=&limit=`,
 `GET /api/v1/nodes/:id` (`?tree=1&depth=N`), `GET /api/v1/nodes/:id/children`,
 `POST /api/v1/nodes {parent,text,note,done,format,index}`,

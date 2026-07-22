@@ -497,13 +497,14 @@ function ensureDayInDoc(doc, iso) {
 }
 
 // quick-capture lands under today's journal in an "Inbox" bullet: today → Inbox → line(s)
-function captureText(g, text, device) {
+function captureText(g, text, device, bullet) {
   const dev = String(device || '').slice(0, 60);
   if (dev) g.historyDevice = dev;
+  const target = String(bullet || 'Inbox').trim() || 'Inbox';   // configurable capture bullet
   const doc = ensureDoc(g);
   const dayId = ensureDayInDoc(doc, todayIso());
   // drop stray empty bullets (e.g. an unused daily-note placeholder) so capture never
-  // strands a blank line above the Inbox
+  // strands a blank line above the capture bullet
   for (const cid of [...doc.nodes[dayId].children]) {
     const c = doc.nodes[cid];
     if (c && !(c.children || []).length && !serverPlain(c.text).trim()) {
@@ -511,11 +512,12 @@ function captureText(g, text, device) {
       delete doc.nodes[cid];
     }
   }
+  const want = target.toLowerCase();
   let inboxId = doc.nodes[dayId].children.find(id => {
     const t = (doc.nodes[id]?.text || '').replace(/<[^>]+>/g, '').trim().toLowerCase();
-    return t === 'inbox';
+    return t === want;
   });
-  if (!inboxId) inboxId = addChild(doc, dayId, makeNode('Inbox'));
+  if (!inboxId) inboxId = addChild(doc, dayId, makeNode(escHtml(target)));
   const lines = String(text).replace(/\r/g, '').split('\n').filter(l => l.trim());
   let count = 0;
   // indentation-aware: tabs/2-spaces nest under the previous shallower line
@@ -750,9 +752,9 @@ async function handleV1(req, res, url, g, scope) {
   }
   if (path === '/api/v1/capture' && method === 'POST') {   // → today's journal Inbox
     const raw = (await readBody(req, 1024 * 1024)).toString('utf8');
-    let text = raw, deviceName = u.searchParams.get('deviceName') || '';
-    try { const j = JSON.parse(raw); if (typeof j.text === 'string') text = j.text; if (typeof j.deviceName === 'string') deviceName = j.deviceName; } catch { /* plain text body */ }
-    return send(res, 200, { ok: true, captured: captureText(g, text, deviceName) });
+    let text = raw, deviceName = u.searchParams.get('deviceName') || '', bullet = '';
+    try { const j = JSON.parse(raw); if (typeof j.text === 'string') text = j.text; if (typeof j.deviceName === 'string') deviceName = j.deviceName; if (typeof j.bullet === 'string') bullet = j.bullet; } catch { /* plain text body */ }
+    return send(res, 200, { ok: true, captured: captureText(g, text, deviceName, bullet) });
   }
   if (path === '/api/v1/journal/today' && method === 'GET') {   // find-or-create today's day node
     if (scope !== 'write') return send(res, 403, { error: 'a write-scoped key is required (this may create the day node)' });
@@ -1807,8 +1809,9 @@ const server = http.createServer(async (req, res) => {
         const raw = (await readBody(req, 1024 * 1024)).toString('utf8');
         let text = raw;
         let deviceName = new URL(url, 'http://x').searchParams.get('deviceName') || '';
-        try { const j = JSON.parse(raw); if (typeof j.text === 'string') text = j.text; if (typeof j.deviceName === 'string') deviceName = j.deviceName; } catch { /* plain text body */ }
-        const count = captureText(g, text, deviceName);
+        let bullet = '';
+        try { const j = JSON.parse(raw); if (typeof j.text === 'string') text = j.text; if (typeof j.deviceName === 'string') deviceName = j.deviceName; if (typeof j.bullet === 'string') bullet = j.bullet; } catch { /* plain text body */ }
+        const count = captureText(g, text, deviceName, bullet);
         return send(res, 200, { ok: true, captured: count });
       }
 
@@ -2012,8 +2015,9 @@ const server = http.createServer(async (req, res) => {
           const raw = (await readBody(req, 1024 * 1024)).toString('utf8');
           let text = raw;
           let deviceName = new URL(url, 'http://x').searchParams.get('deviceName') || '';
-          try { const j = JSON.parse(raw); if (typeof j.text === 'string') text = j.text; if (typeof j.deviceName === 'string') deviceName = j.deviceName; } catch { /* plain text body */ }
-          return send(res, 200, { ok: true, captured: captureText(g, text, deviceName) });
+          let bullet = '';
+          try { const j = JSON.parse(raw); if (typeof j.text === 'string') text = j.text; if (typeof j.deviceName === 'string') deviceName = j.deviceName; if (typeof j.bullet === 'string') bullet = j.bullet; } catch { /* plain text body */ }
+          return send(res, 200, { ok: true, captured: captureText(g, text, deviceName, bullet) });
         }
         return send(res, 404, { error: 'not found' });
       }
