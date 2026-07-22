@@ -174,10 +174,10 @@ Copy the `data` folder and you've backed up everything.
 `data/outline.json` into the database once, then renames it to `data/outline.json.migrated`.
 Nothing writes back to the JSON file after that.
 
-> **In progress:** multi-user with **isolated, shareable graphs** (each user gets their own
-> document, shareable to others for collaborative editing), offline/PWA sync, user-managed API
-> keys with scopes, and an admin panel — tracked on the `phase2-graphs` branch. See
-> [docs/API.md](docs/API.md) for the current API.
+> **Multi-user graphs:** every account gets its own **isolated document** — create, rename and
+> switch between **graphs**, and share any graph with other users for collaborative editing.
+> API keys are per-graph and scope-gated, and an admin panel manages users. See
+> [docs/API.md](docs/API.md) for the HTTP API.
 
 ## 🛠️ Development
 
