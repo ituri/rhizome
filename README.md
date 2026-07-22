@@ -51,7 +51,7 @@ docker compose up -d
 | 🪞 **Reuse & review** | `[[wiki links]]` (and page **aliases** via `Aliases::`) with linked + unlinked references on every page; mirrors you can edit from any instance; templates; comments; presentation slides |
 | 🔗 **Roam-style references** | Inline **block references** `(( ))` that show a block's live text (editing the line reveals its `((id))` source); **attributes** `Key:: Value` you can click and query; live **queries** `{{query: {and:…}{or:…}{not:…}{between:…}}}`; multi-word tags `#[[…]]`; a **right sidebar** (shift-click) to view pages side-by-side |
 | 📎 **Files & media** | Attach files or paste images straight onto items; YouTube / Shorts / Loom embeds and tracking-free X link-cards |
-| 📥 **Capture from anywhere** | `Ctrl+Shift+Space` quick-capture overlay, plus a token-protected capture API for email automations and iOS Shortcuts — items land under today's journal in an `Inbox` bullet |
+| 📥 **Capture from anywhere** | `Ctrl+Shift+Space` quick-capture overlay, plus a token-protected capture API for email automations, iOS Shortcuts and the [Firefox clipper](https://github.com/ituri/rhizome-clipper) — items land under today's journal in an `Inbox` bullet |
 | 🤝 **Sharing & sync** | Live cross-device sync (SSE) and instant cross-tab sync; share any subtree by secret link — view-only or editable, revocable |
 | 📲 **Installable & offline** | Installs as a PWA (home-screen icon, standalone window); cold-boots offline from a local IndexedDB cache and keeps editing — changes sync automatically the moment you reconnect |
 | 📤 **Your data is portable** | Import and export Markdown, OPML, plain text and JSON; print any page; hourly rotating backups (last 40) |
@@ -61,6 +61,21 @@ docker compose up -d
 Press `Ctrl+/` in the app for the full keyboard reference. For the complete
 feature inventory — including what's deliberately not built — see
 [docs/FEATURES.md](docs/FEATURES.md).
+
+## 🧩 Companion apps
+
+Rhizome is one small server, but it speaks a clean HTTP API — so a few native clients plug
+straight into your own instance:
+
+- **[Rhizome iOS](https://github.com/ituri/rhizome-app)** — a fully native SwiftUI iPhone
+  client: journal, pages, server-side search, live SSE sync, a rich inline editor with
+  `[[links]]` / `#tags` / `((refs))`, image uploads, page history and Face ID lock. Built
+  Xcode-free from Linux or macOS with [xtool](https://github.com/xtool-org/xtool).
+- **[Rhizome Clipper](https://github.com/ituri/rhizome-clipper)** — a Firefox extension that
+  drops the page you're reading into today's journal under a bullet you name (e.g. `Read`),
+  through the capture API.
+- **Built-in terminal client** — `npm run tui` opens a zero-dependency, ncurses-style
+  outliner against the same `/api/v1`, straight from this repo.
 
 ## ⚙️ Configuration (environment variables)
 
@@ -122,6 +137,9 @@ endpoint index.
 | `POST /api/v1/nodes/:id/complete` | `{done?}` (defaults to `true`) |
 | `POST /api/v1/nodes/:id/move` | `{parent, index?}` |
 | `DELETE /api/v1/nodes/:id` | Delete the subtree (recoverable from Trash) |
+| `GET /api/v1/journal/today` | Find-or-create today's journal day node (+ its children) |
+| `POST /api/v1/capture` | `{text}` (or raw text) → today's journal `Inbox` |
+| `GET /api/v1/events` | SSE stream — `{version}` on connect and on every change |
 
 ```sh
 # create a node, then complete it
