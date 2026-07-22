@@ -719,7 +719,7 @@ async function handleV1(req, res, url, g, scope) {
     if (!apiAuthed(req, url)) return send(res, 401, { error: 'unauthorized — send Authorization: Bearer <rzk_… API key or agent token>' });
     scope = 'write';
   }
-  if (apiRateLimited('v1:' + (reqToken(req, url) || req.socket.remoteAddress))) return send(res, 429, { error: 'rate limited — slow down' });
+  if (apiRateLimited('v1:' + (reqToken(req, url) || clientIp(req)))) return send(res, 429, { error: 'rate limited — slow down' });
   if (!g) return send(res, 404, { error: 'no graph available' });
   if (scope !== 'write' && req.method !== 'GET') return send(res, 403, { error: 'read-only key — a write-scoped key is required' });
   const doc = ensureDoc(g);
@@ -902,7 +902,7 @@ async function handleMcp(req, res, url) {
   else if (AGENT_TOKEN && timingSafeEq(reqToken(req, url), AGENT_TOKEN)) { g = getGraph(defaultGraphId()); scope = 'write'; }
   else if (accounts.userCount() === 0) { g = getGraph(defaultGraphId()); scope = 'write'; } // fresh/open instance
   if (!g) return send(res, 401, { error: 'unauthorized — send Authorization: Bearer <rzk_… API key>' }, { ...cors, 'WWW-Authenticate': 'Bearer' });
-  if (apiRateLimited('mcp:' + (key ? key.id : req.socket.remoteAddress))) return send(res, 429, { error: 'rate limited — slow down' }, cors);
+  if (apiRateLimited('mcp:' + (key ? key.id : clientIp(req)))) return send(res, 429, { error: 'rate limited — slow down' }, cors);
 
   let msg;
   try { msg = await readJson(req); }
@@ -1084,6 +1084,18 @@ const isHttps = req => {
   const xf = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim().toLowerCase();
   return xf === 'https' || !!req.socket.encrypted;
 };
+// The real client IP. Behind a reverse proxy (Caddy) the socket peer is the proxy / Docker bridge
+// gateway (e.g. 172.27.0.1), so read X-Forwarded-For — the RIGHTMOST entry is the address the
+// trusted edge proxy actually observed (the left entries are client-spoofable). Falls back to the
+// socket address for direct connections. Used for the login audit log + per-IP throttling.
+function clientIp(req) {
+  const xff = req.headers['x-forwarded-for'];
+  if (xff) {
+    const parts = String(xff).split(',').map(s => s.trim()).filter(Boolean);
+    if (parts.length) return parts[parts.length - 1].replace(/^::ffff:/, '');
+  }
+  return (req.socket.remoteAddress || '?').replace(/^::ffff:/, '');
+}
 const sessionCookie = (token, secure) => `rz_session=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${Math.floor(SESSION_MAX_AGE / 1000)}${secure ? '; Secure' : ''}`;
 // the signed-in user if they are an admin, else null
 function requireAdmin(req) { const u = currentUser(req); return u && u.is_admin ? u : null; }
@@ -1430,7 +1442,7 @@ function effectiveQuota(userId) {
 /* ---------- server ---------- */
 
 const server = http.createServer(async (req, res) => {
-  const ip = req.socket.remoteAddress || '?';
+  const ip = clientIp(req);
   const url = req.url || '/';
 
   try {
@@ -1810,7 +1822,7 @@ const server = http.createServer(async (req, res) => {
         const key = user ? null : apiKeyFor(req, url); // a write-scoped API key captures into its graph
         const allowed = !!user || (key && key.scope === 'write') || accounts.userCount() === 0;
         if (!allowed) return send(res, 401, { error: 'unauthorized' });
-        if (!user && apiRateLimited('cap:' + (key ? key.id : req.socket.remoteAddress))) return send(res, 429, { error: 'rate limited — slow down' });
+        if (!user && apiRateLimited('cap:' + (key ? key.id : clientIp(req)))) return send(res, 429, { error: 'rate limited — slow down' });
         // a session captures into its own first graph; an API key into its graph; open mode → default graph
         const gid = user ? accounts.graphsForUser(user.id)[0]?.id : (key ? key.graphId : defaultGraphId());
         const g = gid && getGraph(gid);

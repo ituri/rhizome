@@ -37,6 +37,7 @@
     "test:cmdpalette": "node tests/test-command-palette.js",
     "test:journaltoday": "node tests/test-journal-today.js",
     "test:capturebullet": "node tests/test-capture-bullet.js",
+    "test:clientip": "node tests/test-client-ip.js",
     "test:palettedelete": "node tests/test-palette-delete.js",
     "test:linkclick": "node tests/test-link-click.js",
     "test:web-split": "node tests/test-web-split.js",
