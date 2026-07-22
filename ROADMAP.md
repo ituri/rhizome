@@ -29,7 +29,7 @@ Status: ⬜ geplant · 🚧 in Arbeit · ✅ umgesetzt · ❌ verworfen
 | Status | Feature | Kern | Notiz |
 |---|---|---|---|
 | ⬜ | **Reminders / recurring / Uhrzeiten** | Uhrzeit- & Wiederholungs-Erweiterung der Datums-Pills; Zustellung über SSE-Hub + Web-Push | Löst zwei `❌` aus FEATURES.md, ohne SMTP |
-| ⬜ | **Version History browsen** | „Verlauf ansehen/wiederherstellen" pro Block aus dem Op-Log-Journal | Journal existiert schon fürs Undo |
+| ✅ | **Version History browsen** | „Verlauf ansehen/wiederherstellen" | Bereits umgesetzt (Bestand vor Roadmap): seitenbasierte Snapshots (server, debounced ~45s, 60/​Seite), Ansehen + Inline-Diff + Restore in Web (Menü + Palette) und iOS (`PageHistoryView`). Granularität ist pro Seite, nicht pro Block/Op-Log |
 | ⬜ | **SmartBlocks-light** | Templates mit Variablen (`<%DATE%>`, `<%CURSOR%>`, Prompts) | Zero-dep, großer Workflow-Gewinn |
 
 ## Phase 3 — Visualisierung & Medien
