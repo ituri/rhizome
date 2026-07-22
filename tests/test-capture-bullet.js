@@ -25,6 +25,14 @@ const srv = spawn('node', [path.join(__dirname, '..', 'server.js')], { env: { ..
   ok((byBullet.Inbox || []).includes('No bullet given'), 'default lands under Inbox');
   ok(tree.children.filter(c => c.plain === 'Reading').length === 1, 'only one "Reading" bullet (find-or-create)');
 
+  // html mode: a titled <a href> link is kept as inline HTML (not escaped), scripts stripped
+  await J('/api/v1/capture', { method: 'POST', headers: H, body: JSON.stringify({ text: '<a href="https://ex.com/a" rel="noopener">Great Title</a>', html: true }) });
+  await J('/api/v1/capture', { method: 'POST', headers: H, body: JSON.stringify({ text: '<a href="https://x.io">ok</a><script>bad()</script>', html: true }) });
+  const inbox = (await J(`/api/v1/nodes/${dayId}?tree=1`, { headers: H })).body.children.find(c => c.plain === 'Inbox');
+  const linkNode = inbox.children.find(c => c.plain === 'Great Title');
+  ok(linkNode && /^<a href="https:\/\/ex\.com\/a"/.test(linkNode.text), `html capture keeps the anchor ("${linkNode && linkNode.text}")`);
+  ok(inbox.children.every(c => !/<script/i.test(c.text)), 'html capture strips <script>');
+
   srv.kill();
   fs.rmSync(DATA, { recursive: true, force: true });
   console.log(fail ? `\n${fail} FAILURES` : '\nAll capture-bullet tests passed');

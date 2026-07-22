@@ -79,7 +79,7 @@ Access is denied with **403** for a non-member (or a key bound to another graph)
 |---|---|---|---|
 | POST | `/api/upload?name=<file>` | raw bytes | `{url:"/files/…", name, size}` (max 32 MB). |
 | GET | `/files/<name>` | — | the uploaded file (private unless inside a shared subtree). |
-| POST | `/api/capture?token=<rzk_…>` | `{text, bullet?}` or raw text | `{ok, captured}`. Auth via a session or a **write-scoped API key** (`rzk_…`). Session → your first graph; API key → its graph. Lands under today's journal → the `bullet` bullet (default `Inbox`, find-or-created); indentation (tabs / 2 spaces) nests. |
+| POST | `/api/capture?token=<rzk_…>` | `{text, bullet?, html?}` or raw text | `{ok, captured}`. Auth via a session or a **write-scoped API key** (`rzk_…`). Session → your first graph; API key → its graph. Lands under today's journal → the `bullet` bullet (default `Inbox`, find-or-created); indentation (tabs / 2 spaces) nests. `html:true` stores `text` as one **sanitized** inline-HTML line (e.g. a titled `<a href>` link) instead of splitting/escaping it. |
 | POST | `/api/ai` | `{prompt, context?}` | `{text}` (only if `ANTHROPIC_API_KEY` is set). |
 | GET | `/api/geocode?lat=&lon=` | — | `{address}` — reverse-geocode a coordinate to a short address (for location pages). Server-side + cached; geocoder configurable via `RHIZOME_GEOCODER_URL` (default public Nominatim). |
 
