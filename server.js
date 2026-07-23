@@ -593,11 +593,22 @@ async function serverStatus() {
     const total = s.blocks * s.bsize, free = s.bavail * s.bsize;
     disk = { total, free, used: total - free };
   } catch { /* statfs unavailable on this platform */ }
+  // Backups live per-graph in graphs/<id>/backups (since the multi-graph split); BACKUP_DIR is the
+  // legacy pre-migration location. Aggregate across all of them so the panel reflects live backups.
   let backups = { count: 0, newest: null, bytes: 0 };
-  try {
-    const files = fs.readdirSync(BACKUP_DIR).map(f => fs.statSync(path.join(BACKUP_DIR, f)));
-    backups = { count: files.length, newest: files.reduce((a, s) => Math.max(a, s.mtimeMs), 0) || null, bytes: files.reduce((a, s) => a + s.size, 0) };
-  } catch { /* none yet */ }
+  const backupDirs = [BACKUP_DIR];
+  try { for (const id of fs.readdirSync(GRAPHS_DIR)) backupDirs.push(path.join(GRAPHS_DIR, id, 'backups')); } catch { /* no graphs dir */ }
+  for (const dir of backupDirs) {
+    try {
+      for (const f of fs.readdirSync(dir)) {
+        if (!f.endsWith('.db')) continue;
+        const s = fs.statSync(path.join(dir, f));
+        backups.count++;
+        backups.bytes += s.size;
+        if (s.mtimeMs > (backups.newest || 0)) backups.newest = s.mtimeMs;
+      }
+    } catch { /* none in this dir */ }
+  }
   const graphs = (() => { try { return fs.readdirSync(GRAPHS_DIR).length; } catch { return 0; } })();
 
   const health = [];
