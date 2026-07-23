@@ -1584,6 +1584,7 @@ function renderApiKeys(ov) {
 // admin-only: list users with stats, delete users, view/rotate the invite code
 function renderAdminPanel(ov) {
   ov.innerHTML = `<div class="set-subpanel admin-panel">
+    <div class="admin-status">Loading…</div>
     <div class="admin-invite"></div>
     <div class="admin-quota"></div>
     <div class="admin-users">Loading…</div>
@@ -1591,6 +1592,38 @@ function renderAdminPanel(ov) {
   </div>`;
   const fmtDate = t => t ? new Date(t).toLocaleString() : '—';
   const GB = 1e9;
+  const fmtUptime = s => {
+    if (s == null) return '—';
+    const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
+    return (d ? d + 'd ' : '') + (d || h ? h + 'h ' : '') + m + 'm';
+  };
+  const loadStatus = async () => {
+    const box = ov.querySelector('.admin-status');
+    let s;
+    try { const r = await fetch('/api/admin/status'); if (!r.ok) throw 0; s = await r.json(); }
+    catch { box.innerHTML = '<h4 class="admin-h4">Server status</h4><div class="stat-hint">Could not load server status.</div>'; return; }
+    const bar = (pct, label) => {
+      const p = pct == null ? 0 : Math.max(0, Math.min(100, pct));
+      const cls = p >= 90 ? ' crit' : p >= 75 ? ' warn' : '';
+      return `<div class="stat-meter"><div class="stat-meter-fill${cls}" style="width:${p}%"></div></div><span class="stat-meter-lbl">${label}</span>`;
+    };
+    const memPct = s.memory.systemTotal ? (s.memory.systemTotal - s.memory.systemFree) / s.memory.systemTotal * 100 : null;
+    const diskPct = s.disk ? s.disk.used / s.disk.total * 100 : null;
+    const rows = [
+      ['Uptime', `${fmtUptime(s.uptimeSec)} <span class="stat-sub">· since ${fmtDate(s.startedAt)}</span>`],
+      ['Last update', fmtDate(s.lastUpdate)],
+      ['Version', `${escHtml(s.version)} <span class="stat-sub">· Node ${escHtml(s.node)}</span>`],
+      ['Host', `${escHtml(s.hostname)} <span class="stat-sub">· ${escHtml(s.platform)}</span>`],
+      ['CPU', `${bar(s.cpu.loadPct, `${s.cpu.loadPct == null ? '—' : s.cpu.loadPct.toFixed(0) + '%'} load · ${s.cpu.cores} cores`)}<div class="stat-sub">${escHtml(s.cpu.model)}</div>`],
+      ['RAM', bar(memPct, `${fmtBytes(s.memory.systemTotal - s.memory.systemFree)} / ${fmtBytes(s.memory.systemTotal)} · app ${fmtBytes(s.memory.rss)}`)],
+      ['Disk', s.disk ? bar(diskPct, `${fmtBytes(s.disk.used)} / ${fmtBytes(s.disk.total)} · ${fmtBytes(s.disk.free)} free`) : '—'],
+      ['Storage', `${fmtBytes(s.storage.dataBytes)} <span class="stat-sub">· ${s.storage.graphs} graphs · ${s.storage.backups.count} backups (${fmtBytes(s.storage.backups.bytes)})</span>`],
+    ];
+    box.innerHTML = `<h4 class="admin-h4">Server status <button class="key-copy stat-refresh">refresh</button></h4>
+      <table class="stat-table">${rows.map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join('')}</table>
+      <div class="stat-health">${s.health.map(h => `<span class="stat-dot ${h.ok ? 'stat-up' : 'stat-down'}" title="${escHtml(h.detail)}">${h.ok ? '●' : '○'} ${escHtml(h.name)}<span class="stat-detail"> · ${escHtml(h.detail)}</span></span>`).join('')}</div>`;
+    box.querySelector('.stat-refresh').addEventListener('click', loadStatus);
+  };
   const loadQuota = async () => {
     const q = await (await fetch('/api/admin/quota')).json();
     const box = ov.querySelector('.admin-quota');
@@ -1695,6 +1728,7 @@ function renderAdminPanel(ov) {
     box.querySelector('.sec-events').innerHTML = s.events.map(e =>
       `<div class="${e.ok ? 'sec-ok' : 'sec-fail'}">${escHtml(fmtDate(e.ts))} · ${escHtml(e.username || '?')} · ${escHtml(e.ip || '')} · ${e.ok ? 'ok' : 'fail'}</div>`).join('');
   };
+  loadStatus();
   loadInvite();
   loadQuota();
   loadUsers();

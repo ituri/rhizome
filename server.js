@@ -26,6 +26,7 @@ const http = require('http');
 const https = require('https');
 const fs = require('fs');
 const fsp = fs.promises;
+const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 const { Store } = require('./db');
@@ -544,6 +545,86 @@ function captureText(g, text, device, bullet, html) {
   }
   if (count) commitDoc(g, doc);
   return count;
+}
+
+/* ---------- admin: server status ---------- */
+
+// best-effort recursive byte size of a directory tree (guards against transient errors)
+function dirSize(dir) {
+  let total = 0;
+  const stack = [dir];
+  while (stack.length) {
+    const d = stack.pop();
+    let entries;
+    try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch { continue; }
+    for (const e of entries) {
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) stack.push(p);
+      else { try { total += fs.statSync(p).size; } catch { /* gone */ } }
+    }
+  }
+  return total;
+}
+
+// live geocoder reachability, cached ~60s so a status refresh doesn't hammer the geocoder
+let geoHealthCache = { at: 0, ok: null, detail: '' };
+async function geocoderHealth() {
+  if (geoHealthCache.ok !== null && Date.now() - geoHealthCache.at < 60_000) return geoHealthCache;
+  let ok = false, detail = 'unreachable';
+  try {
+    const origin = new URL(GEOCODER_URL).origin;
+    const r = await fetch(origin, { method: 'HEAD', signal: AbortSignal.timeout(2500) });
+    ok = r.ok || r.status === 403 || r.status === 405;   // reachable even if HEAD isn't allowed
+    detail = ok ? 'reachable' : ('HTTP ' + r.status);
+  } catch (e) { detail = e.name === 'TimeoutError' ? 'timeout' : 'unreachable'; }
+  geoHealthCache = { at: Date.now(), ok, detail };
+  return geoHealthCache;
+}
+
+async function serverStatus() {
+  const mem = process.memoryUsage();
+  const cpus = os.cpus();
+  const load = os.loadavg();
+  let lastUpdate = null; // "last update" = the deployed server.js mtime (image rebuilt on deploy)
+  try { lastUpdate = fs.statSync(__filename).mtimeMs; } catch { /* ignore */ }
+  let disk = null;
+  try {
+    const s = fs.statfsSync(DATA_DIR);
+    const total = s.blocks * s.bsize, free = s.bavail * s.bsize;
+    disk = { total, free, used: total - free };
+  } catch { /* statfs unavailable on this platform */ }
+  let backups = { count: 0, newest: null, bytes: 0 };
+  try {
+    const files = fs.readdirSync(BACKUP_DIR).map(f => fs.statSync(path.join(BACKUP_DIR, f)));
+    backups = { count: files.length, newest: files.reduce((a, s) => Math.max(a, s.mtimeMs), 0) || null, bytes: files.reduce((a, s) => a + s.size, 0) };
+  } catch { /* none yet */ }
+  const graphs = (() => { try { return fs.readdirSync(GRAPHS_DIR).length; } catch { return 0; } })();
+
+  const health = [];
+  try { accounts.userCount(); health.push({ name: 'Database (SQLite)', ok: true, detail: 'responsive' }); }
+  catch (e) { health.push({ name: 'Database (SQLite)', ok: false, detail: e.message }); }
+  try { fs.accessSync(DATA_DIR, fs.constants.W_OK); health.push({ name: 'Data directory', ok: true, detail: 'writable' }); }
+  catch { health.push({ name: 'Data directory', ok: false, detail: 'not writable' }); }
+  if (disk) health.push({ name: 'Disk space', ok: disk.free / disk.total > 0.05, detail: `${(disk.free / disk.total * 100).toFixed(1)}% free` });
+  health.push({ name: 'Backups', ok: backups.count > 0, detail: backups.newest ? `${backups.count} kept · newest ${new Date(backups.newest).toISOString().slice(0, 16).replace('T', ' ')}` : 'none yet' });
+  const geo = await geocoderHealth();
+  health.push({ name: 'Geocoder', ok: geo.ok, detail: geo.detail });
+  health.push({ name: 'Ask AI', ok: !!AI_KEY, detail: AI_KEY ? 'configured' : 'not configured' });
+
+  return {
+    version: require('./package.json').version,
+    node: process.version,
+    platform: `${os.type()} ${os.release()}`,
+    hostname: os.hostname(),
+    uptimeSec: Math.round(process.uptime()),
+    startedAt: Date.now() - process.uptime() * 1000,
+    lastUpdate,
+    cpu: { cores: cpus.length, model: cpus[0] ? cpus[0].model.trim() : '', load1: load[0], loadPct: cpus.length ? Math.min(100, load[0] / cpus.length * 100) : null },
+    memory: { rss: mem.rss, heapUsed: mem.heapUsed, heapTotal: mem.heapTotal, systemTotal: os.totalmem(), systemFree: os.freemem() },
+    disk,
+    storage: { dataBytes: dirSize(DATA_DIR), graphs, backups },
+    health,
+  };
 }
 
 /* ---------- per-node API (v1) ---------- */
@@ -1694,6 +1775,10 @@ const server = http.createServer(async (req, res) => {
         return send(res, 200, { ok: true });
       }
       // admin panel (Phase 5): user list with stats, delete users, manage the invite code
+      if (url === '/api/admin/status' && req.method === 'GET') {
+        if (!requireAdmin(req)) return send(res, 403, { error: 'admin only' });
+        return send(res, 200, await serverStatus());
+      }
       if (url === '/api/admin/users' && req.method === 'GET') {
         if (!requireAdmin(req)) return send(res, 403, { error: 'admin only' });
         const users = accounts.listUsers().map(u => {

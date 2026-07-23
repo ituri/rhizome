@@ -1118,6 +1118,24 @@ kbd {
 .sec-policy input { width: 56px; font: inherit; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: none; color: var(--ink); }
 .sec-policy select { font: inherit; padding: 4px; border: 1px solid var(--line); border-radius: 6px; background: none; color: var(--ink); }
 .sec-policy .acct-save { padding: 6px 12px; }
+
+/* admin server-status section */
+.stat-hint { font-size: 12px; color: var(--ink-faint); }
+.stat-refresh { font-size: 12px; margin-left: 8px; }
+.stat-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.stat-table th { text-align: left; color: var(--ink-faint); font-weight: 600; width: 92px; vertical-align: top; padding: 5px 6px; white-space: nowrap; }
+.stat-table td { padding: 5px 6px; vertical-align: top; }
+.stat-sub { color: var(--ink-faint); font-weight: 400; }
+.stat-meter { display: inline-block; vertical-align: middle; width: 120px; height: 7px; border-radius: 4px; background: var(--line-soft); overflow: hidden; margin-right: 8px; }
+.stat-meter-fill { height: 100%; background: var(--accent); border-radius: 4px; }
+.stat-meter-fill.warn { background: #e0a53c; }
+.stat-meter-fill.crit { background: var(--danger, #c0392b); }
+.stat-meter-lbl { font-size: 12px; }
+.stat-health { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 8px 0 4px; font-size: 12px; }
+.stat-dot.stat-up { color: #2e9e5b; }
+.stat-dot.stat-down { color: var(--danger, #c0392b); }
+.stat-detail { color: var(--ink-faint); }
+
 /* statistics + storage quota */
 .stat-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--line-soft); font-size: 14px; }
 .stat-k { color: var(--ink-soft); }
