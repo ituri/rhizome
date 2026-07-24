@@ -2419,12 +2419,19 @@ function fmtAiDuration(ms) {
 async function aiRun(id, prompt, { setTitle = false, trackTime = false } = {}) {
   const model = state.aiModel;
   showToast(model ? `Asking ${model}…` : 'Asking AI…');
+  // context is the selected item's subtree — but when you ask from an empty scratch bullet
+  // (e.g. "what's on this page?"), fall back to the surrounding page/day so there's something to see
+  let context = subtreeToText(id, 0);
+  if (!plainOf(N(id).text).trim() && !hasKids(id)) {
+    const page = (typeof refGroupOf === 'function' ? refGroupOf(id) : pageOf(id));
+    if (page && page !== id) context = subtreeToText(page, 0);
+  }
   const t0 = performance.now();
   try {
     const res = await fetch('/api/ai', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt, context: subtreeToText(id, 0), model }),
+      body: JSON.stringify({ prompt, context, model }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'AI request failed');
