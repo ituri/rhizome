@@ -14,8 +14,16 @@
  *   RHIZOME_INVITE_CODE   if set, self-registration requires this invite code
  *   RHIZOME_TOTP_SECRET   if set (base32), login additionally requires a TOTP code
  *   RHIZOME_AGENT_TOKEN   if set, unlocks the per-node REST API at /api/v1 (Bearer or ?token=)
- *   ANTHROPIC_API_KEY     if set, enables the in-app "Ask AI" assistant
- *   RHIZOME_AI_MODEL      Claude model for Ask AI      (default claude-opus-4-8)
+ *   ANTHROPIC_API_KEY     if set, enables the in-app "Ask AI" assistant (Anthropic backend)
+ *   RHIZOME_AI_MODEL      model for Ask AI             (default claude-opus-4-8)
+ *   RHIZOME_AI_BASE_URL   AI endpoint base URL         (default https://api.anthropic.com).
+ *                         Point at any OpenAI-compatible server (e.g. a local Ollama at
+ *                         http://host:11434) to run Ask AI off your own hardware.
+ *   RHIZOME_AI_API        'anthropic' | 'openai'       (default: auto — 'anthropic' when the
+ *                         base URL is api.anthropic.com, else 'openai' chat/completions)
+ *   RHIZOME_AI_KEY        API key/bearer for the AI backend (falls back to ANTHROPIC_API_KEY;
+ *                         a local Ollama needs none)
+ *   RHIZOME_AI_TIMEOUT_MS request timeout in ms        (default 120000; raise for slow CPU models)
  *   RHIZOME_ENCRYPTION_KEY if set, encrypts backups + uploaded files at rest (AES-256-GCM).
  *                         Keep it OUT of DATA_DIR so backups don't ship the key. Restore a
  *                         backup with: RHIZOME_ENCRYPTION_KEY=… node cryptobox.js <in> <out>
@@ -23,7 +31,6 @@
 'use strict';
 
 const http = require('http');
-const https = require('https');
 const fs = require('fs');
 const fsp = fs.promises;
 const os = require('os');
@@ -47,8 +54,14 @@ const FILES_DIR = path.join(DATA_DIR, 'files');
 const PASSWORD = process.env.RHIZOME_PASSWORD || process.env.TENDRIL_PASSWORD || '';
 const TOTP_SECRET = process.env.RHIZOME_TOTP_SECRET || process.env.TENDRIL_TOTP_SECRET || '';
 const AGENT_TOKEN = process.env.RHIZOME_AGENT_TOKEN || process.env.TENDRIL_AGENT_TOKEN || '';
-const AI_KEY = process.env.ANTHROPIC_API_KEY || '';
+const AI_KEY = process.env.RHIZOME_AI_KEY || process.env.ANTHROPIC_API_KEY || '';
 const AI_MODEL = process.env.RHIZOME_AI_MODEL || process.env.TENDRIL_AI_MODEL || 'claude-opus-4-8';
+const AI_BASE_URL = (process.env.RHIZOME_AI_BASE_URL || 'https://api.anthropic.com').replace(/\/+$/, '');
+// 'anthropic' (/v1/messages) or 'openai' (/v1/chat/completions, e.g. a local Ollama). Auto by URL.
+const AI_API = process.env.RHIZOME_AI_API || (/(^|\/\/[^/]*\.)anthropic\.com/.test(AI_BASE_URL) ? 'anthropic' : 'openai');
+const AI_TIMEOUT_MS = parseInt(process.env.RHIZOME_AI_TIMEOUT_MS || '120000', 10);
+// Anthropic needs a key; a self-hosted OpenAI-compatible endpoint (Ollama) is enabled by its URL.
+const AI_ENABLED = AI_API === 'anthropic' ? !!AI_KEY : !!process.env.RHIZOME_AI_BASE_URL;
 // reverse-geocoder for location pages (coords → address). Configurable so you can point it at a
 // self-hosted Nominatim/Photon; default is the public OpenStreetMap Nominatim.
 const GEOCODER_URL = process.env.RHIZOME_GEOCODER_URL || 'https://nominatim.openstreetmap.org/reverse';
@@ -620,7 +633,7 @@ async function serverStatus() {
   health.push({ name: 'Backups', ok: backups.count > 0, detail: backups.newest ? `${backups.count} kept · newest ${new Date(backups.newest).toISOString().slice(0, 16).replace('T', ' ')}` : 'none yet' });
   const geo = await geocoderHealth();
   health.push({ name: 'Geocoder', ok: geo.ok, detail: geo.detail });
-  health.push({ name: 'Ask AI', ok: !!AI_KEY, detail: AI_KEY ? 'configured' : 'not configured' });
+  health.push({ name: 'Ask AI', ok: AI_ENABLED, detail: AI_ENABLED ? `${AI_MODEL} via ${AI_API === 'anthropic' ? 'Anthropic' : AI_BASE_URL}` : 'not configured' });
 
   return {
     version: require('./package.json').version,
@@ -1351,46 +1364,37 @@ async function reverseGeocode(lat, lon) {
   return address;
 }
 
-function askClaude(prompt, context) {
-  return new Promise((resolve, reject) => {
-    const body = JSON.stringify({
-      model: AI_MODEL,
-      max_tokens: 4096,
-      system: 'You are an assistant inside an outliner app. The user gives you an outline excerpt and an instruction. ' +
-        'Respond ONLY with outline items: one item per line, using two-space indentation for nesting. ' +
-        'No prose, no preamble, no markdown headers — just the indented list of items.',
-      messages: [{
-        role: 'user',
-        content: `Outline context:\n${context || '(empty)'}\n\nInstruction: ${prompt}`,
-      }],
-    });
-    const req = https.request({
-      hostname: 'api.anthropic.com',
-      path: '/v1/messages',
-      method: 'POST',
-      headers: {
-        'x-api-key': AI_KEY,
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json',
-        'content-length': Buffer.byteLength(body),
-      },
-      timeout: 120000,
-    }, res => {
-      let data = '';
-      res.on('data', c => { data += c; });
-      res.on('end', () => {
-        try {
-          const json = JSON.parse(data);
-          if (res.statusCode !== 200) return reject(new Error(json.error?.message || `API error ${res.statusCode}`));
-          const text = (json.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
-          resolve(text);
-        } catch (e) { reject(e); }
-      });
-    });
-    req.on('error', reject);
-    req.on('timeout', () => { req.destroy(new Error('AI request timed out')); });
-    req.end(body);
-  });
+const AI_SYSTEM = 'You are an assistant inside an outliner app. The user gives you an outline excerpt and an instruction. ' +
+  'Respond ONLY with outline items: one item per line, using two-space indentation for nesting. ' +
+  'No prose, no preamble, no markdown headers — just the indented list of items.';
+
+// Ask the configured model to act on an outline excerpt. Backend-agnostic: talks to Anthropic's
+// /v1/messages or any OpenAI-compatible /v1/chat/completions (e.g. a local Ollama), chosen by AI_API.
+async function askModel(prompt, context) {
+  const userContent = `Outline context:\n${context || '(empty)'}\n\nInstruction: ${prompt}`;
+  let url, headers, body, pick;
+  if (AI_API === 'anthropic') {
+    url = AI_BASE_URL + '/v1/messages';
+    headers = { 'content-type': 'application/json', 'x-api-key': AI_KEY, 'anthropic-version': '2023-06-01' };
+    body = { model: AI_MODEL, max_tokens: 4096, system: AI_SYSTEM, messages: [{ role: 'user', content: userContent }] };
+    pick = j => (j.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
+  } else {
+    url = AI_BASE_URL + '/v1/chat/completions';
+    headers = { 'content-type': 'application/json' };
+    if (AI_KEY) headers.authorization = 'Bearer ' + AI_KEY;
+    body = { model: AI_MODEL, max_tokens: 4096, stream: false,
+      messages: [{ role: 'system', content: AI_SYSTEM }, { role: 'user', content: userContent }] };
+    pick = j => j.choices?.[0]?.message?.content || '';
+  }
+  const r = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body), signal: AbortSignal.timeout(AI_TIMEOUT_MS) });
+  const raw = await r.text();
+  let json;
+  try { json = JSON.parse(raw); }
+  catch { throw new Error(r.ok ? 'unparseable AI response' : `API error ${r.status}`); }
+  if (!r.ok) throw new Error((json.error && (json.error.message || json.error)) || `API error ${r.status}`);
+  const text = pick(json);
+  if (!text) throw new Error('the model returned nothing');
+  return text;
 }
 
 /* ---------- static ---------- */
@@ -1579,7 +1583,7 @@ const server = http.createServer(async (req, res) => {
           required: accounts.userCount() > 0,
           totp: !!TOTP_SECRET,
           ok: isAuthed(req),
-          ai: !!AI_KEY,
+          ai: AI_ENABLED,
         });
       }
       if (url === '/api/me' && req.method === 'GET') {
@@ -1590,7 +1594,7 @@ const server = http.createServer(async (req, res) => {
           prefs: u ? accounts.getUserPrefs(u.id) : {}, // cross-device preferences
           authRequired: accounts.userCount() > 0,
           inviteRequired: !!currentInviteCode(),
-          ai: !!AI_KEY,
+          ai: AI_ENABLED,
         });
       }
       // usage stats + the storage quota that applies to the signed-in user (for the Statistics view)
@@ -2162,11 +2166,11 @@ const server = http.createServer(async (req, res) => {
       }
 
       if (url === '/api/ai' && req.method === 'POST') {
-        if (!AI_KEY) return send(res, 400, { error: 'AI is not configured — set ANTHROPIC_API_KEY on the server' });
+        if (!AI_ENABLED) return send(res, 400, { error: 'AI is not configured — set ANTHROPIC_API_KEY or RHIZOME_AI_BASE_URL on the server' });
         const body = await readJson(req);
         if (!body.prompt) return send(res, 400, { error: 'missing prompt' });
         try {
-          const text = await askClaude(String(body.prompt).slice(0, 4000), String(body.context || '').slice(0, 100000));
+          const text = await askModel(String(body.prompt).slice(0, 4000), String(body.context || '').slice(0, 100000));
           return send(res, 200, { text });
         } catch (err) {
           return send(res, 502, { error: 'AI request failed: ' + err.message });
@@ -2214,5 +2218,5 @@ server.listen(PORT, HOST, () => {
   console.log(users ? `Accounts: ${users} user(s), login required${TOTP_SECRET ? ' + TOTP MFA' : ''}${INVITE_CODE ? ', registration by invite code' : ''}` : 'Accounts: none yet — open access (set RHIZOME_ADMIN_PASSWORD to lock down)');
   if (AGENT_TOKEN) console.log('Node API: /api/v1 (agent token enabled)');
   console.log('MCP server: POST /mcp (auth with a write/read-scoped API key)');
-  if (AI_KEY) console.log(`Ask AI: enabled (${AI_MODEL})`);
+  if (AI_ENABLED) console.log(`Ask AI: enabled (${AI_MODEL} via ${AI_API === 'anthropic' ? 'Anthropic' : AI_BASE_URL})`);
 });
