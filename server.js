@@ -1370,9 +1370,13 @@ async function reverseGeocode(lat, lon) {
   return address;
 }
 
-const AI_SYSTEM = 'You are an assistant inside an outliner app. The user gives you an outline excerpt and an instruction. ' +
-  'Respond ONLY with outline items: one item per line, using two-space indentation for nesting. ' +
-  'No prose, no preamble, no markdown headers — just the indented list of items.';
+const AI_SYSTEM = 'You are an assistant inside an outliner app. Answer the user\'s request about the given ' +
+  'outline excerpt directly and substantively. Always write in the same language as the request (e.g. a ' +
+  'German request gets a German answer). Format the answer as outline items: one point per line, with two ' +
+  'spaces of indentation per nesting level for sub-points. Each item must be a meaningful, self-contained ' +
+  'statement (a full phrase or sentence), never just a one- or two-word topic label. Do NOT repeat or ' +
+  'restate the request. No preamble, no closing remarks, no markdown headers, no bullet characters or ' +
+  'numbering — only the indented text lines.';
 
 // Ask the configured model to act on an outline excerpt. Backend-agnostic: talks to Anthropic's
 // /v1/messages or any OpenAI-compatible /v1/chat/completions (e.g. a local Ollama), chosen by AI_API.
