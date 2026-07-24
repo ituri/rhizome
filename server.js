@@ -26,6 +26,8 @@
  *   RHIZOME_AI_KEY        API key/bearer for the AI backend (falls back to ANTHROPIC_API_KEY;
  *                         a local Ollama needs none)
  *   RHIZOME_AI_TIMEOUT_MS request timeout in ms        (default 120000; raise for slow CPU models)
+ *   RHIZOME_AI_CONTEXT_CHARS max chars of outline context sent to the model (default 8000; keep it
+ *                         within the backend's context window — Ollama defaults to ~4096 tokens)
  *   RHIZOME_ENCRYPTION_KEY if set, encrypts backups + uploaded files at rest (AES-256-GCM).
  *                         Keep it OUT of DATA_DIR so backups don't ship the key. Restore a
  *                         backup with: RHIZOME_ENCRYPTION_KEY=… node cryptobox.js <in> <out>
@@ -66,6 +68,10 @@ const AI_BASE_URL = (process.env.RHIZOME_AI_BASE_URL || 'https://api.anthropic.c
 // 'anthropic' (/v1/messages) or 'openai' (/v1/chat/completions, e.g. a local Ollama). Auto by URL.
 const AI_API = process.env.RHIZOME_AI_API || (/(^|\/\/[^/]*\.)anthropic\.com/.test(AI_BASE_URL) ? 'anthropic' : 'openai');
 const AI_TIMEOUT_MS = parseInt(process.env.RHIZOME_AI_TIMEOUT_MS || '120000', 10);
+// Cap the outline context sent to the model so it fits the backend's context window (Ollama
+// defaults to ~4096 tokens). Too-large a context truncates the instruction and yields an empty
+// reply. ~8000 chars ≈ 2000 tokens; raise it in tandem with OLLAMA_CONTEXT_LENGTH.
+const AI_CONTEXT_CHARS = parseInt(process.env.RHIZOME_AI_CONTEXT_CHARS || '8000', 10);
 // Anthropic needs a key; a self-hosted OpenAI-compatible endpoint (Ollama) is enabled by its URL.
 const AI_ENABLED = AI_API === 'anthropic' ? !!AI_KEY : !!process.env.RHIZOME_AI_BASE_URL;
 // reverse-geocoder for location pages (coords → address). Configurable so you can point it at a
@@ -1382,7 +1388,8 @@ const AI_SYSTEM = 'You are an assistant inside an outliner app. Answer the user\
 // /v1/messages or any OpenAI-compatible /v1/chat/completions (e.g. a local Ollama), chosen by AI_API.
 async function askModel(prompt, context, model) {
   const useModel = AI_MODELS.includes(model) ? model : AI_MODEL;   // allowlist; ignore anything else
-  const userContent = `Outline context:\n${context || '(empty)'}\n\nInstruction: ${prompt}`;
+  // instruction first so a truncated (over-long) context can never drop the actual request
+  const userContent = `Instruction: ${prompt}\n\nOutline context:\n${context || '(empty)'}`;
   let url, headers, body, pick;
   if (AI_API === 'anthropic') {
     url = AI_BASE_URL + '/v1/messages';
@@ -2183,7 +2190,7 @@ const server = http.createServer(async (req, res) => {
         const body = await readJson(req);
         if (!body.prompt) return send(res, 400, { error: 'missing prompt' });
         try {
-          const text = await askModel(String(body.prompt).slice(0, 4000), String(body.context || '').slice(0, 100000), body.model && String(body.model));
+          const text = await askModel(String(body.prompt).slice(0, 4000), String(body.context || '').slice(0, AI_CONTEXT_CHARS), body.model && String(body.model));
           return send(res, 200, { text });
         } catch (err) {
           return send(res, 502, { error: 'AI request failed: ' + err.message });
