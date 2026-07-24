@@ -1984,6 +1984,8 @@ time[datetime].today { color: oklch(0.5 0.14 150); background: oklch(0.55 0.14 1
 .ai-model-row { display: flex; align-items: center; gap: 6px; padding: 6px 7px 0; font-size: 12px; color: var(--ink-soft); }
 .ai-model-select { flex: 1; font: inherit; font-size: 12px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg); color: var(--ink); }
 .ai-model-select:focus { border-color: var(--accent); outline: none; }
+.ai-track-row { display: flex; align-items: center; gap: 6px; padding: 4px 7px 7px; font-size: 12px; color: var(--ink-soft); cursor: pointer; }
+.ai-track-row input { margin: 0; }
 
 /* ---------------- mirrors ----------------
    Workflowy semantics: every instance of a mirrored item — the original included —

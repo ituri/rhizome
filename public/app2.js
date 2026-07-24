@@ -2408,12 +2408,18 @@ function cycleAiModel() {
   setAiModel(state.aiModels[(i + 1) % state.aiModels.length]);
 }
 
+// human-readable duration for the response-time badge: "820ms", "4.3s"
+function fmtAiDuration(ms) {
+  return ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`;
+}
+
 // send a prompt + the item's subtree to the AI proxy and graft the reply in as sub-items.
 // setTitle: when the target bullet is empty (a free-form ask), write the prompt into it so the
-// question is visible above its answer.
-async function aiRun(id, prompt, { setTitle = false } = {}) {
+// question is visible above its answer. trackTime: append how long the reply took to that bullet.
+async function aiRun(id, prompt, { setTitle = false, trackTime = false } = {}) {
   const model = state.aiModel;
   showToast(model ? `Asking ${model}…` : 'Asking AI…');
+  const t0 = performance.now();
   try {
     const res = await fetch('/api/ai', {
       method: 'POST',
@@ -2424,14 +2430,15 @@ async function aiRun(id, prompt, { setTitle = false } = {}) {
     if (!res.ok) throw new Error(data.error || 'AI request failed');
     const forest = parseIndentedText(data.text || '');
     if (!forest.length) throw new Error('the AI returned nothing usable');
+    const dur = trackTime ? fmtAiDuration(performance.now() - t0) : '';
     closeAllPopovers();
     snapshot();
-    if (setTitle && !plainOf(N(id).text).trim()) { touch(id); N(id).text = escHtml(prompt); }
+    if (setTitle && !plainOf(N(id).text).trim()) { touch(id); N(id).text = escHtml(prompt) + (dur ? ` (${dur})` : ''); }
     N(id).collapsed = false;
     materializeForest(forest, id);
     renderPage();
     markDirty();
-    showToast(`${model || 'AI'} results added as sub-items`, { label: 'Undo', fn: undo });
+    showToast(`${model || 'AI'} results added${dur ? ' · ' + dur : ''}`, { label: 'Undo', fn: undo });
   } catch (err) {
     showToast(String(err.message || err));
   }
@@ -2451,12 +2458,16 @@ function askAI(id) {
     const go = document.createElement('button');
     go.className = 'textbtn';
     go.textContent = 'Go';
+    const track = document.createElement('input');
+    track.type = 'checkbox';
+    track.checked = localStorage.getItem('aiTrackTime') === '1';
+    track.addEventListener('change', () => localStorage.setItem('aiTrackTime', track.checked ? '1' : '0'));
     const run = async () => {
       const prompt = ta.value.trim();
       if (!prompt) return;
       go.textContent = '…';
       go.disabled = true;
-      await aiRun(id, prompt, { setTitle: true }); // closes the popover on success; on error it stays
+      await aiRun(id, prompt, { setTitle: true, trackTime: track.checked }); // closes on success; on error stays
       go.textContent = 'Go';
       go.disabled = false;
     };
@@ -2485,6 +2496,10 @@ function askAI(id) {
     }
     row.append(ta, go);
     pop.append(row);
+    const trow = document.createElement('label');
+    trow.className = 'ai-track-row';
+    trow.append(track, document.createTextNode(' Track response time'));
+    pop.append(trow);
     setTimeout(() => ta.focus(), 30);
   });
 }
