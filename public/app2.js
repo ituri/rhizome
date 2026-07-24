@@ -2416,15 +2416,17 @@ function fmtAiDuration(ms) {
 // send a prompt + the item's subtree to the AI proxy and graft the reply in as sub-items.
 // setTitle: when the target bullet is empty (a free-form ask), write the prompt into it so the
 // question is visible above its answer. trackTime: append how long the reply took to that bullet.
-async function aiRun(id, prompt, { setTitle = false, trackTime = false } = {}) {
+async function aiRun(id, prompt, { setTitle = false, trackTime = false, includePage = false } = {}) {
   const model = state.aiModel;
   showToast(model ? `Asking ${model}…` : 'Asking AI…');
-  // context is the selected item's subtree — but when you ask from an empty scratch bullet
-  // (e.g. "what's on this page?"), fall back to the surrounding page/day so there's something to see
-  let context = subtreeToText(id, 0);
-  if (!plainOf(N(id).text).trim() && !hasKids(id)) {
+  // context is the selected item's subtree; opt in to the whole page/day (e.g. "summarize this
+  // page") — otherwise a standalone question ("was ist der Sommer?") isn't derailed by page content
+  let context;
+  if (includePage) {
     const page = (typeof refGroupOf === 'function' ? refGroupOf(id) : pageOf(id));
-    if (page && page !== id) context = subtreeToText(page, 0);
+    context = subtreeToText(page && page !== id ? page : id, 0);
+  } else {
+    context = subtreeToText(id, 0);
   }
   const t0 = performance.now();
   try {
@@ -2465,16 +2467,21 @@ function askAI(id) {
     const go = document.createElement('button');
     go.className = 'textbtn';
     go.textContent = 'Go';
-    const track = document.createElement('input');
-    track.type = 'checkbox';
-    track.checked = localStorage.getItem('aiTrackTime') === '1';
-    track.addEventListener('change', () => localStorage.setItem('aiTrackTime', track.checked ? '1' : '0'));
+    const mkCheck = (key) => {
+      const c = document.createElement('input');
+      c.type = 'checkbox';
+      c.checked = localStorage.getItem(key) === '1';
+      c.addEventListener('change', () => localStorage.setItem(key, c.checked ? '1' : '0'));
+      return c;
+    };
+    const pageCtx = mkCheck('aiPageContext');
+    const track = mkCheck('aiTrackTime');
     const run = async () => {
       const prompt = ta.value.trim();
       if (!prompt) return;
       go.textContent = '…';
       go.disabled = true;
-      await aiRun(id, prompt, { setTitle: true, trackTime: track.checked }); // closes on success; on error stays
+      await aiRun(id, prompt, { setTitle: true, trackTime: track.checked, includePage: pageCtx.checked }); // closes on success; on error stays
       go.textContent = 'Go';
       go.disabled = false;
     };
@@ -2503,10 +2510,14 @@ function askAI(id) {
     }
     row.append(ta, go);
     pop.append(row);
-    const trow = document.createElement('label');
-    trow.className = 'ai-track-row';
-    trow.append(track, document.createTextNode(' Track response time'));
-    pop.append(trow);
+    const checkRow = (cb, label) => {
+      const l = document.createElement('label');
+      l.className = 'ai-track-row';
+      l.append(cb, document.createTextNode(' ' + label));
+      return l;
+    };
+    pop.append(checkRow(pageCtx, 'Include page as context'));
+    pop.append(checkRow(track, 'Track response time'));
     setTimeout(() => ta.focus(), 30);
   });
 }
