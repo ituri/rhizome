@@ -85,6 +85,24 @@ async function ai(base, ck) {
     srv.kill(); fs.rmSync(DATA, { recursive: true, force: true });
   }
 
+  // 5) multiple models: allowlist picker, default = first, invalid model ignored
+  {
+    const { srv, DATA } = startServer(3815, { RHIZOME_AI_BASE_URL: upURL, RHIZOME_AI_MODELS: 'qwen2.5:3b, qwen2.5:7b' }); const base = 'http://localhost:3815';
+    await waitUp(base); const ck = await login(base);
+    const auth = JSON.parse(await (await fetch(base + '/api/auth')).text());
+    ok(Array.isArray(auth.aiModels) && auth.aiModels.join(',') === 'qwen2.5:3b,qwen2.5:7b', '/api/auth lists the configured models');
+    last = null;
+    await fetch(base + '/api/ai', { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: ck }, body: JSON.stringify({ prompt: 'x', context: '', model: 'qwen2.5:7b' }) });
+    ok(last.body.model === 'qwen2.5:7b', 'a valid requested model is used');
+    last = null;
+    await fetch(base + '/api/ai', { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: ck }, body: JSON.stringify({ prompt: 'x', context: '', model: 'evil-model' }) });
+    ok(last.body.model === 'qwen2.5:3b', 'an off-allowlist model falls back to the default (first)');
+    last = null;
+    await fetch(base + '/api/ai', { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: ck }, body: JSON.stringify({ prompt: 'x', context: '' }) });
+    ok(last.body.model === 'qwen2.5:3b', 'no model → default');
+    srv.kill(); fs.rmSync(DATA, { recursive: true, force: true });
+  }
+
   upstream.close();
   console.log(fail ? `\n${fail} FAILURES` : '\nAll AI-backend tests passed');
   process.exit(fail ? 1 : 0);

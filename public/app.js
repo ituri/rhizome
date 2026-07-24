@@ -30,6 +30,8 @@ const state = {
   readOnly: false,
   shareMode: null,               // 'view' | 'edit' | null
   aiEnabled: false,
+  aiModels: [],                  // selectable Ask AI models (server allowlist)
+  aiModel: null,                 // the currently chosen model (persisted in localStorage)
   authRequired: false,
   shares: [],                    // [{token, id, mode}]
 };
@@ -4517,6 +4519,18 @@ function saveSettings() {
 const SHARED_PREF_KEYS = ['captureTimestamp'];
 
 // on load, the server's stored value wins for shared keys (so a change on iOS shows up here)
+// adopt the server's Ask AI model list and settle on a current model (persisted, validated)
+function applyAiModels(me) {
+  state.aiModels = Array.isArray(me.aiModels) ? me.aiModels : [];
+  const saved = localStorage.getItem('aiModel');
+  state.aiModel = state.aiModels.includes(saved) ? saved : (state.aiModels[0] || null);
+}
+window.setAiModel = function setAiModel(m) {
+  if (!state.aiModels.includes(m)) return;
+  state.aiModel = m;
+  localStorage.setItem('aiModel', m);
+};
+
 function applySharedPrefs(me) {
   if (!me || !me.user || !me.prefs) return;
   for (const k of SHARED_PREF_KEYS) {
@@ -4714,6 +4728,7 @@ async function ensureAuth() {
       state.offline = true;
       state.authRequired = me.authRequired;
       state.aiEnabled = !!me.ai;
+      applyAiModels(me);
       state.user = me.user || null;
       applySharedPrefs(me);
       pickActiveGraph(me);
@@ -4723,6 +4738,7 @@ async function ensureAuth() {
   }
   state.authRequired = me.authRequired;
   state.aiEnabled = !!me.ai;
+  applyAiModels(me);
   state.user = me.user || null;
   applySharedPrefs(me);
   if (!me.authRequired || me.user) { pickActiveGraph(me); return; } // open instance, or already logged in

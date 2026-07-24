@@ -16,6 +16,8 @@
  *   RHIZOME_AGENT_TOKEN   if set, unlocks the per-node REST API at /api/v1 (Bearer or ?token=)
  *   ANTHROPIC_API_KEY     if set, enables the in-app "Ask AI" assistant (Anthropic backend)
  *   RHIZOME_AI_MODEL      model for Ask AI             (default claude-opus-4-8)
+ *   RHIZOME_AI_MODELS     comma-separated list of selectable models (first = default); the web
+ *                         client shows a picker when more than one is configured
  *   RHIZOME_AI_BASE_URL   AI endpoint base URL         (default https://api.anthropic.com).
  *                         Point at any OpenAI-compatible server (e.g. a local Ollama at
  *                         http://host:11434) to run Ask AI off your own hardware.
@@ -55,7 +57,11 @@ const PASSWORD = process.env.RHIZOME_PASSWORD || process.env.TENDRIL_PASSWORD ||
 const TOTP_SECRET = process.env.RHIZOME_TOTP_SECRET || process.env.TENDRIL_TOTP_SECRET || '';
 const AGENT_TOKEN = process.env.RHIZOME_AGENT_TOKEN || process.env.TENDRIL_AGENT_TOKEN || '';
 const AI_KEY = process.env.RHIZOME_AI_KEY || process.env.ANTHROPIC_API_KEY || '';
-const AI_MODEL = process.env.RHIZOME_AI_MODEL || process.env.TENDRIL_AI_MODEL || 'claude-opus-4-8';
+// One or more selectable models (comma-separated in RHIZOME_AI_MODELS); the first is the default.
+// RHIZOME_AI_MODEL stays a single-model alias. Lets the client offer a model picker to compare.
+const AI_MODELS = (process.env.RHIZOME_AI_MODELS || process.env.RHIZOME_AI_MODEL || process.env.TENDRIL_AI_MODEL || 'claude-opus-4-8')
+  .split(',').map(s => s.trim()).filter(Boolean);
+const AI_MODEL = AI_MODELS[0];
 const AI_BASE_URL = (process.env.RHIZOME_AI_BASE_URL || 'https://api.anthropic.com').replace(/\/+$/, '');
 // 'anthropic' (/v1/messages) or 'openai' (/v1/chat/completions, e.g. a local Ollama). Auto by URL.
 const AI_API = process.env.RHIZOME_AI_API || (/(^|\/\/[^/]*\.)anthropic\.com/.test(AI_BASE_URL) ? 'anthropic' : 'openai');
@@ -633,7 +639,7 @@ async function serverStatus() {
   health.push({ name: 'Backups', ok: backups.count > 0, detail: backups.newest ? `${backups.count} kept · newest ${new Date(backups.newest).toISOString().slice(0, 16).replace('T', ' ')}` : 'none yet' });
   const geo = await geocoderHealth();
   health.push({ name: 'Geocoder', ok: geo.ok, detail: geo.detail });
-  health.push({ name: 'Ask AI', ok: AI_ENABLED, detail: AI_ENABLED ? `${AI_MODEL} via ${AI_API === 'anthropic' ? 'Anthropic' : AI_BASE_URL}` : 'not configured' });
+  health.push({ name: 'Ask AI', ok: AI_ENABLED, detail: AI_ENABLED ? `${AI_MODELS.join(', ')} via ${AI_API === 'anthropic' ? 'Anthropic' : AI_BASE_URL}` : 'not configured' });
 
   return {
     version: require('./package.json').version,
@@ -1370,19 +1376,20 @@ const AI_SYSTEM = 'You are an assistant inside an outliner app. The user gives y
 
 // Ask the configured model to act on an outline excerpt. Backend-agnostic: talks to Anthropic's
 // /v1/messages or any OpenAI-compatible /v1/chat/completions (e.g. a local Ollama), chosen by AI_API.
-async function askModel(prompt, context) {
+async function askModel(prompt, context, model) {
+  const useModel = AI_MODELS.includes(model) ? model : AI_MODEL;   // allowlist; ignore anything else
   const userContent = `Outline context:\n${context || '(empty)'}\n\nInstruction: ${prompt}`;
   let url, headers, body, pick;
   if (AI_API === 'anthropic') {
     url = AI_BASE_URL + '/v1/messages';
     headers = { 'content-type': 'application/json', 'x-api-key': AI_KEY, 'anthropic-version': '2023-06-01' };
-    body = { model: AI_MODEL, max_tokens: 4096, system: AI_SYSTEM, messages: [{ role: 'user', content: userContent }] };
+    body = { model: useModel, max_tokens: 4096, system: AI_SYSTEM, messages: [{ role: 'user', content: userContent }] };
     pick = j => (j.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
   } else {
     url = AI_BASE_URL + '/v1/chat/completions';
     headers = { 'content-type': 'application/json' };
     if (AI_KEY) headers.authorization = 'Bearer ' + AI_KEY;
-    body = { model: AI_MODEL, max_tokens: 4096, stream: false,
+    body = { model: useModel, max_tokens: 4096, stream: false,
       messages: [{ role: 'system', content: AI_SYSTEM }, { role: 'user', content: userContent }] };
     pick = j => j.choices?.[0]?.message?.content || '';
   }
@@ -1584,6 +1591,7 @@ const server = http.createServer(async (req, res) => {
           totp: !!TOTP_SECRET,
           ok: isAuthed(req),
           ai: AI_ENABLED,
+          aiModels: AI_ENABLED ? AI_MODELS : [],
         });
       }
       if (url === '/api/me' && req.method === 'GET') {
@@ -1595,6 +1603,7 @@ const server = http.createServer(async (req, res) => {
           authRequired: accounts.userCount() > 0,
           inviteRequired: !!currentInviteCode(),
           ai: AI_ENABLED,
+          aiModels: AI_ENABLED ? AI_MODELS : [],
         });
       }
       // usage stats + the storage quota that applies to the signed-in user (for the Statistics view)
@@ -2170,7 +2179,7 @@ const server = http.createServer(async (req, res) => {
         const body = await readJson(req);
         if (!body.prompt) return send(res, 400, { error: 'missing prompt' });
         try {
-          const text = await askModel(String(body.prompt).slice(0, 4000), String(body.context || '').slice(0, 100000));
+          const text = await askModel(String(body.prompt).slice(0, 4000), String(body.context || '').slice(0, 100000), body.model && String(body.model));
           return send(res, 200, { text });
         } catch (err) {
           return send(res, 502, { error: 'AI request failed: ' + err.message });
@@ -2218,5 +2227,5 @@ server.listen(PORT, HOST, () => {
   console.log(users ? `Accounts: ${users} user(s), login required${TOTP_SECRET ? ' + TOTP MFA' : ''}${INVITE_CODE ? ', registration by invite code' : ''}` : 'Accounts: none yet — open access (set RHIZOME_ADMIN_PASSWORD to lock down)');
   if (AGENT_TOKEN) console.log('Node API: /api/v1 (agent token enabled)');
   console.log('MCP server: POST /mcp (auth with a write/read-scoped API key)');
-  if (AI_ENABLED) console.log(`Ask AI: enabled (${AI_MODEL} via ${AI_API === 'anthropic' ? 'Anthropic' : AI_BASE_URL})`);
+  if (AI_ENABLED) console.log(`Ask AI: enabled (${AI_MODELS.join(', ')} via ${AI_API === 'anthropic' ? 'Anthropic' : AI_BASE_URL})`);
 });

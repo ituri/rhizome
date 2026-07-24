@@ -278,6 +278,7 @@ function slashCommands(ctx) {
     if (state.aiEnabled && !SHARE_TOKEN) {
       cmds.push({ label: 'Ask AI…', icon: icon('magic-wand--filled'), fn: () => askAI(id) });
       for (const [label, instr] of AI_PRESETS) cmds.push({ label, icon: icon('magic-wand--filled'), fn: () => aiRun(id, instr) });
+      if (state.aiModels.length > 1) cmds.push({ label: 'AI model: ' + state.aiModel, icon: icon('magic-wand--filled'), hint: 'switch', fn: () => { cycleAiModel(); showToast('AI model → ' + state.aiModel); } });
     }
     if (!SHARE_TOKEN) cmds.push({ label: 'Share', icon: icon('share'), fn: () => showSharePop(nodeAnchor(id), id) });
     cmds.push({ label: 'Delete', icon: icon('trash-can'), fn: () => opDelete(id) });
@@ -2400,14 +2401,24 @@ const AI_PRESETS = [
   ['AI: Make shorter', 'Rewrite this item and its children to be more concise, preserving the structure.'],
 ];
 
-// send a prompt + the item's subtree to the AI proxy and graft the reply in as sub-items
-async function aiRun(id, prompt) {
-  showToast('Asking AI…');
+// step to the next configured Ask AI model (wraps around); persists the choice
+function cycleAiModel() {
+  if (state.aiModels.length < 2) return;
+  const i = state.aiModels.indexOf(state.aiModel);
+  setAiModel(state.aiModels[(i + 1) % state.aiModels.length]);
+}
+
+// send a prompt + the item's subtree to the AI proxy and graft the reply in as sub-items.
+// setTitle: when the target bullet is empty (a free-form ask), write the prompt into it so the
+// question is visible above its answer.
+async function aiRun(id, prompt, { setTitle = false } = {}) {
+  const model = state.aiModel;
+  showToast(model ? `Asking ${model}…` : 'Asking AI…');
   try {
     const res = await fetch('/api/ai', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt, context: subtreeToText(id, 0) }),
+      body: JSON.stringify({ prompt, context: subtreeToText(id, 0), model }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'AI request failed');
@@ -2415,11 +2426,12 @@ async function aiRun(id, prompt) {
     if (!forest.length) throw new Error('the AI returned nothing usable');
     closeAllPopovers();
     snapshot();
+    if (setTitle && !plainOf(N(id).text).trim()) { touch(id); N(id).text = escHtml(prompt); }
     N(id).collapsed = false;
     materializeForest(forest, id);
     renderPage();
     markDirty();
-    showToast('AI results added as sub-items', { label: 'Undo', fn: undo });
+    showToast(`${model || 'AI'} results added as sub-items`, { label: 'Undo', fn: undo });
   } catch (err) {
     showToast(String(err.message || err));
   }
@@ -2444,7 +2456,7 @@ function askAI(id) {
       if (!prompt) return;
       go.textContent = '…';
       go.disabled = true;
-      await aiRun(id, prompt); // closes the popover on success; on error it stays and we re-enable
+      await aiRun(id, prompt, { setTitle: true }); // closes the popover on success; on error it stays
       go.textContent = 'Go';
       go.disabled = false;
     };
@@ -2454,8 +2466,25 @@ function askAI(id) {
       if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); run(); }
       if (e.key === 'Escape') { e.preventDefault(); closeAllPopovers(); }
     });
+    pop.append(title);
+    if (state.aiModels.length > 1) {
+      const mrow = document.createElement('label');
+      mrow.className = 'ai-model-row';
+      mrow.textContent = 'Model ';
+      const sel = document.createElement('select');
+      sel.className = 'ai-model-select';
+      for (const m of state.aiModels) {
+        const o = document.createElement('option');
+        o.value = m; o.textContent = m; if (m === state.aiModel) o.selected = true;
+        sel.append(o);
+      }
+      sel.addEventListener('change', () => setAiModel(sel.value));
+      sel.addEventListener('keydown', e => e.stopPropagation());
+      mrow.append(sel);
+      pop.append(mrow);
+    }
     row.append(ta, go);
-    pop.append(title, row);
+    pop.append(row);
     setTimeout(() => ta.focus(), 30);
   });
 }
@@ -2531,6 +2560,7 @@ window.showItemMenu = function showItemMenu(anchor, id) {
       if (state.aiEnabled) {
         pop.append(menuItem('Ask AI…', icon('magic-wand--filled'), () => askAI(id)));
         for (const [label, instr] of AI_PRESETS) pop.append(menuItem(label, icon('magic-wand--filled'), () => aiRun(id, instr)));
+        if (state.aiModels.length > 1) pop.append(menuItem('AI model: ' + state.aiModel, icon('magic-wand--filled'), () => { cycleAiModel(); showToast('AI model → ' + state.aiModel); }));
       }
     }
     pop.append(document.createElement('hr'));
