@@ -1797,6 +1797,12 @@ function shouldShow(id, underMatch) {
   return underMatch || state.matchSet.has(id) || state.openSet.has(id);
 }
 
+// a PDF attachment (by extension or mime) — rendered inline like an image, opened in the lightbox
+function isPdfFile(f) {
+  const nm = f.name || f.url || '';
+  return /\.pdf(\?|#|$)/i.test(nm) || (f.type || '').includes('pdf');
+}
+
 function buildAttachments(n) {
   if (!n.files || !n.files.length) return null;
   const wrap = document.createElement('div');
@@ -1823,6 +1829,30 @@ function buildAttachments(n) {
         rm.addEventListener('click', () => removeAttachment(n.id, f.url));
         wrap.append(rm);
       }
+    } else if (isPdfFile(f) && url) {
+      // show the PDF inline like a photo (native first-page render); click → lightbox preview
+      const box = document.createElement('div');
+      box.className = 'att-pdf';
+      box.title = f.name || 'PDF';
+      const emb = document.createElement('embed');
+      emb.className = 'att-pdf-embed';
+      emb.type = 'application/pdf';
+      emb.src = url + '#toolbar=0&navpanes=0&scrollbar=0&view=FitH';
+      box.append(emb);
+      const nameTag = document.createElement('span');
+      nameTag.className = 'att-pdf-name';
+      nameTag.textContent = f.name || 'PDF';
+      box.append(nameTag);
+      box.addEventListener('click', () => openFilePreview(f, url));
+      if (!state.readOnly) {
+        const rm = document.createElement('button');
+        rm.className = 'att-remove att-pdf-remove';
+        rm.title = 'Remove attachment';
+        rm.textContent = '×';
+        rm.addEventListener('click', e => { e.stopPropagation(); removeAttachment(n.id, f.url); });
+        box.append(rm);
+      }
+      wrap.append(box);
     } else {
       const chip = document.createElement('a');
       chip.className = 'att-chip';
@@ -1944,7 +1974,7 @@ function mountItem(id, underMatch = false) {
     item.classList.add('has-files');
     // a row whose attachments are all non-image chips needs a slightly different vertical pull
     // than the image case, so the bullet dot lines up with the chip's centre
-    if (cn.files.every(f => !looksLikeImage(f.name || f.url))) item.classList.add('has-file-chip');
+    if (cn.files.every(f => !looksLikeImage(f.name || f.url) && !isPdfFile(f))) item.classList.add('has-file-chip');
   }
   if (kidsOf(cn.id).length) item.classList.add('has-children');
   if (!expanded) item.classList.add('collapsed');
