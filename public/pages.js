@@ -1025,18 +1025,34 @@ window.parseAttribute = function parseAttribute(node) {
 window.parseLiveQuery = function parseLiveQuery(raw) {
   const qm = (raw || '').match(/\{\{query:([\s\S]*)\}\}/);
   if (!qm) return null;
+  // {view:…}{group:…}{sort:…} are rendering hints, not match clauses — pull them out before parsing.
+  const body = qm[1].replace(/\{(?:view|group|sort)\s*:[^}]*\}/gi, ' ');
   const tokens = [];
-  const re = /\{(and|or|not|between)\s*:|(\})|<a[^>]*href="#\/n\/([A-Za-z0-9]+)"[^>]*>[\s\S]*?<\/a>|\[\[([^\]]+)\]\]|#\[\[([^\]]+)\]\]|#([\p{L}\p{N}_][\p{L}\p{N}_\-/]*)/gu;
+  const FIELD = 'is|has|text|highlight|changed|created|in|on|link|date-before|date-after|day-of-week|date';
+  const re = new RegExp(
+    '\\{(and|or|not|between)\\s*:' +                                  // 1: boolean group
+    '|\\{(' + FIELD + ')\\s*:\\s*([^}]*)\\}' +                        // 2: field op, 3: value
+    '|(\\})' +                                                        // 4: close
+    '|<a[^>]*href="#/n/([A-Za-z0-9]+)"[^>]*>[\\s\\S]*?</a>' +         // 5: anchor id
+    '|\\[\\[([^\\]]+)\\]\\]' +                                        // 6: [[name]]
+    '|#\\[\\[([^\\]]+)\\]\\]' +                                       // 7: #[[name]]
+    '|#([\\p{L}\\p{N}_][\\p{L}\\p{N}_\\-/]*)',                        // 8: #tag
+    'gu');
   let m;
-  while ((m = re.exec(qm[1]))) {
+  while ((m = re.exec(body))) {
     if (m[1]) { tokens.push({ t: 'open', op: m[1] }); continue; }
-    if (m[2]) { tokens.push({ t: 'close' }); continue; }
-    if (m[3]) { // an existing anchor: a day node is a date, anything else a page
-      const cd = N(m[3]) && N(m[3]).cd;
-      tokens.push(cd ? { t: 'date', iso: cd } : { t: 'page', id: m[3] });
+    if (m[2]) { // a field filter like {is:todo}, {created:7d}, {date:this week}
+      const kind = m[2].toLowerCase() === 'text' ? 'textfmt' : m[2].toLowerCase();
+      tokens.push({ t: 'filter', cond: { neg: false, kind, value: (m[3] || '').trim().toLowerCase() } });
       continue;
     }
-    const name = (m[4] || m[5] || m[6] || '').trim();
+    if (m[4]) { tokens.push({ t: 'close' }); continue; }
+    if (m[5]) { // an existing anchor: a day node is a date, anything else a page
+      const cd = N(m[5]) && N(m[5]).cd;
+      tokens.push(cd ? { t: 'date', iso: cd } : { t: 'page', id: m[5] });
+      continue;
+    }
+    const name = (m[6] || m[7] || m[8] || '').trim();
     if (!name) continue;
     const iso = parseRoamDate(name);
     if (iso) { tokens.push({ t: 'date', iso }); continue; }
@@ -1049,6 +1065,7 @@ window.parseLiveQuery = function parseLiveQuery(raw) {
     if (!tok) return null;
     if (tok.t === 'page') { i++; return { op: 'ref', id: tok.id }; }
     if (tok.t === 'date') { i++; return { op: 'date', iso: tok.iso }; }
+    if (tok.t === 'filter') { i++; return { op: 'filter', cond: tok.cond }; }
     if (tok.t === 'open') {
       i++;
       const children = [];
@@ -1088,6 +1105,11 @@ window.evalLiveQuery = function evalLiveQuery(ast, selfId) {
   const ev = node => {
     if (node.op === 'ref') return refMatches(node.id);
     if (node.op === 'date') return new Set(); // only meaningful inside {between}
+    if (node.op === 'filter') { // a search-DSL field condition, e.g. {is:todo} {created:7d}
+      const set = new Set();
+      for (const id of universe()) if (window.nodeMatchesCond(id, node.cond)) set.add(id);
+      return set;
+    }
     if (node.op === 'between') {
       const isos = node.children.map(c => c.iso).filter(Boolean).sort();
       const [a, b] = isos;
@@ -1114,6 +1136,119 @@ window.evalLiveQuery = function evalLiveQuery(ast, selfId) {
   return [...res];
 };
 
+// which result view a {{query}} block asked for via a {view:…} hint (list is the default)
+function queryView(text) {
+  const m = (text || '').match(/\{view:\s*(list|table|board|kanban|calendar)\s*\}/i);
+  const v = m && m[1].toLowerCase();
+  return v === 'kanban' ? 'board' : (v || 'list');
+}
+
+// a representative ISO date for a result block: the day page it lives under, else its first date pill
+function blockDate(id) {
+  const g = N(refGroupOf(id));
+  if (g && g.cal === 'day' && g.cd) return g.cd;
+  const pills = (typeof pillDates === 'function') ? pillDates(N(contentIdOf(id)).text || '') : [];
+  return pills.sort()[0] || null;
+}
+
+// the source-page title + id a result belongs to (for the Page column / board columns)
+function resultPage(id) {
+  const gid = refGroupOf(id);
+  return { id: gid, title: (plainOf(N(gid)?.text || '').trim()) || 'Untitled' };
+}
+
+// ---- result views ----
+function buildQueryTable(ids) {
+  const table = document.createElement('table');
+  table.className = 'query-table';
+  table.innerHTML = '<thead><tr><th>Text</th><th>Page</th><th>Date</th></tr></thead>';
+  const tb = document.createElement('tbody');
+  for (const id of ids) {
+    const tr = document.createElement('tr');
+    const tdText = document.createElement('td');
+    tdText.className = 'qt-text';
+    tdText.innerHTML = decorate(N(contentIdOf(id)).text || '');
+    tdText.addEventListener('click', e => { if (!e.target.closest('a')) zoomTo(id); });
+    const tdPage = document.createElement('td');
+    const pg = resultPage(id);
+    const a = document.createElement('a'); a.href = '#/n/' + pg.id; a.textContent = pg.title;
+    tdPage.append(a);
+    const tdDate = document.createElement('td');
+    tdDate.className = 'qt-date'; tdDate.textContent = blockDate(id) || '';
+    tr.append(tdText, tdPage, tdDate);
+    tb.append(tr);
+  }
+  table.append(tb);
+  return table;
+}
+
+function buildQueryBoard(ids) {
+  const cols = new Map(); // pageId → { title, ids[] }
+  for (const id of ids) {
+    const pg = resultPage(id);
+    const col = cols.get(pg.id) || { title: pg.title, ids: [] };
+    col.ids.push(id); cols.set(pg.id, col);
+  }
+  const board = document.createElement('div');
+  board.className = 'query-board';
+  for (const [pid, col] of cols) {
+    const c = document.createElement('div'); c.className = 'qb-col';
+    const h = document.createElement('a'); h.className = 'qb-col-head'; h.href = '#/n/' + pid;
+    h.textContent = `${col.title} (${col.ids.length})`;
+    c.append(h);
+    for (const id of col.ids) {
+      const card = document.createElement('div'); card.className = 'qb-card';
+      card.innerHTML = decorate(N(contentIdOf(id)).text || '');
+      card.addEventListener('click', e => { if (!e.target.closest('a')) zoomTo(id); });
+      c.append(card);
+    }
+    board.append(c);
+  }
+  return board;
+}
+
+function buildQueryCalendar(ids) {
+  const wrap = document.createElement('div');
+  wrap.className = 'query-calendar';
+  const byDay = new Map(); const undated = [];
+  for (const id of ids) { const d = blockDate(id); if (d) (byDay.get(d) || byDay.set(d, []).get(d)).push(id); else undated.push(id); }
+  // the month to show: the earliest result's month, else the current month
+  const anchor = [...byDay.keys()].sort()[0] || isoOf(new Date());
+  const [ay, am] = anchor.split('-').map(Number);
+  const first = new Date(ay, am - 1, 1);
+  const weekStart = (settings.weekStart === 'sun') ? 0 : 1;
+  const lead = (first.getDay() - weekStart + 7) % 7;
+  const days = new Date(ay, am, 0).getDate();
+  const head = document.createElement('div');
+  head.className = 'qc-head';
+  head.textContent = first.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  wrap.append(head);
+  const grid = document.createElement('div');
+  grid.className = 'qc-grid';
+  const dow = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+  for (let i = 0; i < 7; i++) { const d = document.createElement('div'); d.className = 'qc-dow'; d.textContent = dow[(weekStart + i) % 7]; grid.append(d); }
+  for (let i = 0; i < lead; i++) { const e = document.createElement('div'); e.className = 'qc-cell qc-empty'; grid.append(e); }
+  for (let day = 1; day <= days; day++) {
+    const iso = `${ay}-${String(am).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const cell = document.createElement('div'); cell.className = 'qc-cell';
+    const num = document.createElement('div'); num.className = 'qc-num'; num.textContent = String(day); cell.append(num);
+    for (const id of (byDay.get(iso) || [])) {
+      const chip = document.createElement('div'); chip.className = 'qc-chip';
+      chip.textContent = plainOf(N(contentIdOf(id)).text || '').slice(0, 40);
+      chip.addEventListener('click', () => zoomTo(id));
+      cell.append(chip);
+    }
+    grid.append(cell);
+  }
+  wrap.append(grid);
+  if (undated.length) {
+    const u = document.createElement('div'); u.className = 'qc-undated';
+    u.textContent = `${undated.length} without a date`;
+    wrap.append(u);
+  }
+  return wrap;
+}
+
 // the live result list appended under a {{query:…}} block (re-runs on every render)
 window.buildQueryResults = function buildQueryResults(n) {
   if (!/\{\{query:/.test(n.text || '')) return null;
@@ -1122,14 +1257,24 @@ window.buildQueryResults = function buildQueryResults(n) {
   const ast = window.parseLiveQuery(n.text);
   if (!ast) { box.innerHTML = '<div class="ref-none">Invalid query.</div>'; return box; }
   const ids = window.evalLiveQuery(ast, n.id).filter(id => doc.nodes[id]);
-  const rows = ids.map(id => ({ id, html: N(contentIdOf(id)).text }));
-  const built = rows.length ? buildRefGroups(null, rows) : null;
+  const view = queryView(n.text);
   const head = document.createElement('div');
   head.className = 'query-head';
-  head.textContent = `${ids.length} result${ids.length === 1 ? '' : 's'}`;
+  head.textContent = `${ids.length} result${ids.length === 1 ? '' : 's'}` + (view !== 'list' ? ` · ${view}` : '');
   box.append(head);
-  if (built) box.append(built.el);
-  else { const none = document.createElement('div'); none.className = 'ref-none'; none.textContent = 'No matches.'; box.append(none); }
+  if (!ids.length) {
+    const none = document.createElement('div'); none.className = 'ref-none'; none.textContent = 'No matches.';
+    box.append(none);
+    return box;
+  }
+  if (view === 'table') box.append(buildQueryTable(ids));
+  else if (view === 'board') box.append(buildQueryBoard(ids));
+  else if (view === 'calendar') box.append(buildQueryCalendar(ids));
+  else {
+    const built = buildRefGroups(null, ids.map(id => ({ id, html: N(contentIdOf(id)).text })));
+    if (built) box.append(built.el);
+    else { const none = document.createElement('div'); none.className = 'ref-none'; none.textContent = 'No matches.'; box.append(none); }
+  }
   return box;
 };
 

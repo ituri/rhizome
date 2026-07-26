@@ -2522,6 +2522,44 @@ body.rightbar-open .rightbar {
 .query-head { font-size: 12px; font-weight: 600; color: var(--ink-faint); margin-bottom: 4px; }
 .query-block .ref-group { margin: 6px 0 8px; }
 
+/* Query result views (table / board / calendar) */
+.query-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.query-table th { text-align: left; font-weight: 600; color: var(--ink-faint); border-bottom: 1px solid var(--line, rgba(127,127,127,.2)); padding: 3px 8px 3px 0; }
+.query-table td { border-bottom: 1px solid var(--line, rgba(127,127,127,.12)); padding: 4px 8px 4px 0; vertical-align: top; }
+.query-table .qt-text { cursor: pointer; }
+.query-table .qt-date { color: var(--ink-faint); white-space: nowrap; }
+
+.query-board { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px; }
+.qb-col { flex: 0 0 200px; background: var(--bg-soft, rgba(127,127,127,.06)); border-radius: 6px; padding: 6px; }
+.qb-col-head { display: block; font-size: 12px; font-weight: 600; color: var(--ink-faint); margin-bottom: 6px; text-decoration: none; }
+.qb-card { background: var(--bg, #fff); border: 1px solid var(--line, rgba(127,127,127,.18)); border-radius: 4px; padding: 5px 7px; margin-bottom: 6px; font-size: 13px; cursor: pointer; }
+
+.query-calendar .qc-head { font-size: 13px; font-weight: 600; margin: 2px 0 6px; }
+.qc-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.qc-dow { font-size: 11px; color: var(--ink-faint); text-align: center; padding: 2px 0; }
+.qc-cell { min-height: 46px; border: 1px solid var(--line, rgba(127,127,127,.12)); border-radius: 3px; padding: 2px; }
+.qc-cell.qc-empty { border: none; }
+.qc-num { font-size: 11px; color: var(--ink-faint); }
+.qc-chip { font-size: 11px; background: var(--accent); color: #fff; border-radius: 3px; padding: 1px 4px; margin-top: 2px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qc-undated { font-size: 12px; color: var(--ink-faint); margin-top: 6px; }
+
+/* Visual query builder (querybuilder.js) */
+.qbuild-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+.qbuild { background: var(--bg, #fff); color: var(--ink, #222); border-radius: 10px; padding: 18px 20px; width: min(420px, 92vw); box-shadow: 0 12px 40px rgba(0,0,0,.3); }
+.qbuild-title { font-weight: 600; font-size: 15px; margin-bottom: 12px; }
+.qbuild-row, .qbuild-row2 label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--ink-faint); margin-bottom: 10px; }
+.qbuild-row input, .qbuild select { font: inherit; font-size: 14px; color: var(--ink); background: var(--bg-soft, rgba(127,127,127,.08)); border: 1px solid var(--line, rgba(127,127,127,.25)); border-radius: 5px; padding: 5px 7px; }
+.qbuild-checks { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px; font-size: 13px; margin-bottom: 10px; }
+.qbuild-checks label { display: flex; align-items: center; gap: 6px; }
+.qbuild-row2 { display: flex; gap: 12px; }
+.qbuild-row2 label { flex: 1; }
+.qbuild-preview { background: var(--bg-soft, rgba(127,127,127,.08)); border-radius: 5px; padding: 8px 10px; margin: 4px 0 14px; }
+.qbuild-preview code { font-size: 12px; color: var(--accent); word-break: break-all; }
+.qbuild-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.qbuild-actions button { font: inherit; font-size: 14px; padding: 6px 14px; border-radius: 6px; border: 1px solid var(--line, rgba(127,127,127,.25)); background: var(--bg-soft, rgba(127,127,127,.08)); color: var(--ink); cursor: pointer; }
+.qbuild-actions .qb-insert { background: var(--accent); color: #fff; border-color: transparent; }
+.qbuild-actions .qb-insert:disabled { opacity: .45; cursor: default; }
+
 /* Live hover preview (preview.js) — a floating, editable transclusion of a link/ref target */
 .hover-preview {
   position: fixed;

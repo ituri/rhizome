@@ -28,6 +28,7 @@
         snapshot(); const id = getOrCreatePage(t.trim()); markDirty(); zoomTo(id);
       } },
       { group: 'Create', label: 'Quick capture', hint: 'Ctrl+Shift+Space', when: () => !shared(), run: () => window.showCapture?.() },
+      { group: 'Create', label: 'Insert query…', when: writable, run: () => window.showQueryBuilder?.() },
 
       // View
       { group: 'View', label: () => (settings.showCompleted ? 'Hide completed items' : 'Show completed items'), hint: 'Ctrl+O',

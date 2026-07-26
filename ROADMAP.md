@@ -20,7 +20,7 @@ Status: ⬜ geplant · 🚧 in Arbeit · ✅ umgesetzt · ❌ verworfen
 | Status | Feature | Kern | Notiz |
 |---|---|---|---|
 | ⬜ | **Spaced Repetition / Flashcards** | `{{card}}`-Marker, SM-2-Intervalle als Block-Attribute, Review-Ansicht (`#/review`) | Höchster Hebel: meistgefeiertes Roam-Feature, fehlt komplett, 100 % lokal/zero-dep |
-| ⬜ | **Query Builder mit Ergebnis-Views** | Visuelles Query-Bauen + Tabellen-/Kanban-/Kalender-Rendering der Treffer | Baut auf vorhandener `{{query}}`-Engine auf |
+| ✅ | **Query Builder mit Ergebnis-Views** | Visuelles Query-Bauen + Tabellen-/Kanban-/Kalender-Rendering der Treffer | Umgesetzt 2026-07-26. (1) Feld-Operatoren der Such-DSL in die Live-`{{query}}` gehoben: `{is:todo}`, `{has:image}`, `{created:7d}`, `{date:this week}`, … (geteilte `nodeMatchesCond`), kombinierbar mit `{and/or/not/between}` und Ref-/Datums-Matches. (2) Ergebnis-Views via `{view:table\|board\|calendar}`. (3) Visueller Builder (`querybuilder.js`, Command Palette → „Insert query…") mit Live-Preview. Test: `tests/test-query.js` |
 | ✅ | **Live Hover-Preview** | Editierbare Vorschau über `[[links]]` / `((refs))` beim Hover | Umgesetzt 2026-07-21 (`public/preview.js`): editierbare Transklusion des Ziels, synct über den Op-Pfad; nur bei echtem Pointer (hover), abschaltbar |
 | ✅ | **Globale Command Palette** | Fuzzy-Zugriff auf alle Aktionen (Alt+Shift+P) | Umgesetzt 2026-07-21 (`public/palette.js`): gruppierte Befehle, Fuzzy-Filter; Alt+Shift+P (Ctrl+P/Ctrl+Shift+P sind belegt; Print bleibt und ist zudem als Befehl drin) |
 
@@ -54,4 +54,4 @@ Rhizome adressiert die Nische stattdessen über **MCP + REST-API**.
 | **Plugin-/roam-js-Ökosystem** | Widerspricht „zero runtime deps, ein Prozess" |
 | **Multiplayer / Echtzeit-Kollaboration** | Single-owner-Modell by design; Rhizome nutzt Last-writer-wins + additives Merging |
 | **Editierbare Tabellen / Attribut-Tabellen** | Sizable Feature, Workflowy-Parität — vorerst außerhalb des Fokus |
-| **Audio-Aufnahme (+ Transkript)** | Passt schlecht zu zero-dep; niedrige Nachfrage |
+| **Audio-Aufnahme (+ Transkript)** *im Web* | Native Web-Aufnahme passt schlecht zu zero-dep. **Gibt es aber in der iOS-App** (seit 2026-07-25, `ituri/rhizome-app`): On-Device-Diktat via `SpeechAnalyzer`/`SpeechTranscriber`, transcript-only → schreibt reinen Text in den Node, daher **kein Web-/Server-Änderungsbedarf**. Web bleibt bei Nicht-Ziel für native Aufnahme |

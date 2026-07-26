@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node server.js",
     "tui": "node tui.js",
-    "lint": "eslint server.js tui.js db.js ops.js opsdoc.js cryptobox.js public/icons.js public/app.js public/app2.js public/pages.js public/preview.js public/palette.js bench",
+    "lint": "eslint server.js tui.js db.js ops.js opsdoc.js cryptobox.js public/icons.js public/app.js public/app2.js public/pages.js public/preview.js public/palette.js public/querybuilder.js bench",
     "typecheck": "tsc --noEmit",
     "test:db": "node tests/test-db.js",
     "test:converge": "node tests/test-converge.js",
@@ -20,6 +20,7 @@
     "test:opsync": "node tests/test-opsync.js",
     "test:persist": "node tests/test-persist.js",
     "test:search": "node tests/test-search.js",
+    "test:query": "node tests/test-query.js",
     "test:mirror": "node tests/test-mirror.js",
     "test:mirrorserver": "node tests/test-mirror-server.js",
     "test:pages": "node tests/test-pages.js",

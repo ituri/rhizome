@@ -1582,6 +1582,17 @@ function nodeMeetsTextFormat(n, cond, html) {
   return cond.neg ? !hit : hit;
 }
 
+// Evaluate one parsed search-DSL condition ({kind,value,neg}) against a node id. Shared with the
+// live {{query}} engine so embedded queries get the same is:/has:/created:/date:/highlight:/… field
+// operators the search bar has. Handles mirrors (matches on the target's content) like the search.
+window.nodeMatchesCond = function nodeMatchesCond(id, cond) {
+  const n = N(contentIdOf(id));
+  if (!n) return false;
+  const html = (n.text || '') + ' ' + (n.note || '');
+  const hay = (plainOf(n.text) + ' ' + (n.note || '')).toLowerCase();
+  return cond.kind === 'textfmt' ? nodeMeetsTextFormat(n, cond, html) : nodeMeetsCond(n, cond, hay, html);
+};
+
 function nodeMatchesSegment(id, seg) {
   const n = N(contentIdOf(id)); // a mirror matches when its target's content matches
   const html = (n.text || '') + ' ' + (n.note || '');
