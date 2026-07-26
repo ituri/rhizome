@@ -32,7 +32,8 @@
       <div class="qbuild" role="dialog" aria-label="Insert query">
         <div class="qbuild-title">Insert query</div>
         <label class="qbuild-row">References page / tag
-          <input type="text" class="qb-ref" placeholder="Projekt X  or  #idea" />
+          <input type="text" class="qb-ref" list="qb-reflist" placeholder="Projekt X  or  #idea" autocomplete="off" />
+          <datalist id="qb-reflist"></datalist>
         </label>
         <div class="qbuild-checks">
           <label><input type="checkbox" class="qb-todo" /> is a to-do</label>
@@ -73,6 +74,18 @@
       ref: $('.qb-ref'), todo: $('.qb-todo'), done: $('.qb-done'), image: $('.qb-image'),
       link: $('.qb-link'), date: $('.qb-date'), mode: $('.qb-mode'), view: $('.qb-view'),
     };
+    // autocomplete the ref field with existing page titles + tags (native <datalist>)
+    try {
+      const titles = (typeof pagesOf === 'function' ? pagesOf() : []).map(id => plainOf(N(id).text).trim()).filter(Boolean);
+      const tags = (typeof collectTags === 'function' ? collectTags() : []);
+      const seen = new Set();
+      const dl = $('#qb-reflist');
+      for (const v of [...titles, ...tags]) {
+        if (seen.has(v)) continue; seen.add(v);
+        const o = document.createElement('option'); o.value = v; dl.append(o);
+      }
+    } catch { /* suggestions are best-effort */ }
+
     const preview = $('.qb-preview');
     const insertBtn = $('.qb-insert');
     const refresh = () => {

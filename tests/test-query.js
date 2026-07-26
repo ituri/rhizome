@@ -81,6 +81,8 @@ const cookieFrom = sc => { const m = (sc || '').match(/rz_session=([^;]+)/); ret
   await p.evaluate(() => window.showQueryBuilder());
   await sleep(150);
   ok(await p.$('.qbuild') !== null, 'query builder modal opens');
+  const suggestions = await p.evaluate(() => [...document.querySelectorAll('#qb-reflist option')].map(o => o.value));
+  ok(suggestions.includes('Projekt X'), `ref field autocompletes existing pages (${JSON.stringify(suggestions)})`);
   await p.evaluate(() => document.querySelector('.qb-todo').click());
   const preview = await p.evaluate(() => document.querySelector('.qb-preview').textContent);
   ok(/\{\{query: \{is:todo\}\}\}/.test(preview), `builder preview reflects the condition ("${preview}")`);
