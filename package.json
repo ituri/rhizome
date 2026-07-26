@@ -20,6 +20,7 @@
     "test:opsync": "node tests/test-opsync.js",
     "test:persist": "node tests/test-persist.js",
     "test:lostupdate": "node tests/test-lostupdate.js",
+    "test:stress": "node tests/test-typing-stress.js",
     "test:search": "node tests/test-search.js",
     "test:query": "node tests/test-query.js",
     "test:mirror": "node tests/test-mirror.js",

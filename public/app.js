@@ -1021,14 +1021,21 @@ function stashOffline() {
 async function doSave() {
   if (saving || !doc || state.readOnly) return;
   saving = true;
-  const seq = changeSeq;
+  let seq = changeSeq;
   try {
+    // Flush the active DOM edit into node state (and into an op if an undo txn is open) BEFORE the
+    // path decision below — so neither the op path nor the PUT fallback can send a stale node.text
+    // (the "last typed character never reached the server" bug). The flush may itself set
+    // uncommittedNodeEdit (a commit with no open txn emits no op); the condition then routes to the
+    // whole-doc PUT, whose body carries the full node text. `seq` is captured AFTER the flush so a
+    // clean save can still clear `dirty`.
+    commitActiveText(true);
+    commitUndoTxn();
+    seq = changeSeq;
     // Route B op delta-sync (default): send the ops the journal emitted — no baseline is
     // consulted, so the send path cannot drift. The server dedupes by op id and orders by
     // a monotonic version, so a re-send after a failure is safe. PUT remains the fallback.
     if (settings.opSync && !SHARE_TOKEN && serverHasDoc && !metaDirty && !uncommittedNodeEdit) {
-      commitActiveText(true); // flush the active edit into the op WITH re-decorate (so e.g. a
-      commitUndoTxn();        // just-inserted date pill is styled), then finalize the op
       if (!pendingOps.length) {
         // Nothing to delta-sync. If the doc is CLEAN, we're genuinely up to date → "saved".
         // But if it's still DIRTY, a mutation reached node state WITHOUT emitting an op (e.g.
