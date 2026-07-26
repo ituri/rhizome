@@ -92,6 +92,21 @@ const cookieFrom = sc => { const m = (sc || '').match(/rz_session=([^;]+)/); ret
     /\{\{query: \{is:todo\}\}\}/.test(it.querySelector('.content')?.textContent || '') && it.querySelector('.query-block .query-head')));
   ok(inserted, 'builder inserted a live query block that renders results');
 
+  // editor autocomplete: typing `{` inside a {{query:…}} block offers the operators
+  await p.evaluate(() => {
+    const el = document.querySelector('.item[data-id="q1"] .content');
+    el.focus();
+    const sel = getSelection(); const r = document.createRange();
+    r.selectNodeContents(el); r.collapse(false); sel.removeAllRanges(); sel.addRange(r); // caret at end
+  });
+  await p.keyboard.type('{is');
+  await sleep(200);
+  const ops = await p.evaluate(() => {
+    const el = document.querySelector('.caret-pop');
+    return el ? [...el.querySelectorAll('.pop-label')].map(x => x.textContent) : null;
+  });
+  ok(ops && ops.some(l => /is:todo/.test(l)), `typing "{is" in a query offers operator autocomplete (${JSON.stringify(ops)})`);
+
   ok(errs.length === 0, 'no JS errors' + (errs.length ? ': ' + errs.join(' | ') : ''));
 
   await b.close(); srv.kill(); fs.rmSync(DATA, { recursive: true, force: true });

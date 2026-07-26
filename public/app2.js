@@ -313,6 +313,10 @@ function refreshCaretPop(query) {
     const found = searchNodes(query, 8).filter(it => it.id !== caretPop.ctx.id);
     const items = found.map(it => ({ label: it.plain.slice(0, 60), chip: 'Block', path: it.path, blockId: it.id }));
     renderCaretItems(items, it => pickBlockRef(it), query.trim() ? 'No matching blocks' : 'Search for a block to reference');
+  } else if (caretPop.type === 'queryop') {
+    const items = QUERY_OPS.filter(o => o.match.startsWith(q)).slice(0, 12);
+    renderCaretItems(items.map(o => ({ label: o.label, chip: 'Query', op: o })), it => pickQueryOp(it.op), 'No matching query operator');
+    if (!items.length) window.closeCaretPop();
   }
 }
 
@@ -385,6 +389,41 @@ function pickTag(tag) {
   window.closeCaretPop();
   deletePlainRange(ctx.el, start, caret);
   document.execCommand('insertText', false, tag + ' ');
+  scheduleCommit(ctx.el);
+}
+
+// Autocomplete for the live-query DSL, offered when you type `{` inside a {{query:…}} block.
+// `insert` is the snippet dropped in; `back` moves the caret left that many chars (into an
+// empty container/value); `match` is the keyword the typed prefix is filtered against.
+const QUERY_OPS = [
+  { label: '{and: … }  — all of', insert: '{and: }', back: 1, match: 'and' },
+  { label: '{or: … }  — any of', insert: '{or: }', back: 1, match: 'or' },
+  { label: '{not: … }  — exclude', insert: '{not: }', back: 1, match: 'not' },
+  { label: '{between: [[A]] [[B]]}  — date range', insert: '{between: }', back: 1, match: 'between' },
+  { label: '{is:todo}', insert: '{is:todo}', match: 'is:todo' },
+  { label: '{is:done}', insert: '{is:done}', match: 'is:done' },
+  { label: '{has:image}', insert: '{has:image}', match: 'has:image' },
+  { label: '{has:link}', insert: '{has:link}', match: 'has:link' },
+  { label: '{has:date}', insert: '{has:date}', match: 'has:date' },
+  { label: '{highlight: … }', insert: '{highlight:}', back: 1, match: 'highlight' },
+  { label: '{created:7d}', insert: '{created:7d}', match: 'created' },
+  { label: '{changed:7d}', insert: '{changed:7d}', match: 'changed' },
+  { label: '{date:this week}', insert: '{date:this week}', match: 'date' },
+  { label: '{day-of-week:monday}', insert: '{day-of-week:monday}', match: 'day-of-week' },
+  { label: '{link: … }', insert: '{link:}', back: 1, match: 'link' },
+  { label: '{text:bold}', insert: '{text:bold}', match: 'text' },
+  { label: '{view:table}', insert: '{view:table}', match: 'view:table' },
+  { label: '{view:board}', insert: '{view:board}', match: 'view:board' },
+  { label: '{view:calendar}', insert: '{view:calendar}', match: 'view:calendar' },
+];
+
+function pickQueryOp(op) {
+  const { ctx, start } = caretPop;
+  const caret = caretOffsetIn(ctx.el) ?? start;
+  window.closeCaretPop();
+  deletePlainRange(ctx.el, start, caret);   // remove the typed `{prefix`
+  document.execCommand('insertText', false, op.insert);
+  if (op.back) { const sel = getSelection(); for (let i = 0; i < op.back; i++) sel.modify('move', 'backward', 'character'); }
   scheduleCommit(ctx.el);
 }
 
@@ -466,6 +505,12 @@ window.editorInputHook = function editorInputHook(ctx) {
     else refreshCaretPop(m[1]);
     return;
   }
+  if (caretPop && caretPop.type === 'queryop') {
+    const m = before.match(/\{([\p{L}:-]*)$/u);
+    if (!m || off <= caretPop.start) { window.closeCaretPop(); }
+    else refreshCaretPop(m[1]);
+    return;
+  }
 
   // reveal-on-focus: typed-out [[title]], [text](url) and inline **bold**/*italic*/`code`/etc.
   // are left as raw editable markdown while the line is focused; they're resolved to stored HTML
@@ -487,6 +532,19 @@ window.editorInputHook = function editorInputHook(ctx) {
     refreshCaretPop(bm[1]);
     clearDateSuggest();
     return;
+  }
+
+  // { → live-query operator autocomplete, only inside a {{query:…}} block. Skips the `{{` opener
+  // (the matched `{` would be preceded by another `{`), so it fires on {is:…}/{and:…}/{view:…}.
+  const qm = before.match(/\{([\p{L}:-]*)$/u);
+  if (qm && ctx.field === 'text' && fmtOf(ctx.id) !== 'codeblock' && /\{\{query:/.test(ctx.el.textContent || '')) {
+    const start = off - qm[0].length;
+    if (before[start - 1] !== '{') {
+      openCaretPop('queryop', ctx, start);
+      refreshCaretPop(qm[1]);
+      clearDateSuggest();
+      return;
+    }
   }
 
   // ``` → code block
