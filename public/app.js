@@ -52,6 +52,9 @@ const undoStack = [];
 const redoStack = [];
 let pendingOps = [];   // Route B: ops emitted from the journal, awaiting the next save
 let metaDirty = false; // doc.meta (pins/stars) changed — op-sync can't carry it, so force a whole-doc PUT
+let uncommittedNodeEdit = false; // a node.text/note change landed WITHOUT an op (debounced commit outside an
+                                 // undo txn) — op-sync can't carry it, so force a whole-doc PUT (else it strands
+                                 // locally: the "typed the full word in the browser, only the first letter synced" bug)
 let serverHasDoc = false; // false until we've loaded/seeded a doc on the server (then ops apply)
 let burst = { key: '', at: 0 };
 
@@ -1023,7 +1026,7 @@ async function doSave() {
     // Route B op delta-sync (default): send the ops the journal emitted — no baseline is
     // consulted, so the send path cannot drift. The server dedupes by op id and orders by
     // a monotonic version, so a re-send after a failure is safe. PUT remains the fallback.
-    if (settings.opSync && !SHARE_TOKEN && serverHasDoc && !metaDirty) {
+    if (settings.opSync && !SHARE_TOKEN && serverHasDoc && !metaDirty && !uncommittedNodeEdit) {
       commitActiveText(true); // flush the active edit into the op WITH re-decorate (so e.g. a
       commitUndoTxn();        // just-inserted date pill is styled), then finalize the op
       if (!pendingOps.length) {
@@ -1082,6 +1085,7 @@ async function doSave() {
     serverHasDoc = true; // the whole doc was just sent — ops queued before it are now redundant
     if (changeSeq === seq) {
       metaDirty = false; // doc.meta was just persisted in the PUT body
+      uncommittedNodeEdit = false; // the full node text just went out in the PUT body
       dirty = false;
       setSaveUI('saved');
       localStorage.removeItem('tendril-offline');
@@ -1354,7 +1358,10 @@ function commitPending(redecorateOk = false) {
   const node = N(contentIdOf(ctx.id));
   if (ctx.field === 'note' || ctx.field === 'zoom-note') {
     const v = (el.innerText || '').replace(/ /g, ' ').replace(/\n$/, '');
-    if (node.note !== v) { recOld(node.id); node.note = v; touch(node.id); markDirty(); }
+    if (node.note !== v) {
+      recOld(node.id); node.note = v; touch(node.id); markDirty();
+      if (!undoTxn) uncommittedNodeEdit = true;   // no open txn → no op carries this note; force a PUT
+    }
   } else {
     let html = serializeEl(el);
     // reveal: the editing DOM holds markdown source → resolve it back to stored HTML
@@ -1365,6 +1372,7 @@ function commitPending(redecorateOk = false) {
       node.text = html;
       touch(node.id);
       markDirty();
+      if (!undoTxn) uncommittedNodeEdit = true;   // no open txn → no op carries this text; force a PUT
       if (ctx.field === 'title') updateDocTitle();
       syncMirrorRows(node.id);
     }
