@@ -522,8 +522,23 @@ function ensureDayInDoc(doc, iso) {
     () => makeNode(roamDateLabel(iso), { cal: 'day', cd: iso }));
 }
 
-// quick-capture lands under today's journal in an "Inbox" bullet: today → Inbox → line(s)
-function captureText(g, text, device, bullet, html) {
+// normalize an incoming files array (from the share sheet) to the stored node.files shape,
+// keeping only entries with a safe url and clamping the metadata fields.
+function cleanCaptureFiles(files) {
+  if (!Array.isArray(files)) return [];
+  return files.filter(f => f && safeFileUrl(f.url)).map(f => {
+    const out = { url: String(f.url).trim() };
+    if (f.name != null) out.name = String(f.name).slice(0, 200);
+    if (f.type != null) out.type = String(f.type).slice(0, 120);
+    if (Number.isFinite(f.size)) out.size = f.size;
+    return out;
+  }).slice(0, 20);
+}
+
+// quick-capture lands under today's journal in an "Inbox" bullet: today → Inbox → line(s).
+// `opts.files` attaches uploaded files to the captured node; `opts.children` adds inline-HTML
+// sub-bullets under it (e.g. a "Quelle: <link>" source line for a shared image).
+function captureText(g, text, device, bullet, html, opts = {}) {
   const dev = String(device || '').slice(0, 60);
   if (dev) g.historyDevice = dev;
   const target = String(bullet || 'Inbox').trim() || 'Inbox';   // configurable capture bullet
@@ -544,6 +559,20 @@ function captureText(g, text, device, bullet, html) {
     return t === want;
   });
   if (!inboxId) inboxId = addChild(doc, dayId, makeNode(escHtml(target)));
+  // attachment capture: one node carrying the uploaded file(s), with an optional caption and
+  // "Quelle: <link>" style sub-bullets. Used by the share sheet for shared PDFs / web images.
+  const files = cleanCaptureFiles(opts.files);
+  if (files.length) {
+    const capText = String(text || '').replace(/[\r\n]+/g, ' ').trim();
+    const caption = html ? sanitizeServerHtml(capText) : escHtml(capText);
+    const nodeId = addChild(doc, inboxId, makeNode(caption, { files }));
+    for (const child of (Array.isArray(opts.children) ? opts.children : []).slice(0, 20)) {
+      const line = sanitizeServerHtml(String(child).replace(/[\r\n]+/g, ' ').trim());
+      if (line) addChild(doc, nodeId, makeNode(line));
+    }
+    commitDoc(g, doc);
+    return 1;
+  }
   // html mode: store one pre-formatted line (e.g. a titled <a href> link from the share sheet)
   // as inline HTML — sanitized, not escaped — instead of splitting/escaping plain text.
   if (html) {
@@ -878,9 +907,9 @@ async function handleV1(req, res, url, g, scope) {
   }
   if (path === '/api/v1/capture' && method === 'POST') {   // → today's journal Inbox
     const raw = (await readBody(req, 1024 * 1024)).toString('utf8');
-    let text = raw, deviceName = u.searchParams.get('deviceName') || '', bullet = '', html = false;
-    try { const j = JSON.parse(raw); if (typeof j.text === 'string') text = j.text; if (typeof j.deviceName === 'string') deviceName = j.deviceName; if (typeof j.bullet === 'string') bullet = j.bullet; if (typeof j.html === 'boolean') html = j.html; } catch { /* plain text body */ }
-    return send(res, 200, { ok: true, captured: captureText(g, text, deviceName, bullet, html) });
+    let text = raw, deviceName = u.searchParams.get('deviceName') || '', bullet = '', html = false, files, children;
+    try { const j = JSON.parse(raw); if (typeof j.text === 'string') text = j.text; if (typeof j.deviceName === 'string') deviceName = j.deviceName; if (typeof j.bullet === 'string') bullet = j.bullet; if (typeof j.html === 'boolean') html = j.html; if (Array.isArray(j.files)) files = j.files; if (Array.isArray(j.children)) children = j.children; } catch { /* plain text body */ }
+    return send(res, 200, { ok: true, captured: captureText(g, text, deviceName, bullet, html, { files, children }) });
   }
   if (path === '/api/v1/journal/today' && method === 'GET') {   // find-or-create today's day node
     if (scope !== 'write') return send(res, 403, { error: 'a write-scoped key is required (this may create the day node)' });
@@ -1950,9 +1979,9 @@ const server = http.createServer(async (req, res) => {
         const raw = (await readBody(req, 1024 * 1024)).toString('utf8');
         let text = raw;
         let deviceName = new URL(url, 'http://x').searchParams.get('deviceName') || '';
-        let bullet = '', html = false;
-        try { const j = JSON.parse(raw); if (typeof j.text === 'string') text = j.text; if (typeof j.deviceName === 'string') deviceName = j.deviceName; if (typeof j.bullet === 'string') bullet = j.bullet; if (typeof j.html === 'boolean') html = j.html; } catch { /* plain text body */ }
-        const count = captureText(g, text, deviceName, bullet, html);
+        let bullet = '', html = false, files, children;
+        try { const j = JSON.parse(raw); if (typeof j.text === 'string') text = j.text; if (typeof j.deviceName === 'string') deviceName = j.deviceName; if (typeof j.bullet === 'string') bullet = j.bullet; if (typeof j.html === 'boolean') html = j.html; if (Array.isArray(j.files)) files = j.files; if (Array.isArray(j.children)) children = j.children; } catch { /* plain text body */ }
+        const count = captureText(g, text, deviceName, bullet, html, { files, children });
         return send(res, 200, { ok: true, captured: count });
       }
 
