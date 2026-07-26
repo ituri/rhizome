@@ -213,7 +213,8 @@ function renderCaretItems(items, onPick, emptyMsg) {
     const right = it.chip != null
       ? `<span class="pop-chip${it.chipAccent ? ' accent' : ''}">${escHtml(it.chip)}</span>`
       : `<span class="ic">${it.icon || '•'}</span>`;
-    b.innerHTML = `<span class="pop-label">${escHtml(it.label)}</span>${it.hint ? `<span class="kbd-hint">${escHtml(it.hint)}</span>` : ''}${right}`;
+    const cnt = it.count != null ? `<sup class="pop-count" title="${it.count} linked reference${it.count === 1 ? '' : 's'}">${it.count}</sup>` : '';
+    b.innerHTML = `<span class="pop-label">${escHtml(it.label)}${cnt}</span>${it.hint ? `<span class="kbd-hint">${escHtml(it.hint)}</span>` : ''}${right}`;
     b.addEventListener('mousedown', e => e.preventDefault());
     b.addEventListener('click', () => onPick(it));
     el.append(b);
@@ -304,7 +305,9 @@ function refreshCaretPop(query) {
     // rhizome: [[ searches pages and day pages like Roam (Ctrl+K links arbitrary items);
     // use the original-case `query` for the new-page title, `q` only for matching
     const found = searchPages(query, 8).filter(it => it.id !== caretPop.ctx.id);
-    const items = found.map(it => ({ label: it.plain.slice(0, 60), chip: it.day ? 'Journal' : it.alias ? 'Alias' : 'Page', chipAccent: !it.alias, linkId: it.id }));
+    // linked-reference count per suggestion (one pass over the doc for all of them), shown like Roam
+    const counts = collectLinkedRefs(new Set(found.map(f => f.id)));
+    const items = found.map(it => ({ label: it.plain.slice(0, 60), chip: it.day ? 'Journal' : it.alias ? 'Alias' : 'Page', chipAccent: !it.alias, count: (counts.get(it.id) || []).length, linkId: it.id }));
     if (query.trim() && !found.some(f => f.plain.trim().toLowerCase() === query.trim().toLowerCase())) {
       items.push({ label: `Create page “${query.trim().slice(0, 40)}”`, chip: 'New', chipAccent: true, create: query.trim() });
     }
