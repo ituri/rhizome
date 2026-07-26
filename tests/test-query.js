@@ -21,7 +21,8 @@ const cookieFrom = sc => { const m = (sc || '').match(/rz_session=([^;]+)/); ret
     day: { id: 'day', cal: 'day', cd: '2026-07-20', text: 'July 20th, 2026', children: ['t1', 't2'] },
     t1: { id: 't1', text: 'buy milk', format: 'todo', children: [] },
     t2: { id: 't2', text: 'call Anna about <a href="#/n/projekt">Projekt X</a>', children: [] },
-    queries: { id: 'queries', text: 'Queries', children: ['q1', 'q2', 'q3', 'q4', 'q5'] },
+    queries: { id: 'queries', text: 'Queries', children: ['q1', 'q2', 'q3', 'q4', 'q5', 'qEmpty'] },
+    qEmpty: { id: 'qEmpty', text: '', children: [] },
     q1: { id: 'q1', text: '{{query: {is:todo}}}', children: [] },
     q2: { id: 'q2', text: '{{query: <a href="#/n/projekt">Projekt X</a>}}', children: [] },
     q3: { id: 'q3', text: '{{query: {is:todo}}} {view:table}', children: [] },
@@ -106,6 +107,22 @@ const cookieFrom = sc => { const m = (sc || '').match(/rz_session=([^;]+)/); ret
     return el ? [...el.querySelectorAll('.pop-label')].map(x => x.textContent) : null;
   });
   ok(ops && ops.some(l => /is:todo/.test(l)), `typing "{is" in a query offers operator autocomplete (${JSON.stringify(ops)})`);
+
+  // typing {{query: from scratch should pop the operator menu immediately
+  await p.evaluate(() => {
+    const el = document.querySelector('.item[data-id="qEmpty"] .content');
+    el.focus();
+    const sel = getSelection(); const r = document.createRange();
+    r.selectNodeContents(el); r.collapse(false); sel.removeAllRanges(); sel.addRange(r);
+  });
+  await p.keyboard.type('{{query:');
+  await sleep(200);
+  const fresh = await p.evaluate(() => {
+    const el = document.querySelector('.caret-pop');
+    return el ? [...el.querySelectorAll('.pop-label')].map(x => x.textContent) : null;
+  });
+  ok(fresh && fresh.some(l => /is:todo/.test(l)) && fresh.some(l => /and:/.test(l)),
+    `typing "{{query:" pops the operator menu (${JSON.stringify(fresh)})`);
 
   ok(errs.length === 0, 'no JS errors' + (errs.length ? ': ' + errs.join(' | ') : ''));
 

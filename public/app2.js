@@ -421,10 +421,24 @@ function pickQueryOp(op) {
   const { ctx, start } = caretPop;
   const caret = caretOffsetIn(ctx.el) ?? start;
   window.closeCaretPop();
-  deletePlainRange(ctx.el, start, caret);   // remove the typed `{prefix`
+  deletePlainRange(ctx.el, start, caret);   // remove the typed `{prefix` (nothing right after `{{query:`)
   document.execCommand('insertText', false, op.insert);
   if (op.back) { const sel = getSelection(); for (let i = 0; i < op.back; i++) sel.modify('move', 'backward', 'character'); }
   scheduleCommit(ctx.el);
+}
+
+// Where a query-operator token begins inside a {{query:…}} block (for the `{` autocomplete), or
+// null. Fires right after `{{query:` (empty token → suggest all operators) and at any `{` that
+// isn't the `{{` opener. `start` is the text offset the picked snippet replaces from.
+function queryOpContext(before) {
+  if (!/\{\{query:/.test(before)) return null;
+  if (/\{\{query:\s*$/.test(before)) return { start: before.length, prefix: '' };
+  const m = before.match(/\{([\p{L}:-]*)$/u);
+  if (m) {
+    const start = before.length - m[0].length;
+    if (before[start - 1] !== '{') return { start, prefix: m[1] };   // skip the `{{` opener itself
+  }
+  return null;
 }
 
 // [[ inline linking: replace the typed "[[query" with a link to an item,
@@ -506,9 +520,10 @@ window.editorInputHook = function editorInputHook(ctx) {
     return;
   }
   if (caretPop && caretPop.type === 'queryop') {
-    const m = before.match(/\{([\p{L}:-]*)$/u);
-    if (!m || off <= caretPop.start) { window.closeCaretPop(); }
-    else refreshCaretPop(m[1]);
+    const c = queryOpContext(before);
+    if (!c) { window.closeCaretPop(); return; }
+    caretPop.start = c.start;   // may shift from the {{query: caret to a typed `{`
+    refreshCaretPop(c.prefix);
     return;
   }
 
@@ -534,17 +549,13 @@ window.editorInputHook = function editorInputHook(ctx) {
     return;
   }
 
-  // { → live-query operator autocomplete, only inside a {{query:…}} block. Skips the `{{` opener
-  // (the matched `{` would be preceded by another `{`), so it fires on {is:…}/{and:…}/{view:…}.
-  const qm = before.match(/\{([\p{L}:-]*)$/u);
-  if (qm && ctx.field === 'text' && fmtOf(ctx.id) !== 'codeblock' && /\{\{query:/.test(ctx.el.textContent || '')) {
-    const start = off - qm[0].length;
-    if (before[start - 1] !== '{') {
-      openCaretPop('queryop', ctx, start);
-      refreshCaretPop(qm[1]);
-      clearDateSuggest();
-      return;
-    }
+  // {{query:… / { → live-query operator autocomplete (right after `{{query:` and at each `{`)
+  const qc = (ctx.field === 'text' && fmtOf(ctx.id) !== 'codeblock') ? queryOpContext(before) : null;
+  if (qc) {
+    openCaretPop('queryop', ctx, qc.start);
+    refreshCaretPop(qc.prefix);
+    clearDateSuggest();
+    return;
   }
 
   // ``` → code block
