@@ -298,7 +298,7 @@ function refreshCaretPop(query) {
     // q is everything typed after the # / @ sigil, regardless of the prefix length at open
     const needle = (caretPop.prefix[0] + q).toLowerCase();
     const all = collectTags().filter(t => t.toLowerCase().startsWith(needle) && t.toLowerCase() !== needle);
-    renderCaretItems(all.slice(0, 8).map(t => ({ label: t, icon: t[0] === '@' ? '@' : '#', tag: t })),
+    renderCaretItems(all.slice(0, 8).map(t => ({ label: t, icon: t[0] === '@' ? '@' : '#', count: tagCounts.get(t) || 0, tag: t })),
       it => pickTag(it.tag), '');
     if (!all.length) window.closeCaretPop();
   } else if (caretPop.type === 'linkpop') {
@@ -371,6 +371,7 @@ function runSlashCommand(it) {
 
 let tagCache = null;
 let tagCacheAt = 0;
+let tagCounts = new Map();   // tag → how many times it's used (for the # autocomplete count, Roam-style)
 
 function collectTags() {
   if (tagCache && Date.now() - tagCacheAt < 5000) return tagCache;
@@ -381,6 +382,7 @@ function collectTags() {
       counts.set(m[2], (counts.get(m[2]) || 0) + 1);
     }
   }
+  tagCounts = counts;
   tagCache = [...counts.entries()].sort((a, b) => b[1] - a[1]).map(e => e[0]);
   tagCacheAt = Date.now();
   return tagCache;
