@@ -83,6 +83,29 @@ const INVITE_CODE = process.env.RHIZOME_INVITE_CODE || '';
 const ADMIN_USER = process.env.RHIZOME_ADMIN_USER || 'phil';
 const ADMIN_PASSWORD = process.env.RHIZOME_ADMIN_PASSWORD || PASSWORD || '';
 const SESSION_MAX_AGE = 90 * 24 * 60 * 60 * 1000;
+// in-app self-update: the running commit is baked into the image at build time (Dockerfile ARG
+// GIT_COMMIT); the "latest" commit is polled from the Git host so the admin panel can show when a
+// newer version is available. The actual pull+rebuild runs on the HOST (the container is isolated)
+// via a systemd path unit that watches for the flag file we drop in DATA_DIR.
+const GIT_COMMIT = process.env.GIT_COMMIT || null;
+const UPDATE_REPO = process.env.RHIZOME_REPO || 'ituri/rhizome';
+const UPDATE_BRANCH = process.env.RHIZOME_BRANCH || 'main';
+const UPDATE_FLAG = path.join(DATA_DIR, '.update-request');
+let _latestCommit = { sha: null, at: 0, error: null };
+async function latestCommit() {
+  if (Date.now() - _latestCommit.at < 5 * 60 * 1000 && (_latestCommit.sha || _latestCommit.error)) return _latestCommit;
+  try {
+    const r = await fetch(`https://api.github.com/repos/${UPDATE_REPO}/commits/${UPDATE_BRANCH}`, {
+      headers: { 'User-Agent': 'rhizome-updater', Accept: 'application/vnd.github.sha' },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!r.ok) throw new Error('GitHub API ' + r.status);
+    _latestCommit = { sha: (await r.text()).trim(), at: Date.now(), error: null };
+  } catch (e) {
+    _latestCommit = { sha: _latestCommit.sha, at: Date.now(), error: String(e && e.message || e) };
+  }
+  return _latestCommit;
+}
 const MAX_BODY = 64 * 1024 * 1024;
 const MAX_UPLOAD = 32 * 1024 * 1024;
 const BACKUP_EVERY_MS = +(process.env.RHIZOME_BACKUP_EVERY_MS || 60 * 60 * 1000); // lowered in tests
@@ -1842,6 +1865,34 @@ const server = http.createServer(async (req, res) => {
       if (url === '/api/admin/status' && req.method === 'GET') {
         if (!requireAdmin(req)) return send(res, 403, { error: 'admin only' });
         return send(res, 200, await serverStatus());
+      }
+      // in-app self-update: report the running commit vs the latest on the Git host
+      if (url === '/api/admin/version' && req.method === 'GET') {
+        if (!requireAdmin(req)) return send(res, 403, { error: 'admin only' });
+        const latest = await latestCommit();
+        return send(res, 200, {
+          current: GIT_COMMIT,
+          latest: latest.sha,
+          updateAvailable: !!(GIT_COMMIT && latest.sha && GIT_COMMIT !== latest.sha),
+          checkedAt: latest.at,
+          error: latest.error,
+          repo: UPDATE_REPO,
+          branch: UPDATE_BRANCH,
+        });
+      }
+      // trigger the update: drop a flag file the host's systemd path unit watches; it runs
+      // `git pull && docker compose up -d --build` on the host, which recreates this container.
+      if (url === '/api/admin/update' && req.method === 'POST') {
+        const admin = requireAdmin(req);
+        if (!admin) return send(res, 403, { error: 'admin only' });
+        if (!GIT_COMMIT) return send(res, 409, { error: 'this build has no version stamp; deploy once with GIT_COMMIT set first' });
+        try {
+          fs.writeFileSync(UPDATE_FLAG, JSON.stringify({ at: Date.now(), by: admin.username }) + '\n');
+        } catch (e) {
+          return send(res, 500, { error: 'could not write update request: ' + (e && e.message || e) });
+        }
+        console.log(`Update requested by ${admin.username} → wrote ${UPDATE_FLAG}`);
+        return send(res, 202, { ok: true });
       }
       if (url === '/api/admin/users' && req.method === 'GET') {
         if (!requireAdmin(req)) return send(res, 403, { error: 'admin only' });

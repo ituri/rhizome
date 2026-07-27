@@ -29,6 +29,7 @@
     "test:daily": "node tests/test-daily.js",
     "test:refs": "node tests/test-refs.js",
     "test:sidebar": "node tests/test-sidebar.js",
+    "test:update": "node tests/test-update.js",
     "test:mcp": "node tests/test-mcp.js",
     "test:security": "node tests/test-security.js",
     "test:adminedit": "node tests/test-admin-edit.js",

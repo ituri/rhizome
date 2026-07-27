@@ -1660,6 +1660,7 @@ function renderApiKeys(ov) {
 function renderAdminPanel(ov) {
   ov.innerHTML = `<div class="set-subpanel admin-panel">
     <div class="admin-status">Loading…</div>
+    <div class="admin-update"></div>
     <div class="admin-invite"></div>
     <div class="admin-quota"></div>
     <div class="admin-users">Loading…</div>
@@ -1698,6 +1699,53 @@ function renderAdminPanel(ov) {
       <table class="stat-table">${rows.map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join('')}</table>
       <div class="stat-health">${s.health.map(h => `<span class="stat-dot ${h.ok ? 'stat-up' : 'stat-down'}" title="${escHtml(h.detail)}">${h.ok ? '●' : '○'} ${escHtml(h.name)}<span class="stat-detail"> · ${escHtml(h.detail)}</span></span>`).join('')}</div>`;
     box.querySelector('.stat-refresh').addEventListener('click', loadStatus);
+  };
+  const loadUpdate = async () => {
+    const box = ov.querySelector('.admin-update');
+    let v;
+    try { const r = await fetch('/api/admin/version'); if (!r.ok) throw 0; v = await r.json(); }
+    catch { box.innerHTML = '<h4 class="admin-h4">Updates</h4><div class="stat-hint">Could not check for updates.</div>'; return; }
+    const short = s => s ? String(s).slice(0, 7) : 'unknown';
+    let status;
+    if (!v.current) status = '<span class="stat-hint">This build has no version stamp (deploy once with GIT_COMMIT set).</span>';
+    else if (v.error) status = `<span class="stat-hint">Current <code>${short(v.current)}</code> · could not reach ${escHtml(v.repo)} (${escHtml(v.error)})</span>`;
+    else if (v.updateAvailable) status = `<span class="upd-avail">Update available:</span> <code>${short(v.current)}</code> → <code>${short(v.latest)}</code> <button class="acct-save upd-btn">Update now</button>`;
+    else status = `<span class="upd-ok">Up to date</span> <span class="stat-sub">· <code>${short(v.current)}</code></span>`;
+    box.innerHTML = `<h4 class="admin-h4">Updates <button class="key-copy upd-refresh">check</button></h4>
+      <div class="upd-row">${status}</div>
+      <div class="upd-progress" hidden></div>`;
+    box.querySelector('.upd-refresh').addEventListener('click', loadUpdate);
+    const btn = box.querySelector('.upd-btn');
+    if (btn) btn.addEventListener('click', async () => {
+      if (!confirm(`Pull ${escHtml(v.repo)}@${v.branch} and rebuild the server?\n\nThe app will restart and this page will reload when it is back.`)) return;
+      btn.disabled = true;
+      const prog = box.querySelector('.upd-progress');
+      prog.hidden = false;
+      prog.textContent = 'Requesting update…';
+      let r;
+      try { r = await fetch('/api/admin/update', { method: 'POST' }); } catch { r = null; }
+      if (!r || !(r.status === 202 || r.ok)) {
+        const msg = r ? ((await r.json().catch(() => ({}))).error || r.status) : 'network error';
+        prog.textContent = 'Update could not be started: ' + msg;
+        btn.disabled = false;
+        return;
+      }
+      // the host rebuilds (~30–90s), the container restarts; poll until it reports the new commit
+      prog.textContent = 'Rebuilding on the server… this page will reload automatically (~1 min).';
+      const started = Date.now();
+      const poll = async () => {
+        if (Date.now() - started > 4 * 60 * 1000) { prog.textContent = 'Still updating — reload manually in a moment.'; return; }
+        try {
+          const rr = await fetch('/api/admin/version', { cache: 'no-store' });
+          if (rr.ok) {
+            const nv = await rr.json();
+            if (nv.current && nv.current !== v.current) { location.reload(); return; }
+          }
+        } catch { /* server is down mid-rebuild — keep polling */ }
+        setTimeout(poll, 4000);
+      };
+      setTimeout(poll, 8000);
+    });
   };
   const loadQuota = async () => {
     const q = await (await fetch('/api/admin/quota')).json();
@@ -1804,6 +1852,7 @@ function renderAdminPanel(ov) {
       `<div class="${e.ok ? 'sec-ok' : 'sec-fail'}">${escHtml(fmtDate(e.ts))} · ${escHtml(e.username || '?')} · ${escHtml(e.ip || '')} · ${e.ok ? 'ok' : 'fail'}</div>`).join('');
   };
   loadStatus();
+  loadUpdate();
   loadInvite();
   loadQuota();
   loadUsers();
