@@ -51,6 +51,22 @@ const clickCenter = async (p, el) => { const b = await el.boundingBox(); await p
   await sleep(200);
   ok(await p.evaluate(() => document.activeElement?.closest?.('.item')?.dataset.id === 'plain'), 'clicking plain text focuses it for editing');
 
+  // 4) touch: iOS Safari doesn't fire `click` on links in a contenteditable, so navigation is
+  // driven from pointerup. Emulate a touch device and tap the link — it must navigate exactly once.
+  const tp = await b.newPage(); const terrs = []; tp.on('pageerror', e => terrs.push(e.message));
+  await tp.setCookie({ name: 'rz_session', value: ck.split('=')[1], domain: 'localhost', path: '/' });
+  await tp.emulate({ viewport: { width: 390, height: 844, isMobile: true, hasTouch: true, deviceScaleFactor: 2 },
+    userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1' });
+  await tp.goto(base + '/#/n/pageA', { waitUntil: 'domcontentloaded' }); await sleep(1400);
+  await tp.evaluate(() => { window.__hashes = []; addEventListener('hashchange', () => window.__hashes.push(location.hash)); });
+  const box = await tp.evaluate(() => { const r = document.querySelector('#tree a[href="#/n/target"]').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
+  await tp.touchscreen.tap(box.x, box.y);
+  await sleep(600);
+  ok(await tp.evaluate(() => location.hash) === '#/n/target', 'tapping a link on touch navigates (pointerup path)');
+  ok(await tp.evaluate(() => window.__hashes.filter(h => h === '#/n/target').length) === 1, 'touch tap navigates exactly once (no double-fire)');
+  ok(terrs.length === 0, 'no JS errors on touch' + (terrs.length ? ': ' + terrs.join(' | ') : ''));
+  await tp.close();
+
   ok(errs.length === 0, 'no JS errors' + (errs.length ? ': ' + errs.join(' | ') : ''));
 
   await b.close(); srv.kill(); fs.rmSync(DATA, { recursive: true, force: true });

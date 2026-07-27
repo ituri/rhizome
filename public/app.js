@@ -3585,30 +3585,34 @@ treeEl.addEventListener('dragstart', e => e.preventDefault());
 
 /* ---------------- 17. clicks ---------------- */
 
-treeEl.addEventListener('click', e => {
-  const attrKey = e.target.closest('.attr-key');
-  if (attrKey) { e.preventDefault(); openTag(attrKey.dataset.attr); return; }
-  const tag = e.target.closest('.tag');
-  if (tag) {
-    e.preventDefault();
-    openTag(tag.dataset.tag);
-    return;
-  }
-  const dateEl = e.target.closest('time[datetime]');
-  if (dateEl && !e.target.closest('a')) {
-    e.preventDefault();
-    setSearch('on:' + dateEl.getAttribute('datetime').slice(0, 10));
-    return;
-  }
-  const link = e.target.closest('a[href]');
+// Activate a tapped link / #tag / attribute / date. Shared by the click handler (desktop) and the
+// pointerup handler below: iOS Safari does not emit a `click` for an <a>/element inside a
+// contenteditable, so on touch we drive the same navigation from pointerup instead. Returns true
+// when the tap was consumed (so the caller preventDefaults and stops).
+function activateTarget(target) {
+  const attrKey = target.closest?.('.attr-key');
+  if (attrKey) { openTag(attrKey.dataset.attr); return true; }
+  const tag = target.closest?.('.tag');
+  if (tag) { openTag(tag.dataset.tag); return true; }
+  const dateEl = target.closest?.('time[datetime]');
+  if (dateEl && !target.closest('a')) { setSearch('on:' + dateEl.getAttribute('datetime').slice(0, 10)); return true; }
+  const link = target.closest?.('a[href]');
   if (link && !link.classList.contains('bullet') && !link.classList.contains('att-chip')) {
-    e.preventDefault();
     const href = link.getAttribute('href');
     const m = href.match(/#\/n\/([A-Za-z0-9]+)/);
     if (m && doc.nodes[m[1]]) zoomTo(m[1]);
     else window.open(href, '_blank', 'noopener');
-    return;
+    return true;
   }
+  return false;
+}
+
+// set by the touch pointerup handler so the synthetic click that may follow (Android) is ignored
+let suppressActivationClick = 0;
+
+treeEl.addEventListener('click', e => {
+  if (suppressActivationClick && Date.now() < suppressActivationClick) { suppressActivationClick = 0; return; }
+  if (activateTarget(e.target)) { e.preventDefault(); return; }
   const colTog = e.target.closest('[data-col-toggle]');
   if (colTog) {
     const col = colTog.dataset.colToggle;
@@ -3812,6 +3816,22 @@ pageEl.addEventListener('pointerdown', e => {
   if (e.button !== 0) return;
   const a = e.target.closest?.('a[href]');
   if (a && !a.classList.contains('bullet') && !a.classList.contains('att-chip')) e.preventDefault();
+}, true);
+
+// iOS Safari doesn't fire `click` on links/tags inside a contenteditable — it just places the caret.
+// So on touch/pen, activate the tapped link/tag/date from pointerup instead (mouse keeps using click).
+// A tap only: if the finger moved (a scroll or text selection), leave it to place the caret.
+let touchLinkStart = null;
+pageEl.addEventListener('pointerdown', e => {
+  touchLinkStart = e.pointerType === 'mouse' ? null : { x: e.clientX, y: e.clientY };
+}, true);
+pageEl.addEventListener('pointerup', e => {
+  if (e.pointerType === 'mouse') return;
+  const start = touchLinkStart; touchLinkStart = null;
+  if (!start) return;
+  if (Math.abs(e.clientX - start.x) > 10 || Math.abs(e.clientY - start.y) > 10) return; // moved → not a tap
+  if (!e.target.closest?.('.attr-key, .tag, time[datetime], a[href]')) return;          // plain text → caret
+  if (activateTarget(e.target)) { e.preventDefault(); suppressActivationClick = Date.now() + 700; }
 }, true);
 
 treeEl.addEventListener('pointerdown', e => {
