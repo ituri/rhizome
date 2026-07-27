@@ -3002,9 +3002,12 @@ function showSettings(initialTab) {
   };
   searchEl.addEventListener('input', runSearch);
 
-  showTab(Math.max(0, tabs.findIndex(t => t.name === initialTab)));
+  // open straight into the admin panel when asked (from the sidebar's Admin link)
+  if (initialTab === '__admin__' && state.user && state.user.isAdmin) pushSub('Admin panel', renderAdminPanel);
+  else showTab(Math.max(0, tabs.findIndex(t => t.name === initialTab)));
 }
 window.showSettings = showSettings;
+window.showAdminPanel = () => showSettings('__admin__');
 
 // Export format chooser, opened as a small submenu from the ⋮ menu's "Export" item.
 function openExportMenu(anchor) {
@@ -3017,6 +3020,8 @@ function openExportMenu(anchor) {
     );
   });
 }
+
+$('#side-admin')?.addEventListener('click', e => { e.preventDefault(); window.showAdminPanel(); });
 
 $('#btn-menu').addEventListener('click', e => {
   if (currentPopover) { closeAllPopovers(); return; }

@@ -641,6 +641,8 @@ window.renderSidebar = function renderSidebar() {
   $('#side-daily')?.classList.toggle('current', state.zoom === ROOT && state.view === 'daily');
   $('#side-pages-link')?.classList.toggle('current', state.view === 'pages');
   $('#side-assets')?.classList.toggle('current', state.view === 'assets');
+  const adminSection = $('#side-admin-section');
+  if (adminSection) adminSection.hidden = !(state.user && state.user.isAdmin);   // admins only
 
   const starsBox = $('#side-stars');
   const starsSection = $('#side-stars-section');
