@@ -135,6 +135,91 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   assert(refs.group === 'Testseite', `reference grouped under the linking page ("${refs.group}")`);
   assert(/heute:/.test(refs.bullet || ''), 'the referencing bullet renders in the day section');
 
+  /* ---- 7. Roam-style filter bar on the Linked References section ---- */
+  await page.evaluate(() => {
+    snapshot();
+    const tgt = getOrCreatePage('FilterTarget');
+    const tagPage = getOrCreatePage('SidePage');
+    const src = getOrCreatePage('FilterSrc');
+    window.__tgt = tgt;
+    const link = t => '<a href="#/n/' + t + '" rel="noopener">x</a>';
+    insertAt(src, 0, makeNode('a ' + link(tgt) + ' #done'));                    // done
+    insertAt(src, 1, makeNode('b ' + link(tgt) + ' #todo'));                    // todo
+    insertAt(src, 2, makeNode('c ' + link(tgt) + ' #done ' + link(tagPage)));   // done + SidePage
+    markDirty();
+    zoomTo(tgt);
+  });
+  await sleep(500);
+
+  // filter starts collapsed; the funnel button is present because there are filterable tags
+  let f = await page.evaluate(() => ({
+    hasBtn: !!document.querySelector('.ref-filter-btn'),
+    barOpen: !!document.querySelector('.ref-filter-bar'),
+    head: document.querySelector('#backlinks h3')?.textContent,
+  }));
+  assert(f.hasBtn, 'filter funnel button is shown when tags exist');
+  assert(!f.barOpen, 'filter chip bar starts collapsed');
+  assert(/^3 Linked References$/.test(f.head || ''), `all 3 refs shown initially (${f.head})`);
+
+  // open the bar → chips for #done (2), #todo (1) and the SidePage link (1), sorted by count
+  await page.click('.ref-filter-btn');
+  await sleep(200);
+  f = await page.evaluate(() => [...document.querySelectorAll('.ref-filter-chip')]
+    .map(c => c.textContent.replace(/(\d+)$/, ' ($1)')));
+  assert(f.some(t => /^#done \(2\)/.test(t)), `#done chip with count 2 (${JSON.stringify(f)})`);
+  assert(f.some(t => /^#todo \(1\)/.test(t)), '#todo chip with count 1');
+  assert(f.some(t => /^SidePage \(1\)/.test(t)), 'page-link chip labelled by title');
+  assert(!f.some(t => /FilterTarget/.test(t)), "the page's own link is not offered as a filter");
+
+  const clickChip = label => page.evaluate(l => {
+    const chip = [...document.querySelectorAll('.ref-filter-chip')].find(c => c.textContent.startsWith(l));
+    chip.click();
+  }, label);
+
+  // include #done → only the two #done rows remain
+  await clickChip('#done'); await sleep(200);
+  f = await page.evaluate(() => ({
+    head: document.querySelector('#backlinks h3')?.textContent,
+    rows: [...document.querySelectorAll('#backlinks .ref-row')].map(r => r.textContent.trim()[0]),
+    cls: document.querySelector('.ref-filter-chip')?.className,
+  }));
+  assert(/^2 Linked References$/.test(f.head || ''), `include #done → 2 refs (${f.head})`);
+  assert(f.rows.sort().join('') === 'ac', `only the #done bullets (a, c) shown (${JSON.stringify(f.rows)})`);
+  assert(/include/.test(f.cls || ''), 'the #done chip shows the include state');
+
+  // second click → exclude #done → only the #todo row remains
+  await clickChip('#done'); await sleep(200);
+  f = await page.evaluate(() => ({
+    head: document.querySelector('#backlinks h3')?.textContent,
+    rows: [...document.querySelectorAll('#backlinks .ref-row')].map(r => r.textContent.trim()[0]),
+    cls: document.querySelector('.ref-filter-chip')?.className,
+  }));
+  assert(/^1 Linked Reference$/.test(f.head || ''), `exclude #done → 1 ref (${f.head})`);
+  assert(f.rows.join('') === 'b', `only the non-#done bullet (b) shown (${JSON.stringify(f.rows)})`);
+  assert(/exclude/.test(f.cls || ''), 'the #done chip shows the exclude state');
+
+  // third click → cleared → all three again, funnel no longer marked active
+  await clickChip('#done'); await sleep(200);
+  f = await page.evaluate(() => ({
+    head: document.querySelector('#backlinks h3')?.textContent,
+    active: !!document.querySelector('.ref-filter-btn.active'),
+  }));
+  assert(/^3 Linked References$/.test(f.head || ''), `clearing the chip restores all refs (${f.head})`);
+  assert(!f.active, 'funnel no longer active once the filter is cleared');
+
+  // navigating away resets the filter
+  await clickChip('#done'); await sleep(150);           // set an include filter again
+  await page.evaluate(() => zoomTo(window.__alpha));
+  await sleep(300);
+  await page.evaluate(() => zoomTo(window.__tgt));
+  await sleep(300);
+  f = await page.evaluate(() => ({
+    head: document.querySelector('#backlinks h3')?.textContent,
+    barOpen: !!document.querySelector('.ref-filter-bar'),
+  }));
+  assert(/^3 Linked References$/.test(f.head || ''), `filter reset after navigation (${f.head})`);
+  assert(!f.barOpen, 'filter bar collapsed again after navigation');
+
   await browser.close();
   console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL REFS TESTS PASSED');
   process.exit(failures ? 1 : 0);

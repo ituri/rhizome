@@ -1367,22 +1367,103 @@ window.renderSearchResults = function renderSearchResults(frag) {
   frag.append(view);
 };
 
+// Roam-style filter for the Linked References section. Each tag/page-link that appears among
+// the referencing blocks becomes a tri-state chip: 1st click = include (block must contain it),
+// 2nd = exclude (block must not), 3rd = clear. Includes are AND-combined. State is view-only and
+// resets when you navigate to another page.
+let refFilterTarget = null;                 // page the current filter belongs to
+let refFilterOpen = false;                  // is the chip bar expanded?
+const refFilterState = new Map();           // token -> 'include' | 'exclude'
+
+// the filterable tokens a reference block carries: page-links (id:<id>) and #tag/@mention (tag:<#x>)
+function refRowTokens(html) {
+  const toks = new Set();
+  for (const m of (html || '').matchAll(/#\/n\/([A-Za-z0-9]+)/g)) toks.add('id:' + m[1]);
+  for (const m of plainOf(html).matchAll(/(^|[\s(])([#@][\p{L}\p{N}_][\p{L}\p{N}_\-/]*)/gu)) toks.add('tag:' + m[2]);
+  return toks;
+}
+
 window.renderBacklinks = function renderBacklinks() {
   if (!doc || state.zoom === HOME || searchActive()) { backlinksEl.hidden = true; return; }
   const target = state.zoom;
+  if (refFilterTarget !== target) { refFilterTarget = target; refFilterState.clear(); refFilterOpen = false; }
   const rows = collectLinkedRefs(new Set([target])).get(target) || [];
-  const built = buildRefGroups(target, rows);
+
+  // tally the tokens available to filter on, skipping the page's own link/tag form (always present)
+  const selfTitle = plainOf(N(target).text).trim();
+  const skip = new Set(['id:' + target, 'tag:#' + selfTitle, 'tag:@' + selfTitle]);
+  const tally = new Map(); // token -> { label, count }
+  for (const r of rows) {
+    if (r.html == null) continue;
+    for (const tok of refRowTokens(r.html)) {
+      if (skip.has(tok)) continue;
+      const cur = tally.get(tok);
+      if (cur) { cur.count++; continue; }
+      const label = tok.startsWith('id:') ? (plainOf(N(tok.slice(3))?.text || '').trim() || 'Untitled') : tok.slice(4);
+      tally.set(tok, { label, count: 1 });
+    }
+  }
+
+  // apply the active filter to the rows
+  const inc = [], exc = [];
+  for (const [tok, mode] of refFilterState) (mode === 'include' ? inc : exc).push(tok);
+  const filtered = (inc.length || exc.length)
+    ? rows.filter(r => {
+        if (r.html == null) return inc.length === 0;   // mirror rows carry no tags
+        const toks = refRowTokens(r.html);
+        return inc.every(t => toks.has(t)) && !exc.some(t => toks.has(t));
+      })
+    : rows;
+  const built = buildRefGroups(target, filtered);
 
   backlinksEl.hidden = false;
   backlinksEl.innerHTML = '';
-  const head = document.createElement('h3');
+
+  const head = document.createElement('div');
+  head.className = 'ref-head';
+  const h = document.createElement('h3');
   const n = built ? built.count : 0;
-  head.textContent = n ? `${n} Linked Reference${n === 1 ? '' : 's'}` : 'Linked References';
+  h.textContent = n ? `${n} Linked Reference${n === 1 ? '' : 's'}` : 'Linked References';
+  head.append(h);
+  if (tally.size) {
+    const btn = document.createElement('button');
+    btn.className = 'ref-filter-btn' + (refFilterState.size ? ' active' : '');
+    btn.innerHTML = icon('filter');
+    btn.title = 'Filter references by tag';
+    btn.addEventListener('click', () => { refFilterOpen = !refFilterOpen; renderBacklinks(); });
+    head.append(btn);
+  }
   backlinksEl.append(head);
+
+  if (refFilterOpen && tally.size) {
+    const bar = document.createElement('div');
+    bar.className = 'ref-filter-bar';
+    const chips = [...tally.entries()].sort((a, b) => b[1].count - a[1].count).slice(0, 30);
+    for (const [tok, info] of chips) {
+      const chip = document.createElement('button');
+      const mode = refFilterState.get(tok);
+      chip.className = 'ref-filter-chip' + (mode ? ' ' + mode : '');
+      chip.textContent = info.label;
+      const c = document.createElement('span');
+      c.className = 'rfc-count';
+      c.textContent = info.count;
+      chip.append(c);
+      chip.addEventListener('click', () => {
+        const cur = refFilterState.get(tok);
+        if (!cur) refFilterState.set(tok, 'include');
+        else if (cur === 'include') refFilterState.set(tok, 'exclude');
+        else refFilterState.delete(tok);
+        renderBacklinks();
+      });
+      bar.append(chip);
+    }
+    backlinksEl.append(bar);
+  }
+
   if (!built) {
     const none = document.createElement('div');
     none.className = 'ref-none';
-    none.textContent = 'No linked references yet.';
+    none.textContent = refFilterState.size ? 'No references match the filter.' : 'No linked references yet.';
     backlinksEl.append(none);
   } else {
     backlinksEl.append(built.el);

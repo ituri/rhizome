@@ -2041,6 +2041,26 @@ time[datetime].today { color: oklch(0.5 0.14 150); background: oklch(0.55 0.14 1
 .backlink-row { padding: 3px 0; font-size: 13.5px; }
 .backlink-row a { color: var(--ink-soft); text-decoration: none; }
 .backlink-row a:hover { color: var(--accent); }
+
+/* linked-references filter bar (Roam-style: funnel toggle + tri-state tag chips) */
+.ref-head { display: flex; align-items: center; gap: 8px; }
+.ref-head h3 { flex: 1; }
+.ref-filter-btn {
+  flex: none; background: none; border: none; cursor: pointer; color: var(--ink-faint);
+  padding: 2px 4px; border-radius: 5px; display: inline-flex; align-items: center;
+}
+.ref-filter-btn:hover { color: var(--ink); background: var(--bg-raised); }
+.ref-filter-btn.active { color: var(--accent); }
+.ref-filter-bar { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 12px; }
+.ref-filter-chip {
+  font-size: 12px; padding: 3px 9px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--bg-raised); color: var(--ink-soft);
+  display: inline-flex; align-items: center; gap: 5px;
+}
+.ref-filter-chip:hover { border-color: var(--accent); }
+.ref-filter-chip.include { border-color: #3aa76d; color: var(--ink); background: color-mix(in oklab, #3aa76d 20%, var(--bg-raised)); }
+.ref-filter-chip.exclude { border-color: #d1453b; color: var(--ink); background: color-mix(in oklab, #d1453b 18%, var(--bg-raised)); text-decoration: line-through; }
+.rfc-count { font-size: 10px; color: var(--ink-faint); }
 .backlink-path { color: var(--ink-faint); font-size: 11px; margin-left: 8px; }
 
 /* ---------------- caret popovers (slash, tags, dates) ---------------- */
