@@ -46,6 +46,7 @@
     "test:clientip": "node tests/test-client-ip.js",
     "test:palettedelete": "node tests/test-palette-delete.js",
     "test:linkclick": "node tests/test-link-click.js",
+    "test:jumpcreate": "node tests/test-jump-create.js",
     "test:web-split": "node tests/test-web-split.js",
     "test:geomerge": "node tests/test-geo-merge.js",
     "test:georaw": "node tests/test-geo-raw.js",

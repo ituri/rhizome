@@ -931,6 +931,10 @@ body.dragging-item .content, body.dragging-item .note { cursor: grabbing; }
   white-space: nowrap;
 }
 .jump-row.active { background: var(--accent-soft); }
+.jump-row .jr-kbd {
+  flex: none; font-size: 10.5px; color: var(--ink-faint); letter-spacing: 0.02em;
+  border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; white-space: nowrap;
+}
 .jump-empty { padding: 18px; color: var(--ink-faint); font-style: italic; font-family: var(--serif); }
 .jump-foot {
   font-size: 11px;

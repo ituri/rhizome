@@ -4286,7 +4286,13 @@ function paintJump(items, q = '') {
   }
   jumpItems.forEach((it, i) => {
     const row = jumpRow(it, i === 0, () => { hideJump(); jumpPick(it); }, { showDone: true });
-    if (it.createPage) row.classList.add('jump-create');
+    if (it.createPage) {
+      row.classList.add('jump-create');
+      const kbd = document.createElement('span');
+      kbd.className = 'jr-kbd';
+      kbd.textContent = 'Shift+↵ to create';
+      row.append(kbd);
+    }
     jumpResults.append(row);
   });
 }
@@ -4324,6 +4330,14 @@ function listNavKey(e, { rowSel, container, count, getActive, setActive, onEnter
 }
 
 function jumpKeydown(e) {
+  // Shift+Enter: create (or jump to) a page named exactly by the typed text — no need to arrow
+  // down to the "Create page" row.
+  if (e.key === 'Enter' && e.shiftKey) {
+    e.preventDefault();
+    const title = jumpInput.value.trim();
+    if (title && !SHARE_TOKEN && !state.readOnly) { hideJump(); jumpPick({ createPage: title }); }
+    return;
+  }
   listNavKey(e, {
     rowSel: '.jump-row', container: jumpResults,
     count: () => jumpItems.length,
@@ -4368,7 +4382,7 @@ const HELP = [
     ['Zoom out', 'Alt+← or Alt+,'],
     ['Daily Notes', "Ctrl+'"],
     ['Expand / collapse', 'Ctrl+↓ / Ctrl+↑'],
-    ['Find or create a page', 'Ctrl+K'],
+    ['Find or create a page', 'Ctrl+K · Shift+↵ creates'],
     ['Command palette', 'Alt+Shift+P'],
     ['Star this page', 'Ctrl+Shift+8'],
     ['Show / hide completed', 'Ctrl+O'],
