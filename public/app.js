@@ -2838,6 +2838,7 @@ function applyHash() {
   const target = resolveZoomTarget(m ? m[1] : HOME);
   if (target === state.zoom && nextView === state.view) return;
   state.view = nextView;
+  window.resetRefFilters?.();   // linked-references filters are ephemeral, per navigation
   window.onViewChange?.();
 
   // remember the caret in the view we're leaving (before it's torn down)

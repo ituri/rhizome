@@ -220,6 +220,42 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   assert(/^3 Linked References$/.test(f.head || ''), `filter reset after navigation (${f.head})`);
   assert(!f.barOpen, 'filter bar collapsed again after navigation');
 
+  /* ---- 8. the filter bar also works inside the daily view's per-day references ---- */
+  await page.evaluate(() => {
+    snapshot();
+    const day = ensureDay(todayStr());
+    const src = getOrCreatePage('DayFilterSrc');
+    const link = '<a href="#/n/' + day + '">' + roamDateLabel(todayStr()) + '</a>';
+    insertAt(src, 0, makeNode('x ' + link + ' #alpha'));
+    insertAt(src, 1, makeNode('y ' + link + ' #beta'));
+    markDirty();
+    location.hash = '#/';
+  });
+  await sleep(700);
+  let dv = await page.evaluate(() => {
+    const sec = [...document.querySelectorAll('.day-section')].find(s => N(s.dataset.day).cd === todayStr());
+    const box = sec.querySelector('.day-refs');
+    return { has: !!box.querySelector('.ref-filter-btn') };
+  });
+  assert(dv.has, 'daily view per-day references have a filter funnel');
+  await page.evaluate(() => {
+    const sec = [...document.querySelectorAll('.day-section')].find(s => N(s.dataset.day).cd === todayStr());
+    sec.querySelector('.day-refs .ref-filter-btn').click();
+  });
+  await sleep(200);
+  await page.evaluate(() => {
+    const sec = [...document.querySelectorAll('.day-section')].find(s => N(s.dataset.day).cd === todayStr());
+    [...sec.querySelectorAll('.ref-filter-chip')].find(c => c.textContent.startsWith('#alpha')).click();
+  });
+  await sleep(300);
+  dv = await page.evaluate(() => {
+    const sec = [...document.querySelectorAll('.day-section')].find(s => N(s.dataset.day).cd === todayStr());
+    const box = sec.querySelector('.day-refs');
+    return { head: box.querySelector('h3').textContent, rows: [...box.querySelectorAll('.ref-row')].map(r => r.textContent.trim()[0]) };
+  });
+  assert(/^1 Linked Reference$/.test(dv.head || ''), `daily filter #alpha → 1 ref (${dv.head})`);
+  assert(dv.rows.join('') === 'x', `only the #alpha bullet shown in the day (${JSON.stringify(dv.rows)})`);
+
   await browser.close();
   console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL REFS TESTS PASSED');
   process.exit(failures ? 1 : 0);

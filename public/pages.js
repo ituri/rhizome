@@ -438,14 +438,11 @@ function renderDailyView(frag) {
       if (!state.readOnly) ph.addEventListener('click', () => opNewAt(id, 0));
       sec.append(ph);
     }
-    const built = refMap.has(id) ? buildRefGroups(id, refMap.get(id)) : null;
-    if (built) {
+    const dayRows = refMap.get(id) || [];
+    if (dayRows.length) {
       const box = document.createElement('div');
       box.className = 'day-refs';
-      const h = document.createElement('h3');
-      h.textContent = `${built.count} Linked Reference${built.count === 1 ? '' : 's'}`;
-      box.append(h, built.el);
-      sec.append(box);
+      if (renderRefBlock(box, id, dayRows, renderPage)) sec.append(box);
     }
     frag.append(sec);
   }
@@ -1367,13 +1364,13 @@ window.renderSearchResults = function renderSearchResults(frag) {
   frag.append(view);
 };
 
-// Roam-style filter for the Linked References section. Each tag/page-link that appears among
-// the referencing blocks becomes a tri-state chip: 1st click = include (block must contain it),
-// 2nd = exclude (block must not), 3rd = clear. Includes are AND-combined. State is view-only and
-// resets when you navigate to another page.
-let refFilterTarget = null;                 // page the current filter belongs to
-let refFilterOpen = false;                  // is the chip bar expanded?
-const refFilterState = new Map();           // token -> 'include' | 'exclude'
+// Roam-style filter for a Linked References section. Each tag/page-link that appears among the
+// referencing blocks becomes a tri-state chip: 1st click = include (block must contain it), 2nd =
+// exclude (must not), 3rd = clear. Includes are AND-combined. Filters are view-only, kept per
+// target so several day sections in the daily view can each have their own, and cleared on
+// navigation (window.resetRefFilters, called from applyHash).
+const refFilters = new Map(); // targetId -> { state: Map<token,'include'|'exclude'>, open: bool }
+window.resetRefFilters = () => refFilters.clear();
 
 // the filterable tokens a reference block carries: page-links (id:<id>) and #tag/@mention (tag:<#x>)
 function refRowTokens(html) {
@@ -1383,11 +1380,14 @@ function refRowTokens(html) {
   return toks;
 }
 
-window.renderBacklinks = function renderBacklinks() {
-  if (!doc || state.zoom === HOME || searchActive()) { backlinksEl.hidden = true; return; }
-  const target = state.zoom;
-  if (refFilterTarget !== target) { refFilterTarget = target; refFilterState.clear(); refFilterOpen = false; }
-  const rows = collectLinkedRefs(new Set([target])).get(target) || [];
+// Render the References block for `target` (header + funnel + chip bar + filtered groups) into
+// `container`. `rerender` rebuilds the view in place when a chip/funnel is toggled. Returns true
+// if the target actually has backlinks (so a caller can skip an empty section).
+function renderRefBlock(container, target, rows, rerender) {
+  let f = refFilters.get(target);
+  if (!f) { f = { state: new Map(), open: false }; refFilters.set(target, f); }
+  const sel = f.state;
+  const hasBacklinks = rows.some(r => refGroupOf(r.id) !== target);
 
   // tally the tokens available to filter on, skipping the page's own link/tag form (always present)
   const selfTitle = plainOf(N(target).text).trim();
@@ -1406,7 +1406,7 @@ window.renderBacklinks = function renderBacklinks() {
 
   // apply the active filter to the rows
   const inc = [], exc = [];
-  for (const [tok, mode] of refFilterState) (mode === 'include' ? inc : exc).push(tok);
+  for (const [tok, mode] of sel) (mode === 'include' ? inc : exc).push(tok);
   const filtered = (inc.length || exc.length)
     ? rows.filter(r => {
         if (r.html == null) return inc.length === 0;   // mirror rows carry no tags
@@ -1416,9 +1416,6 @@ window.renderBacklinks = function renderBacklinks() {
     : rows;
   const built = buildRefGroups(target, filtered);
 
-  backlinksEl.hidden = false;
-  backlinksEl.innerHTML = '';
-
   const head = document.createElement('div');
   head.className = 'ref-head';
   const h = document.createElement('h3');
@@ -1427,21 +1424,20 @@ window.renderBacklinks = function renderBacklinks() {
   head.append(h);
   if (tally.size) {
     const btn = document.createElement('button');
-    btn.className = 'ref-filter-btn' + (refFilterState.size ? ' active' : '');
+    btn.className = 'ref-filter-btn' + (sel.size ? ' active' : '');
     btn.innerHTML = icon('filter');
     btn.title = 'Filter references by tag';
-    btn.addEventListener('click', () => { refFilterOpen = !refFilterOpen; renderBacklinks(); });
+    btn.addEventListener('click', () => { f.open = !f.open; rerender(); });
     head.append(btn);
   }
-  backlinksEl.append(head);
+  container.append(head);
 
-  if (refFilterOpen && tally.size) {
+  if (f.open && tally.size) {
     const bar = document.createElement('div');
     bar.className = 'ref-filter-bar';
-    const chips = [...tally.entries()].sort((a, b) => b[1].count - a[1].count).slice(0, 30);
-    for (const [tok, info] of chips) {
+    for (const [tok, info] of [...tally.entries()].sort((a, b) => b[1].count - a[1].count).slice(0, 30)) {
       const chip = document.createElement('button');
-      const mode = refFilterState.get(tok);
+      const mode = sel.get(tok);
       chip.className = 'ref-filter-chip' + (mode ? ' ' + mode : '');
       chip.textContent = info.label;
       const c = document.createElement('span');
@@ -1449,26 +1445,35 @@ window.renderBacklinks = function renderBacklinks() {
       c.textContent = info.count;
       chip.append(c);
       chip.addEventListener('click', () => {
-        const cur = refFilterState.get(tok);
-        if (!cur) refFilterState.set(tok, 'include');
-        else if (cur === 'include') refFilterState.set(tok, 'exclude');
-        else refFilterState.delete(tok);
-        renderBacklinks();
+        const cur = sel.get(tok);
+        if (!cur) sel.set(tok, 'include');
+        else if (cur === 'include') sel.set(tok, 'exclude');
+        else sel.delete(tok);
+        rerender();
       });
       bar.append(chip);
     }
-    backlinksEl.append(bar);
+    container.append(bar);
   }
 
   if (!built) {
     const none = document.createElement('div');
     none.className = 'ref-none';
-    none.textContent = refFilterState.size ? 'No references match the filter.' : 'No linked references yet.';
-    backlinksEl.append(none);
+    none.textContent = sel.size ? 'No references match the filter.' : 'No linked references yet.';
+    container.append(none);
   } else {
-    backlinksEl.append(built.el);
+    container.append(built.el);
   }
+  return hasBacklinks;
+}
 
+window.renderBacklinks = function renderBacklinks() {
+  if (!doc || state.zoom === HOME || searchActive()) { backlinksEl.hidden = true; return; }
+  const target = state.zoom;
+  const rows = collectLinkedRefs(new Set([target])).get(target) || [];
+  backlinksEl.hidden = false;
+  backlinksEl.innerHTML = '';
+  renderRefBlock(backlinksEl, target, rows, renderBacklinks);
   renderUnlinkedSection(target);
 };
 
