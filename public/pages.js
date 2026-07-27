@@ -1597,7 +1597,13 @@ function migrateDatePills() {
 /* ---------------- Right sidebar: shift-click opens pages/blocks side-by-side ---------------- */
 
 const RB_KEY = 'rhizome-rightbar';
-function saveRb() { try { localStorage.setItem(RB_KEY, JSON.stringify(state.rightbar || [])); } catch { /* private mode */ } }
+const RB_OPEN_KEY = 'rhizome-rightbar-open';
+function saveRb() {
+  try {
+    localStorage.setItem(RB_KEY, JSON.stringify(state.rightbar || []));
+    localStorage.setItem(RB_OPEN_KEY, state.rightbarOpen ? '1' : '');
+  } catch { /* private mode */ }
+}
 
 function rbTitle(id) {
   const n = N(id);
@@ -1605,33 +1611,28 @@ function rbTitle(id) {
   return plainOf(n?.text || '').trim() || 'Untitled';
 }
 
-// a read-only nested outline (decorate only — never mountItem, which would hijack elById)
-function rbTree(id, depth) {
-  const wrap = document.createElement('div');
-  wrap.className = 'rb-children';
-  for (const c of kidsOf(contentIdOf(id))) {
-    const cc = contentIdOf(c);
-    const row = document.createElement('div');
-    row.className = 'rb-item';
-    const line = document.createElement('div');
-    line.className = 'rb-line';
-    line.innerHTML = decorate(N(cc).text || '');
-    row.append(line);
-    if (depth < 6 && kidsOf(cc).length) row.append(rbTree(c, depth + 1));
-    wrap.append(row);
-  }
-  return wrap;
+// a page pane shows its title as a header + its children; a block pane shows the block itself
+// (its text + subtree). Panes are FULLY editable — they reuse mountItem() and the shared editing
+// machinery (see the shell-level listeners + the mountingSidebar elById guard in app.js).
+function rbIsPage(id) {
+  const n = N(id);
+  return !!(n && (n.cal === 'day' || parentOf(id) === ROOT));
 }
 
 function rbEntry(id) {
   const box = document.createElement('div');
   box.className = 'rb-entry';
+  const isPage = rbIsPage(id);
+
   const head = document.createElement('div');
   head.className = 'rb-head';
   const title = document.createElement('a');
   title.className = 'rb-title';
   title.href = '#/n/' + id;
-  title.textContent = rbTitle(id);
+  // page pane → its own title; block pane → the page it lives on, as context (the block text
+  // itself is shown editable in the body, so repeating it in the header would be redundant)
+  const ctxId = isPage ? id : (historyPageOf(id) || pageOf(id));
+  title.textContent = rbTitle(ctxId && doc.nodes[ctxId] ? ctxId : id);
   const x = document.createElement('button');
   x.className = 'rb-x';
   x.title = 'Remove from sidebar';
@@ -1639,14 +1640,13 @@ function rbEntry(id) {
   x.addEventListener('click', () => closeInRightbar(id));
   head.append(title, x);
   box.append(head);
-  // a leaf block has no children to list, so show its own text
-  if (plainOf(N(id).text || '').trim() && !kidsOf(contentIdOf(id)).length) {
-    const line = document.createElement('div');
-    line.className = 'rb-line rb-self';
-    line.innerHTML = decorate(N(id).text);
-    box.append(line);
-  }
-  box.append(rbTree(id, 0));
+
+  const body = document.createElement('div');
+  body.className = 'tree rb-tree';
+  if (!settings.showCompleted) body.classList.add('hide-done');   // match the main view
+  const mountIds = isPage ? kidsOf(contentIdOf(id)) : [id];
+  for (const c of mountIds) body.append(mountItem(c, false));
+  box.append(body);
   return box;
 }
 
@@ -1655,6 +1655,14 @@ window.openInRightbar = function openInRightbar(id) {
   if (!doc.nodes[id]) return;
   if (!Array.isArray(state.rightbar)) state.rightbar = [];
   if (!state.rightbar.includes(id)) state.rightbar.unshift(id);
+  state.rightbarOpen = true;
+  saveRb();
+  window.renderRightbar();
+};
+
+// the top-right toggle: show/hide the sidebar (entries are kept when collapsed)
+window.toggleRightbar = function toggleRightbar() {
+  state.rightbarOpen = !state.rightbarOpen;
   saveRb();
   window.renderRightbar();
 };
@@ -1675,22 +1683,45 @@ window.renderRightbar = function renderRightbar() {
   }
   const ids = (state.rightbar || []).filter(id => doc && doc.nodes[id]);
   state.rightbar = ids;
-  const open = ids.length > 0 && !SHARE_TOKEN;
+  const open = !!state.rightbarOpen && !SHARE_TOKEN;
   document.body.classList.toggle('rightbar-open', open);
+  const btn = document.getElementById('btn-rightbar');
+  if (btn) { btn.classList.toggle('active', open); btn.setAttribute('aria-pressed', open ? 'true' : 'false'); }
   bar.innerHTML = '';
   if (!open) return;
   const head = document.createElement('div');
   head.className = 'rb-bar-head';
   const label = document.createElement('span');
   label.textContent = 'Sidebar';
-  const closeAll = document.createElement('button');
-  closeAll.className = 'rb-x';
-  closeAll.title = 'Close sidebar';
-  closeAll.textContent = '×';
-  closeAll.addEventListener('click', () => { state.rightbar = []; saveRb(); window.renderRightbar(); });
-  head.append(label, closeAll);
+  const collapse = document.createElement('button');
+  collapse.className = 'rb-x';
+  collapse.title = 'Close sidebar';
+  collapse.textContent = '×';
+  collapse.addEventListener('click', () => { state.rightbarOpen = false; saveRb(); window.renderRightbar(); });
+  head.append(label, collapse);
   bar.append(head);
-  for (const id of ids) bar.append(rbEntry(id));
+  if (!ids.length) {
+    const empty = document.createElement('div');
+    empty.className = 'rb-empty';
+    empty.textContent = 'Shift-click a page link, block reference, or bullet to open it here.';
+    bar.append(empty);
+    return;
+  }
+  // mountItem() registers each row in the global elById map; the guard in app.js keeps a node's
+  // MAIN-tree element authoritative while mountingSidebar is set, then we re-point elById at the
+  // sidebar element for any node NOT currently in #tree, so caret restore after an edit/op lands
+  // in the pane the user is actually typing in.
+  window.mountingSidebar = true;
+  try {
+    for (const id of ids) bar.append(rbEntry(id));
+  } finally {
+    window.mountingSidebar = false;
+  }
+  const tree = document.getElementById('tree');
+  for (const it of bar.querySelectorAll('.item[data-id]')) {
+    const nid = it.dataset.id;
+    if (!tree || !tree.querySelector(`.item[data-id="${nid}"]`)) elById.set(nid, it);
+  }
 };
 
 // shift-click a page link or bullet → open it in the right sidebar instead of navigating
@@ -1711,6 +1742,8 @@ document.addEventListener('click', e => {
   if (!doc) { setTimeout(afterDocLoad, 100); return; }
   if (SHARE_TOKEN || state.readOnly) return;
   try { state.rightbar = JSON.parse(localStorage.getItem(RB_KEY) || '[]').filter(id => doc.nodes[id]); } catch { state.rightbar = []; }
+  try { state.rightbarOpen = !!localStorage.getItem(RB_OPEN_KEY); } catch { state.rightbarOpen = false; }
+  document.getElementById('btn-rightbar')?.addEventListener('click', () => window.toggleRightbar());
   window.renderRightbar();
   snapshot();
   let changed = false;

@@ -75,6 +75,11 @@ const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const looksLikeImage = s => /\.(png|jpe?g|gif|webp|svg|bmp|heic|heif|avif)$/i.test(s || '');
 
 const pageEl = $('#page');
+// editing listeners live on the shell (the ancestor of both #page and the right sidebar) so a
+// pane opened in the right sidebar is fully editable with the SAME machinery — the handlers are
+// keyed off e.target via editableCtx() and no-op on non-editable targets, so this is transparent
+// for the main view (its events still bubble up to the shell).
+const shellEl = $('.shell');
 const treeEl = $('#tree');
 const crumbsEl = $('#crumbs');
 const zoomHeadEl = $('#zoom-head');
@@ -1994,8 +1999,10 @@ function mountItem(id, underMatch = false) {
   if (kidsOf(cn.id).length) item.classList.add('has-children');
   if (!expanded) item.classList.add('collapsed');
   if (state.shares.some(s => s.id === id)) item.classList.add('shared-ring');
-  // transcluded copies must not steal the id→element mapping from the node's real location
-  if (!transcludeStack.length) elById.set(id, item);
+  // transcluded copies (and right-sidebar panes) must not steal the id→element mapping from the
+  // node's real location in the main tree; renderRightbar() re-points elById at the sidebar element
+  // only for nodes that aren't currently in #tree, so caret restore lands in the correct surface
+  if (!transcludeStack.length && !window.mountingSidebar) elById.set(id, item);
   else if (!elById.has(id)) elById.set(id, item);
 
   const row = document.createElement('div');
@@ -2233,6 +2240,7 @@ function renderPage() {
   window.scrollTo(0, scrollY);
   window.renderCalStrip?.();
   window.renderSidebar?.();
+  window.renderRightbar?.();   // rebuild the editable right-sidebar panes in the same cycle
   window.renderBacklinks?.();
   window.updateStarBtn?.();
 }
@@ -3487,7 +3495,7 @@ function onKeydown(e) {
 
 /* ---------------- 16. editing events ---------------- */
 
-pageEl.addEventListener('beforeinput', e => {
+shellEl.addEventListener('beforeinput', e => {
   const ctx = editableCtx(e.target);
   if (!ctx) return;
   if (state.readOnly) { e.preventDefault(); return; }
@@ -3521,7 +3529,7 @@ pageEl.addEventListener('beforeinput', e => {
   }
 });
 
-pageEl.addEventListener('input', e => {
+shellEl.addEventListener('input', e => {
   const ctx = editableCtx(e.target);
   if (!ctx) return;
   if (ctx.el.innerHTML === '<br>') ctx.el.innerHTML = '';
@@ -3529,14 +3537,14 @@ pageEl.addEventListener('input', e => {
   window.editorInputHook?.(ctx);
 });
 
-pageEl.addEventListener('compositionstart', () => { composing = true; });
-pageEl.addEventListener('compositionend', e => {
+shellEl.addEventListener('compositionstart', () => { composing = true; });
+shellEl.addEventListener('compositionend', e => {
   composing = false;
   const ctx = editableCtx(e.target);
   if (ctx) scheduleCommit(ctx.el);
 });
 
-pageEl.addEventListener('focusout', e => {
+shellEl.addEventListener('focusout', e => {
   const ctx = editableCtx(e.target);
   if (!ctx) return;
   window.clearDateSuggest?.();
@@ -3610,6 +3618,14 @@ function activateTarget(target) {
 
 // set by the touch pointerup handler so the synthetic click that may follow (Android) is ignored
 let suppressActivationClick = 0;
+
+// clicks inside a right-sidebar pane: activate #tags / dates / links the same way the main tree
+// does (shift-click is intercepted elsewhere to open a target in the sidebar). Plain clicks fall
+// through to contenteditable for caret placement.
+shellEl.addEventListener('click', e => {
+  if (e.shiftKey || !e.target.closest('#right-sidebar')) return;
+  if (activateTarget(e.target)) e.preventDefault();
+});
 
 treeEl.addEventListener('click', e => {
   if (suppressActivationClick && Date.now() < suppressActivationClick) { suppressActivationClick = 0; return; }
@@ -3695,7 +3711,7 @@ document.addEventListener('mousedown', e => {
 
 /* ---------------- 18. paste ---------------- */
 
-pageEl.addEventListener('paste', e => {
+shellEl.addEventListener('paste', e => {
   const ctx = editableCtx(e.target);
   if (!ctx || state.readOnly) return;
 
