@@ -1702,19 +1702,32 @@ function renderAdminPanel(ov) {
   };
   const loadUpdate = async () => {
     const box = ov.querySelector('.admin-update');
-    let v;
-    try { const r = await fetch('/api/admin/version'); if (!r.ok) throw 0; v = await r.json(); }
-    catch { box.innerHTML = '<h4 class="admin-h4">Updates</h4><div class="stat-hint">Could not check for updates.</div>'; return; }
     const short = s => s ? String(s).slice(0, 7) : 'unknown';
-    let status;
-    if (!v.current) status = '<span class="stat-hint">This build has no version stamp (deploy once with GIT_COMMIT set).</span>';
-    else if (v.error) status = `<span class="stat-hint">Current <code>${short(v.current)}</code> · could not reach ${escHtml(v.repo)} (${escHtml(v.error)})</span>`;
-    else if (v.updateAvailable) status = `<span class="upd-avail">Update available:</span> <code>${short(v.current)}</code> → <code>${short(v.latest)}</code> <button class="acct-save upd-btn">Update now</button>`;
-    else status = `<span class="upd-ok">Up to date</span> <span class="stat-sub">· <code>${short(v.current)}</code></span>`;
-    box.innerHTML = `<h4 class="admin-h4">Updates <button class="key-copy upd-refresh">check</button></h4>
-      <div class="upd-row">${status}</div>
-      <div class="upd-progress" hidden></div>`;
-    box.querySelector('.upd-refresh').addEventListener('click', loadUpdate);
+    // build the shell once so a re-check can just swap the status row (and show a spinner)
+    if (!box.querySelector('.upd-row')) {
+      box.innerHTML = `<h4 class="admin-h4">Updates <button class="key-copy upd-refresh">Check for updates</button></h4>
+        <div class="upd-row"></div>
+        <div class="upd-progress" hidden></div>`;
+      box.querySelector('.upd-refresh').addEventListener('click', () => loadUpdate());
+    }
+    const row = box.querySelector('.upd-row');
+    const refresh = box.querySelector('.upd-refresh');
+    refresh.disabled = true;
+    row.innerHTML = '<span class="att-spinner upd-spin"></span> <span class="stat-sub">Checking for updates…</span>';
+    // keep the spinner visible briefly even when the check is instant, so it reads as "it ran"
+    let v = null;
+    const [res] = await Promise.all([
+      fetch('/api/admin/version', { cache: 'no-store' }).then(r => r.ok ? r.json() : null).catch(() => null),
+      new Promise(r => setTimeout(r, 450)),
+    ]);
+    v = res;
+    refresh.disabled = false;
+    if (!v) { row.innerHTML = '<span class="stat-hint">Could not check for updates.</span>'; return; }
+    const at = new Date().toLocaleTimeString();
+    if (!v.current) row.innerHTML = '<span class="stat-hint">This build has no version stamp (deploy once with GIT_COMMIT set).</span>';
+    else if (v.error) row.innerHTML = `<span class="stat-hint">Current <code>${short(v.current)}</code> · couldn’t reach ${escHtml(v.repo)} (${escHtml(v.error)})</span>`;
+    else if (v.updateAvailable) row.innerHTML = `<span class="upd-avail">Update available:</span> <code>${short(v.current)}</code> → <code>${short(v.latest)}</code> <button class="acct-save upd-btn">Update now</button> <span class="stat-sub">· checked ${at}</span>`;
+    else row.innerHTML = `<span class="upd-ok">✓ You’re on the latest version</span> <span class="stat-sub">· <code>${short(v.current)}</code> · checked ${at}</span>`;
     const btn = box.querySelector('.upd-btn');
     if (btn) btn.addEventListener('click', async () => {
       if (!confirm(`Pull ${escHtml(v.repo)}@${v.branch} and rebuild the server?\n\nThe app will restart and this page will reload when it is back.`)) return;
