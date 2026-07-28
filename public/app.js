@@ -1376,8 +1376,12 @@ function commitPending(redecorateOk = false) {
     }
   } else {
     let html = serializeEl(el);
-    // reveal: the editing DOM holds markdown source → resolve it back to stored HTML
-    if (ctx.field === 'text' && node.format !== 'codeblock') html = resolveEditSource(html);
+    // reveal: the editing DOM holds markdown source → resolve it back to stored HTML. But do NOT
+    // turn [[wiki links]] into pages while the caret is still in this line: auto-closed brackets make
+    // the link "complete" at every keystroke, so a debounced commit would getOrCreatePage() one page
+    // per prefix (SO, SOTA, SOTA-, …). Finalise links only once editing leaves the line (blur).
+    const stillEditing = document.activeElement === el;
+    if (ctx.field === 'text' && node.format !== 'codeblock') html = resolveEditSource(html, !stillEditing);
     if (settings.capitalize && (ctx.field === 'text' || ctx.field === 'title')) html = applyCapitalize(html);
     if (node.text !== html) {
       recOld(node.id);
@@ -4810,7 +4814,7 @@ function editSourceHtml(text) {
 
 // inverse of toEditSource: markdown source (as serialized from the editing DOM) → stored HTML.
 // Runs on commit, after serializeEl. ((id)) is already turned into a block-ref by serializeChildren.
-function resolveEditSource(html) {
+function resolveEditSource(html, resolveWiki = true) {
   let out = html;
   const unesc = s => s.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
   // [text](url) → external link
@@ -4818,8 +4822,9 @@ function resolveEditSource(html) {
     if (/^www\./i.test(url)) url = 'https://' + url;
     return `<a href="${escAttr(url)}" rel="noopener">${text}</a>`;
   });
-  // [[Name]] → internal page link (found or created)
-  out = out.replace(/\[\[([^[\]\n]+)\]\]/g, (m, name) => {
+  // [[Name]] → internal page link (found or created). Skipped while still typing (resolveWiki=false)
+  // so partially-typed links don't spawn a page per prefix — see commitPending.
+  if (resolveWiki) out = out.replace(/\[\[([^[\]\n]+)\]\]/g, (m, name) => {
     const plain = unesc(name).trim();
     if (!plain) return m;
     const id = getOrCreatePage(plain);
