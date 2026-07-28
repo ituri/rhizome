@@ -1088,10 +1088,12 @@ kbd {
 
 /* admin panel: user table + invite-code row */
 .admin-panel { width: min(600px, 100%); }
-.admin-invite { font-size: 13px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+/* every admin section reads as its own block: a heading, then its content, with a hair rule between */
+.admin-sec + .admin-sec { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line-soft); }
+.admin-invite-row { font-size: 13px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .admin-code { background: var(--accent-softer); padding: 2px 6px; border-radius: 4px; font-size: 13px; }
 .admin-rotate { border: 0; background: none; color: var(--accent); cursor: pointer; font: inherit; font-size: 13px; font-weight: 600; }
-.admin-users { max-height: 320px; overflow-y: auto; }
+.admin-users-scroll { max-height: 320px; overflow-y: auto; }
 .admin-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .admin-table th { text-align: left; color: var(--ink-faint); font-weight: 600; border-bottom: 1px solid var(--line); padding: 5px 6px; }
 .admin-table td { padding: 5px 6px; border-bottom: 1px solid var(--line-soft); vertical-align: middle; }
@@ -1117,7 +1119,8 @@ kbd {
 .key-copy { border: 0; background: none; color: var(--accent); cursor: pointer; font: inherit; font-weight: 600; }
 
 /* admin login-security section */
-.admin-h4 { margin: 12px 0 4px; font-size: 14px; }
+.admin-h4 { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--ink); }
+.admin-h4 .key-copy { font-weight: 600; }
 .sec-policy { font-size: 13px; display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; white-space: nowrap; }
 .sec-policy input { width: 56px; font: inherit; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: none; color: var(--ink); }
 .sec-policy select { font: inherit; padding: 4px; border: 1px solid var(--line); border-radius: 6px; background: none; color: var(--ink); }

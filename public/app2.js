@@ -1659,12 +1659,12 @@ function renderApiKeys(ov) {
 // admin-only: list users with stats, delete users, view/rotate the invite code
 function renderAdminPanel(ov) {
   ov.innerHTML = `<div class="set-subpanel admin-panel">
-    <div class="admin-status">Loading…</div>
-    <div class="admin-update"></div>
-    <div class="admin-invite"></div>
-    <div class="admin-quota"></div>
-    <div class="admin-users">Loading…</div>
-    <div class="admin-security"></div>
+    <div class="admin-sec admin-status">Loading…</div>
+    <div class="admin-sec admin-update"></div>
+    <div class="admin-sec admin-users">Loading…</div>
+    <div class="admin-sec admin-invite"></div>
+    <div class="admin-sec admin-quota"></div>
+    <div class="admin-sec admin-security"></div>
   </div>`;
   const fmtDate = t => t ? new Date(t).toLocaleString() : '—';
   const GB = 1e9;
@@ -1778,7 +1778,9 @@ function renderAdminPanel(ov) {
   const loadInvite = async () => {
     const { code } = await (await fetch('/api/admin/invite')).json();
     const box = ov.querySelector('.admin-invite');
-    box.innerHTML = `<span>Invite code:</span> <code class="admin-code">${escHtml(code || '(none)')}</code> <button class="admin-rotate">Change…</button>`;
+    box.innerHTML = `<h4 class="admin-h4">Invite code</h4>
+      <div class="admin-invite-row"><code class="admin-code">${escHtml(code || '(none)')}</code> <button class="admin-rotate">Change…</button>
+      <span class="stat-sub">Required for self-registration.</span></div>`;
     box.querySelector('.admin-rotate').addEventListener('click', async () => {
       const nc = prompt('New invite code (leave empty to fall back to the server default):', code || '');
       if (nc === null) return;
@@ -1789,7 +1791,9 @@ function renderAdminPanel(ov) {
   const loadUsers = async () => {
     const { users } = await (await fetch('/api/admin/users')).json();
     const box = ov.querySelector('.admin-users');
-    box.innerHTML = '';
+    box.innerHTML = `<h4 class="admin-h4">Users <span class="stat-sub">· ${users.length}</span></h4>`;
+    const scroll = document.createElement('div');
+    scroll.className = 'admin-users-scroll';
     const table = document.createElement('table');
     table.className = 'admin-table';
     table.innerHTML = '<thead><tr><th>User</th><th>Notes</th><th>Used / quota</th><th></th></tr></thead>';
@@ -1830,7 +1834,8 @@ function renderAdminPanel(ov) {
       tb.append(tr);
     }
     table.append(tb);
-    box.append(table);
+    scroll.append(table);
+    box.append(scroll);
   };
   const loadSecurity = async () => {
     const s = await (await fetch('/api/admin/security')).json();
