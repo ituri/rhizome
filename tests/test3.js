@@ -152,14 +152,30 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
     return chip && chip.textContent.includes('notes.txt');
   });
   assert(ok, 'attachment renders as a file chip on the item');
-  // image attachments render inline
-  await page.evaluate(id => {
-    doc.nodes[id].files.push({ url: '/favicon.ico', name: 'pic.png', type: 'image/png' });
+  // image attachments render inline (a real /files/ URL — other schemes are refused by fileHref)
+  const pic = await page.evaluate(async () => {
+    const blob = new Blob(['not really a png'], { type: 'image/png' });
+    return (await (await fetch('/api/upload?name=pic.png', { method: 'POST', body: blob })).json());
+  });
+  await page.evaluate((id, url) => {
+    doc.nodes[id].files.push({ url, name: 'pic.png', type: 'image/png' });
     renderPage();
-  }, id1);
+  }, id1, pic.url);
   await sleep(150);
   ok = await page.evaluate(() => !!document.querySelector('.attachments img.att-img'));
   assert(ok, 'image attachments render inline as <img>');
+  // clicking an image opens the lightbox (a plain click must not just drop the caret in the line)
+  await page.evaluate(() => document.querySelector('.attachments img.att-img').click());
+  await sleep(150);
+  ok = await page.evaluate(url => {
+    const lb = document.querySelector('.overlay.img-lightbox img.lb-img');
+    return !!lb && lb.getAttribute('src') === url;
+  }, pic.url);
+  assert(ok, 'clicking an image attachment opens the lightbox');
+  await page.keyboard.press('Escape');
+  await sleep(150);
+  ok = await page.evaluate(() => !document.querySelector('.img-lightbox'));
+  assert(ok, 'Escape closes the image lightbox');
   await page.evaluate(() => document.querySelector('.att-remove').click());
   await sleep(200);
 

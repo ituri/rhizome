@@ -2682,6 +2682,9 @@ window.showItemMenu = function showItemMenu(anchor, id) {
         menuItem(n.done ? 'Mark incomplete' : 'Complete', '✓', () => opToggleDone(id), { hint: 'Ctrl+Enter' }),
         menuItem(n.note != null ? 'Edit note' : 'Add note', '≡', () => opAddNote({ id, field: 'text' }), { hint: 'Shift+Enter' }),
       );
+      // an image bullet hides its text behind the picture and a tap there opens the lightbox,
+      // so the menu carries the way back to the caret (on touch there is no Alt-click)
+      if (n.files?.length) pop.append(menuItem('Edit text', icon('edit'), () => focusItem(id, 'text', 'end')));
     }
     pop.append(menuItem('Zoom in', icon('zoom--in'), () => zoomTo(cid), { hint: 'Alt+→' }));
     if (!state.readOnly) {

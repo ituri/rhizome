@@ -1827,6 +1827,11 @@ function buildAttachments(n) {
   if (!n.files || !n.files.length) return null;
   const wrap = document.createElement('div');
   wrap.className = 'attachments';
+  // every image on this bullet, so the lightbox can page through them with ← / →
+  const shots = n.files
+    .filter(f => looksLikeImage(f.name || f.url))
+    .map(f => ({ f, url: fileHref(f.url) }))
+    .filter(s => s.url);
   for (const f of n.files) {
     const url = fileHref(f.url); // null for javascript: and other unsafe schemes
     if (looksLikeImage(f.name || f.url)) {
@@ -1835,10 +1840,13 @@ function buildAttachments(n) {
       img.src = url || '';
       img.alt = f.name;
       img.loading = 'lazy';
-      img.addEventListener('click', () => {
-        // click to edit → focuses the bullet, revealing its file-name text (image hides while editing)
-        if (state.readOnly || SHARE_TOKEN) { if (url) window.open(url, '_blank', 'noopener'); return; }
-        focusItem(n.id, 'text', 'end');
+      const editable = !state.readOnly && !SHARE_TOKEN;
+      img.title = editable ? 'Click to enlarge · Alt-click to edit the line' : 'Click to enlarge';
+      img.addEventListener('click', e => {
+        // Alt/⌘-click focuses the bullet instead, revealing its file-name text for editing
+        // (the image hides while the row is focused) — plain click opens the lightbox
+        if (editable && (e.altKey || e.metaKey)) { focusItem(n.id, 'text', 'end'); return; }
+        if (url) openImageLightbox(shots, url);
       });
       wrap.append(img);
       if (!state.readOnly) {
@@ -1897,7 +1905,58 @@ function buildAttachments(n) {
       wrap.append(chip);
     }
   }
+  // an image bullet hides its own text behind the picture, so a click on the free space
+  // beside the attachments still puts the caret in the line (the tap-to-edit path on touch)
+  if (!state.readOnly && !SHARE_TOKEN) {
+    wrap.addEventListener('click', e => { if (e.target === wrap) focusItem(n.id, 'text', 'end'); });
+  }
   return wrap;
+}
+
+// full-screen image lightbox: click an attached image to see it at full size.
+// `shots` are the {f, url} images of the same bullet — ← / → page through them.
+function openImageLightbox(shots, url) {
+  if (!shots.length) return;
+  let i = Math.max(0, shots.findIndex(s => s.url === url));
+  const ov = document.createElement('div');
+  ov.className = 'overlay img-lightbox';
+  ov.tabIndex = -1;
+  ov.innerHTML = `<div class="lb-head">
+      <span class="lb-name"></span>
+      <a class="lb-dl" target="_blank" rel="noopener" download title="Open / download">${icon('download')}</a>
+      <button class="lb-close" aria-label="Close">✕</button>
+    </div>
+    <button class="lb-nav lb-prev" aria-label="Previous image">‹</button>
+    <img class="lb-img" alt="">
+    <button class="lb-nav lb-next" aria-label="Next image">›</button>`;
+  const imgEl = ov.querySelector('.lb-img');
+  const nameEl = ov.querySelector('.lb-name');
+  const dlEl = ov.querySelector('.lb-dl');
+  const solo = shots.length < 2;
+  ov.querySelector('.lb-prev').hidden = solo;
+  ov.querySelector('.lb-next').hidden = solo;
+  const show = k => {
+    i = (k + shots.length) % shots.length;
+    const s = shots[i];
+    imgEl.src = s.url;
+    imgEl.alt = s.f.name || '';
+    nameEl.textContent = (s.f.name || 'image') + (solo ? '' : ` (${i + 1}/${shots.length})`);
+    dlEl.href = s.url;
+  };
+  show(i);
+  document.body.append(ov);
+  const close = () => ov.remove();
+  // clicking the backdrop closes; the picture and the chrome do not
+  ov.addEventListener('mousedown', e => { if (e.target === ov) close(); });
+  ov.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { e.preventDefault(); close(); }
+    else if (e.key === 'ArrowLeft') { e.preventDefault(); show(i - 1); }
+    else if (e.key === 'ArrowRight') { e.preventDefault(); show(i + 1); }
+  });
+  ov.querySelector('.lb-close').addEventListener('click', close);
+  ov.querySelector('.lb-prev').addEventListener('click', () => show(i - 1));
+  ov.querySelector('.lb-next').addEventListener('click', () => show(i + 1));
+  ov.focus();
 }
 
 // in-app preview of a non-image attachment: PDFs embed inline; other types offer download/open

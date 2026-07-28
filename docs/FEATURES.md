@@ -78,6 +78,7 @@ Status as of 2026-07-13. ✅ implemented (covered by the e2e suites in [`tests/`
 | | Duplicate with optional `#copy` tag | ✅ | |
 | | Created/Changed timestamps (item menu) | ✅ | |
 | **Files & media** | Attach files, paste images | ✅ | Stored in `data/files/` |
+| | Image lightbox | ✅ | Click an image to enlarge; ← / → page through a bullet's images, Esc closes |
 | | YouTube / Shorts / Loom embeds, X link-card | ✅ | Toggleable; X card avoids the tracking widget |
 | | Image thumbnail size setting | ❌ | Cosmetic |
 | | Bulk "download all files" | ❌ | Per-file download works |
