@@ -1640,8 +1640,10 @@ time[datetime].today { color: oklch(0.5 0.14 150); background: oklch(0.55 0.14 1
 
 /* ---------------- block formats ---------------- */
 
-.item.fmt-h1 > .row > .content { font-family: var(--serif); font-size: 1.65em; font-weight: 500; line-height: 1.25; }
-.item.fmt-h2 > .row > .content { font-family: var(--serif); font-size: 1.35em; font-weight: 500; line-height: 1.3; }
+/* headings use the same font as the rest of the outline (inherit the app font, honouring the
+   font setting) — just larger and bolder, not serif */
+.item.fmt-h1 > .row > .content { font-size: 1.65em; font-weight: 700; line-height: 1.25; }
+.item.fmt-h2 > .row > .content { font-size: 1.35em; font-weight: 700; line-height: 1.3; }
 .item.fmt-h3 > .row > .content { font-size: 1.1em; font-weight: 600; line-height: 1.4; }
 /* Heading bullets: make the bullet box as tall as the content's first line box (font-size × line-height,
    in base em since the bullet keeps the base font-size) so the centred dot lines up with the heading text
