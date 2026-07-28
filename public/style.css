@@ -1508,6 +1508,8 @@ body:not(.sidebar-open) .side-today span { display: none; }
 .side-item:hover .side-remove { opacity: 1; }
 .side-remove:hover { color: var(--accent); }
 .side-del:hover { color: #e5484d; } /* deleting a page is destructive → red */
+.side-time { flex: none; font-size: 11px; color: var(--ink-faint); padding: 0 5px 0 2px; font-variant-numeric: tabular-nums; }
+.side-item:hover .side-time { display: none; } /* hovering reveals the delete × in its place */
 .side-pin {
   flex: none;
   order: -1; /* pin sits at the left of the row */

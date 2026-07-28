@@ -621,7 +621,20 @@ function sidebarPageList() {
   const pinnedSet = new Set(pins);
   const rec = pageRecency();
   const recent = Object.keys(rec).filter(id => !pinnedSet.has(id)).sort((a, b) => rec[b] - rec[a]);
-  return { list: [...pins, ...recent.slice(0, 18)], pinnedSet };
+  return { list: [...pins, ...recent.slice(0, 18)], pinnedSet, rec };
+}
+
+// compact "time since" for the sidebar: now / 5min / 4h / 9d / 2w / 3mo / 1y
+function relTime(ms) {
+  if (!ms) return '';
+  const s = Math.max(0, (Date.now() - ms) / 1000);
+  if (s < 45) return 'now';
+  const min = s / 60;      if (min < 60) return Math.round(min) + 'min';
+  const h = min / 60;      if (h < 24) return Math.round(h) + 'h';
+  const d = h / 24;        if (d < 7) return Math.round(d) + 'd';
+  const w = d / 7;         if (w < 4.35) return Math.round(w) + 'w';
+  const mo = d / 30.44;    if (mo < 12) return Math.round(mo) + 'mo';
+  return Math.round(d / 365) + 'y';
 }
 
 function togglePin(id) {
@@ -674,7 +687,7 @@ window.renderSidebar = function renderSidebar() {
   if (!pagesBox) return;
   pagesBox.innerHTML = '';
   const currentPage = pageOf(state.zoom);
-  const { list, pinnedSet } = sidebarPageList();
+  const { list, pinnedSet, rec } = sidebarPageList();
   for (const id of list) {
     const cid = contentIdOf(id); // a top-level mirror lists its target's text
     const n = N(cid);
@@ -692,6 +705,9 @@ window.renderSidebar = function renderSidebar() {
     const a = document.createElement('a');
     a.href = '#/n/' + cid;
     a.textContent = plainOf(n.text).trim() || 'Untitled';
+    const time = document.createElement('span');
+    time.className = 'side-time';
+    time.textContent = relTime(rec[id] ?? rec[cid]);   // relative last-edit, greyed on the right
     const del = document.createElement('button');
     del.className = 'side-remove side-del';
     del.title = 'Delete page';
@@ -704,7 +720,7 @@ window.renderSidebar = function renderSidebar() {
       if (state.zoom === id || state.zoom === cid) location.hash = '#/'; // leave the page we're deleting
       opDelete(id);
     });
-    row.append(pin, a, del);
+    row.append(pin, a, time, del);
     pagesBox.append(row);
   }
   window.renderRightbar?.(); // keep the side-by-side panel live with the main view

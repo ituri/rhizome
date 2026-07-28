@@ -33,6 +33,7 @@
     "test:usercss": "node tests/test-usercss.js",
     "test:headingalign": "node tests/test-heading-align.js",
     "test:linkspam": "node tests/test-linkspam.js",
+    "test:sidebartime": "node tests/test-sidebartime.js",
     "test:mcp": "node tests/test-mcp.js",
     "test:security": "node tests/test-security.js",
     "test:adminedit": "node tests/test-admin-edit.js",
