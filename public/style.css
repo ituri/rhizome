@@ -1508,8 +1508,12 @@ body:not(.sidebar-open) .side-today span { display: none; }
 .side-item:hover .side-remove { opacity: 1; }
 .side-remove:hover { color: var(--accent); }
 .side-del:hover { color: #e5484d; } /* deleting a page is destructive → red */
-.side-time { flex: none; font-size: 11px; color: var(--ink-faint); padding: 0 5px 0 2px; font-variant-numeric: tabular-nums; }
-.side-item:hover .side-time { display: none; } /* hovering reveals the delete × in its place */
+.side-time { flex: none; font-size: 11px; color: var(--ink-faint); padding: 0 6px 0 2px; font-variant-numeric: tabular-nums; }
+/* the last slot on a page row shows the relative time; hovering swaps it for the delete ×. The ×
+   uses display (not just opacity) so it frees the slot when hidden → the time sits flush right. */
+.side-page .side-del { display: none; }
+.side-item.side-page:hover .side-time { display: none; }
+.side-item.side-page:hover .side-del { display: inline-flex; }
 .side-pin {
   flex: none;
   order: -1; /* pin sits at the left of the row */
