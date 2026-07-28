@@ -80,7 +80,8 @@ button { font-family: inherit; }
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 10px clamp(16px, 4vw, 40px);
+  /* the sidebar toggle sits close to the left edge; keep the generous padding on the right */
+  padding: 10px clamp(16px, 4vw, 40px) 10px 8px;
   background: color-mix(in oklab, var(--bg) 86%, transparent);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
