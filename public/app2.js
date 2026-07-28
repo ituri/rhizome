@@ -2900,6 +2900,22 @@ function showSettings(initialTab) {
     bool(g, 'Show completed items', () => !!settings.showCompleted, v => { settings.showCompleted = v; renderPage(); });
     bool(g, 'Smooth animations', () => settings.animations !== false, v => { settings.animations = v; applyTheme(); });
     bool(g, 'Live hover preview', () => settings.hoverPreview !== false, v => { settings.hoverPreview = v; if (!v) window.__closeHoverPreview?.(); });
+    g = group('Custom CSS');
+    const cssHint = document.createElement('div');
+    cssHint.className = 'set-hint';
+    cssHint.textContent = 'Style the whole app from your graph, like Roam. Codeblocks on the “rhizome/css” page are injected live.';
+    g.append(cssHint);
+    action(g, 'Edit custom CSS…', () => {
+      snapshot();
+      const pid = getOrCreatePage('rhizome/css');
+      if (!kidsOf(pid).length) {
+        const cb = makeNode(escHtml('/* Custom CSS — applies to the whole app. e.g.  .brand { color: hotpink; } */'), { format: 'codeblock' });
+        insertAt(pid, 0, cb);
+      }
+      markDirty();
+      close();
+      location.hash = '#/n/' + pid;
+    });
   });
 
   addTab('Editing', () => {

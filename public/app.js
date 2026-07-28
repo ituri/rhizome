@@ -2302,7 +2302,40 @@ function renderPage() {
   window.renderRightbar?.();   // rebuild the editable right-sidebar panes in the same cycle
   window.renderBacklinks?.();
   window.updateStarBtn?.();
+  applyUserCSS();
 }
+
+// --- Custom CSS (Roam-style theming) -------------------------------------------------
+// A page titled "rhizome/css" whose codeblocks are injected as a <style>, so users can
+// theme the whole app from inside their own graph (synced across devices, edited live).
+const USER_CSS_PAGE = 'rhizome/css';
+let _userCSS = null;
+// codeblock text → literal source: keep newlines (<br>/<div> boundaries) and decode entities
+function codeblockText(html) {
+  return stripTags(String(html || '').replace(/<br\s*\/?>/gi, '\n').replace(/<\/div>|<\/p>/gi, '\n'));
+}
+function collectUserCSS() {
+  const page = window.findPageByTitle?.(USER_CSS_PAGE);
+  if (!page) return '';
+  const parts = [];
+  const walk = id => {
+    const n = N(id); if (!n) return;
+    if (n.format === 'codeblock' && n.text) parts.push(codeblockText(n.text));
+    for (const c of kidsOf(id)) walk(c);
+  };
+  for (const c of kidsOf(page)) walk(c);
+  return parts.join('\n\n').trim();
+}
+function applyUserCSS() {
+  if (!doc) return;
+  const css = collectUserCSS();
+  if (css === _userCSS) return;                 // unchanged → no DOM churn
+  _userCSS = css;
+  let el = document.getElementById('rz-user-css');
+  if (!el) { el = document.createElement('style'); el.id = 'rz-user-css'; document.head.appendChild(el); }
+  el.textContent = css;
+}
+window.applyUserCSS = applyUserCSS;
 
 function refreshItemShell(id) {
   if (!doc.nodes[id]) return;
