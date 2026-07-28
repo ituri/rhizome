@@ -441,7 +441,10 @@ button { font-family: inherit; }
 .bullet::before {
   content: "";
   position: absolute;
-  inset: 1px;
+  /* a fixed centred circle (not inset:1px) so a taller heading bullet doesn't stretch it into an ellipse */
+  width: 18px; height: 18px;
+  left: 50%; top: 50%;
+  margin: -9px 0 0 -9px;
   border-radius: 50%;
   background: var(--halo);
   transform: scale(0);
@@ -1639,8 +1642,13 @@ time[datetime].today { color: oklch(0.5 0.14 150); background: oklch(0.55 0.14 1
 
 .item.fmt-h1 > .row > .content { font-family: var(--serif); font-size: 1.65em; font-weight: 500; line-height: 1.25; }
 .item.fmt-h2 > .row > .content { font-family: var(--serif); font-size: 1.35em; font-weight: 500; line-height: 1.3; }
-.item.fmt-h3 > .row > .content { font-size: 1.1em; font-weight: 600; }
-.item.fmt-h1 > .row > .bullet, .item.fmt-h2 > .row > .bullet { margin-top: 0.55em; }
+.item.fmt-h3 > .row > .content { font-size: 1.1em; font-weight: 600; line-height: 1.4; }
+/* Heading bullets: make the bullet box as tall as the content's first line box (font-size × line-height,
+   in base em since the bullet keeps the base font-size) so the centred dot lines up with the heading text
+   at every level and any font size — replaces a magic margin-top that only ever fit h1. */
+.item.fmt-h1 > .row > .bullet { height: 2.0625em; }   /* 1.65 × 1.25 */
+.item.fmt-h2 > .row > .bullet { height: 1.755em; }    /* 1.35 × 1.3  */
+.item.fmt-h3 > .row > .bullet { height: 1.54em; }     /* 1.1 × 1.4  */
 
 .item.fmt-quote > .row > .content {
   border-left: 3px solid var(--accent);
