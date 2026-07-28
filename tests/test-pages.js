@@ -388,6 +388,31 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   const unique = await page.evaluate(() => plainOf(N(window.__beta).text).trim());
   assert(unique === 'GammaSeite', `a non-colliding rename is kept ("${unique}")`);
 
+  /* ---- 24b. two pages may already share a title (e.g. created on two devices): just visiting
+         such a heading is not a rename — no revert, no toast ---- */
+  await page.evaluate(() => {
+    snapshot();
+    window.__dup1 = getOrCreatePage('DoppelSeite');
+    window.__dup2 = opNewAt(ROOT, 0, 'DoppelSeite');   // a second page with the very same title
+    markDirty();
+  });
+  await sleep(450);
+  await page.evaluate(() => zoomTo(window.__dup2));
+  await sleep(450);
+  await page.evaluate(() => {
+    document.querySelectorAll('.toast').forEach(t => t.remove()); // drop the toast from case 23
+    document.querySelector('#zoom-title').focus();
+  });
+  await sleep(200);
+  await page.evaluate(() => document.querySelector('#zoom-title').blur());
+  await sleep(450);
+  const visited = await page.evaluate(() => ({
+    title: plainOf(N(window.__dup2).text).trim(),
+    toast: !!document.querySelector('.toast'),
+  }));
+  assert(visited.title === 'DoppelSeite' && !visited.toast,
+    `visiting a duplicate title leaves it alone, no toast (title "${visited.title}", toast ${visited.toast})`);
+
   /* ---- 25. brackets auto-close and type-over completes the link ---- */
   await page.evaluate(() => { location.hash = '#/'; });
   await sleep(450);

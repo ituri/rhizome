@@ -3608,20 +3608,25 @@ shellEl.addEventListener('focusout', e => {
   if (!ctx) return;
   window.clearDateSuggest?.();
   commitActiveText();
-  // rhizome: a page can't be renamed onto an existing page/day title — revert if it collides
-  if (ctx.field === 'title' && titleBeforeEdit != null && window.pageTitleCollides?.(contentIdOf(ctx.id))) {
-    const node = N(contentIdOf(ctx.id));
-    recOld(node.id);
-    node.text = titleBeforeEdit;
-    touch(node.id);
-    markDirty();
-    renderZoomHead();
-    updateDocTitle();
-    showToast('A page with that title already exists — rename reverted');
+  // rhizome: a page can't be renamed onto an existing page/day title — revert if it collides.
+  // Only when this visit actually changed the title: two pages may already share a name (created
+  // e.g. on two devices at once), and merely putting the caret in such a heading is not a rename —
+  // without the guard it reverted onto itself and toasted on every focus.
+  if (ctx.field === 'title' && titleBeforeEdit != null) {
+    const before = titleBeforeEdit;
     titleBeforeEdit = null;
-    return;
+    const node = N(contentIdOf(ctx.id));
+    if (node && node.text !== before && window.pageTitleCollides?.(node.id)) {
+      recOld(node.id);
+      node.text = before;
+      touch(node.id);
+      markDirty();
+      renderZoomHead();
+      updateDocTitle();
+      showToast('A page with that title already exists — rename reverted');
+      return;
+    }
   }
-  if (ctx.field === 'title') titleBeforeEdit = null;
   // rhizome: leaving a line renders its block refs back to the live target text
   if (ctx.field === 'text' && doc.nodes[ctx.id] && document.activeElement !== ctx.el) {
     const cid = contentIdOf(ctx.id);
