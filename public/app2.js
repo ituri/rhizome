@@ -2897,6 +2897,7 @@ function showSettings(initialTab) {
     choice(g, 'Expand arrows', [['Always', 'always'], ['On hover', 'hover']],
       () => settings.arrows === 'always' ? 'always' : 'hover', v => { settings.arrows = v; applyTheme(); });
     g = group('Display');
+    bool(g, 'Show rhizome logo', () => settings.showLogo !== false, v => { settings.showLogo = v; applyTheme(); });
     bool(g, 'Show completed items', () => !!settings.showCompleted, v => { settings.showCompleted = v; renderPage(); });
     bool(g, 'Smooth animations', () => settings.animations !== false, v => { settings.animations = v; applyTheme(); });
     bool(g, 'Live hover preview', () => settings.hoverPreview !== false, v => { settings.hoverPreview = v; if (!v) window.__closeHoverPreview?.(); });

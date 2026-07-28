@@ -42,6 +42,7 @@ const settings = Object.assign(
     showCompleted: true, embeds: true, copyTag: true, sidebar: false,
     width: 'reading', arrows: 'hover', capitalize: false, richTags: false,
     dateFormat: 'medium', weekStart: 'mon', markdownPaste: true, animations: true,
+    showLogo: true, // the "rhizome." wordmark next to the sidebar toggle
     captureTimestamp: true, // prefix quick-capture lines with the local HH:mm
     opSync: true, // op delta-sync is the default save path (PUT remains the fallback)
   },
@@ -4715,6 +4716,7 @@ function applyTheme() {
   if (settings.width === 'full') html.dataset.width = 'full'; else delete html.dataset.width;
   if (settings.arrows === 'always') html.dataset.arrows = 'always'; else delete html.dataset.arrows;
   html.classList.toggle('no-anim', settings.animations === false);
+  html.classList.toggle('hide-logo', settings.showLogo === false);
   document.body.classList.toggle('sidebar-open', !!settings.sidebar && !SHARE_TOKEN);
 }
 darkMQ.addEventListener('change', () => { if (settings.theme === 'auto') applyTheme(); });

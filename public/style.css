@@ -101,6 +101,7 @@ button { font-family: inherit; }
 }
 .brand-logo { width: 20px; height: 20px; flex: none; color: var(--accent); }
 .brand-dot { color: var(--accent); font-style: normal; }
+.hide-logo .brand { display: none; } /* Settings → Appearance → Show rhizome logo */
 
 .topbar-right { display: flex; align-items: center; gap: 6px; min-width: 0; }
 
