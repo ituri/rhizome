@@ -2914,7 +2914,11 @@ function showSettings(initialTab) {
 
   if (state.user && !SHARE_TOKEN) {
     addTab('Account', () => {
-      let g = group('Signed in as ' + state.user.username);
+      let g = group('Account');
+      const who = document.createElement('div');
+      who.className = 'set-hint';
+      who.innerHTML = 'Signed in as <b>' + escHtml(state.user.username) + '</b>';
+      g.append(who);
       action(g, 'Change password…', () => pushSub('Change password', host => renderChangePassword(host, () => showTab(currentTab))));
       action(g, 'API keys…', () => pushSub('API keys', renderApiKeys));
       action(g, 'Statistics…', () => pushSub('Statistics', renderStats));
@@ -2927,7 +2931,7 @@ function showSettings(initialTab) {
         const n = prompt('Device name (shown in page history):', window.getDeviceName());
         if (n != null) { window.setDeviceName(n); hint.textContent = 'Device name: ' + window.getDeviceName(); showToast('Device name: ' + window.getDeviceName()); }
       });
-      g = group('');
+      g = group('Session');
       action(g, 'Log out', async () => { await fetch('/api/logout', { method: 'POST' }); location.reload(); }, { danger: true });
     });
     // admins get their own category right below Account
