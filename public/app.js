@@ -2325,7 +2325,9 @@ function collectUserCSS() {
   const parts = [];
   const walk = id => {
     const n = N(id); if (!n) return;
-    if (n.format === 'codeblock' && n.text) parts.push(codeblockText(n.text));
+    // a codeblock marked done (struck through, Ctrl+Enter) is treated as disabled — a one-key toggle
+    // for keeping several themes on the page and switching between them
+    if (n.format === 'codeblock' && !n.done && n.text) parts.push(codeblockText(n.text));
     for (const c of kidsOf(id)) walk(c);
   };
   for (const c of kidsOf(page)) walk(c);
@@ -2618,6 +2620,7 @@ function opToggleDone(id) {
     }
   }
   markDirty();
+  applyUserCSS();   // completing a rhizome/css codeblock disables that theme (and vice versa)
 }
 
 function opToggleCollapse(id, collapse) {

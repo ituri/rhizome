@@ -49,6 +49,17 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   const applied2 = await page.evaluate(() => getComputedStyle(document.querySelector('.brand')).color);
   assert(applied2 === 'rgb(9, 8, 7)', 'editing the codeblock re-applies the CSS live');
 
+  // marking the codeblock done (Ctrl+Enter → struck through) disables that theme; un-done re-enables
+  const cbId = () => page.evaluate(() => { const p = findPageByTitle('rhizome/css'); return doc.nodes[p].children[0]; });
+  await page.evaluate(id => opToggleDone(id), await cbId());
+  await sleep(200);
+  const off = await page.evaluate(() => document.getElementById('rz-user-css').textContent);
+  assert(!off.includes('.brand'), 'a done (struck) codeblock is skipped → theme disabled');
+  await page.evaluate(id => opToggleDone(id), await cbId());
+  await sleep(200);
+  const on = await page.evaluate(() => document.getElementById('rz-user-css').textContent);
+  assert(on.includes('.brand'), 'un-done re-enables the theme');
+
   await browser.close();
   console.log(failures ? `\n${failures} USER-CSS TESTS FAILING` : '\nUSER-CSS TESTS PASSED');
   process.exit(failures ? 1 : 0);
