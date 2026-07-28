@@ -2913,7 +2913,6 @@ function showSettings(initialTab) {
       action(g, 'Change password…', () => pushSub('Change password', host => renderChangePassword(host, () => showTab(currentTab))));
       action(g, 'API keys…', () => pushSub('API keys', renderApiKeys));
       action(g, 'Statistics…', () => pushSub('Statistics', renderStats));
-      if (state.user.isAdmin) action(g, 'Admin panel…', () => pushSub('Admin panel', renderAdminPanel));
       g = group('This device');
       const hint = document.createElement('div');
       hint.className = 'set-hint';
@@ -2926,6 +2925,8 @@ function showSettings(initialTab) {
       g = group('');
       action(g, 'Log out', async () => { await fetch('/api/logout', { method: 'POST' }); location.reload(); }, { danger: true });
     });
+    // admins get their own category right below Account
+    if (state.user.isAdmin) addTab('Admin', () => renderAdminPanel(body));
   }
 
   // ---- navigation: top-level category vs. an in-dialog sub-view (with a back arrow) ----
@@ -2963,6 +2964,7 @@ function showSettings(initialTab) {
   // ---- search: harvest every setting/action label, then filter into a flat result list ----
   const index = [];
   tabs.forEach((t, i) => {
+    if (t.name === 'Admin') return; // the admin panel fires async fetches on render — don't run it just to index
     body.innerHTML = '';
     tabs[i].render();
     body.querySelectorAll('.set-label').forEach(l => index.push({ label: l.textContent, tab: i }));
@@ -3002,12 +3004,9 @@ function showSettings(initialTab) {
   };
   searchEl.addEventListener('input', runSearch);
 
-  // open straight into the admin panel when asked (from the sidebar's Admin link)
-  if (initialTab === '__admin__' && state.user && state.user.isAdmin) pushSub('Admin panel', renderAdminPanel);
-  else showTab(Math.max(0, tabs.findIndex(t => t.name === initialTab)));
+  showTab(Math.max(0, tabs.findIndex(t => t.name === initialTab)));
 }
 window.showSettings = showSettings;
-window.showAdminPanel = () => showSettings('__admin__');
 
 // Export format chooser, opened as a small submenu from the ⋮ menu's "Export" item.
 function openExportMenu(anchor) {
@@ -3020,8 +3019,6 @@ function openExportMenu(anchor) {
     );
   });
 }
-
-$('#side-admin')?.addEventListener('click', e => { e.preventDefault(); window.showAdminPanel(); });
 
 $('#btn-menu').addEventListener('click', e => {
   if (currentPopover) { closeAllPopovers(); return; }
