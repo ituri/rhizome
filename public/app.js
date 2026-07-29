@@ -3753,17 +3753,22 @@ shellEl.addEventListener('click', e => {
   if (activateTarget(e.target)) e.preventDefault();
 });
 
-// Shift+click a bullet → select the range (across levels) from the anchor to the clicked item.
-// Handled on mousedown (capture) so we read the anchor — the line currently being edited — BEFORE
-// the click moves focus, and preventDefault keeps the caret from jumping into the clicked bullet.
-// Only fires when it spans a DIFFERENT bullet, so a plain Shift+click still selects text in-line.
+// Mouse multi-select. A plain click on a bullet remembers it as the anchor; Shift+click then selects
+// the range (across levels) from that anchor to the clicked item. We track the anchor ourselves
+// rather than reading document.activeElement, because by Shift+mousedown time focus may have moved
+// (or never been on a bullet). Handled on mousedown (capture) + preventDefault so the caret doesn't
+// jump into the clicked bullet and no text gets selected.
+let mouseAnchor = null;
 treeEl.addEventListener('mousedown', e => {
-  if (e.button !== 0 || !e.shiftKey || e.altKey || e.ctrlKey || e.metaKey) return;
+  if (e.button !== 0) return;
   const item = e.target.closest('.item[data-id]');
-  const anchor = state.sel?.anchor || editableCtx(document.activeElement)?.id;
-  if (item && anchor && item.dataset.id !== anchor && treeEl.contains(item)) {
+  if (!item || !treeEl.contains(item)) return;
+  const id = item.dataset.id;
+  if (e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
     e.preventDefault();
-    selShiftClick(item.dataset.id, anchor);
+    selShiftClick(id, state.sel?.anchor || mouseAnchor || id);
+  } else {
+    mouseAnchor = id;   // a plain click becomes the anchor for the next Shift+click
   }
 }, true);
 

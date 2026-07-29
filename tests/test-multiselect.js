@@ -39,15 +39,17 @@ let fl = 0; const ok = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); i
   const range = await page.evaluate(P => { selEnter(P); selExtend(1); selExtend(1); return selIds(); }, ids.P);
   ok(JSON.stringify(range) === JSON.stringify([ids.P, ids.C1, ids.C2]), `selection spans levels (parent+children): ${JSON.stringify(range.map(x=>({[ids.P]:'P',[ids.C1]:'C1',[ids.C2]:'C2'}[x]||x)))}`);
 
-  // Shift+click wiring: focus PARENT, Shift+click CHILDB → same cross-level range
+  // Shift+click wiring: click PARENT, then (with focus lost, as happens in practice) Shift+click
+  // CHILDB → same cross-level range. The blur reproduces the real case where activeElement is gone.
   await page.evaluate(() => selClear());
   await page.click(`.item[data-id="${ids.P}"] .content`);
+  await page.evaluate(() => document.activeElement.blur());
   await page.keyboard.down('Shift');
   await page.click(`.item[data-id="${ids.C2}"] .content`);
   await page.keyboard.up('Shift');
   await sleep(150);
   const clickRange = await page.evaluate(() => selIds());
-  ok(JSON.stringify(clickRange) === JSON.stringify([ids.P, ids.C1, ids.C2]), 'Shift+click selects the cross-level range');
+  ok(JSON.stringify(clickRange) === JSON.stringify([ids.P, ids.C1, ids.C2]), 'Shift+click selects the cross-level range (even with focus lost)');
 
   // bulk complete (Ctrl+Enter) marks all selected done
   await page.evaluate(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true })));
