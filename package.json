@@ -39,6 +39,7 @@
     "test:map": "node tests/test-map.js",
     "test:namespace": "node tests/test-namespace.js",
     "test:fonts": "node tests/test-fonts.js",
+    "test:slashesc": "node tests/test-slash-esc.js",
     "test:mcp": "node tests/test-mcp.js",
     "test:security": "node tests/test-security.js",
     "test:adminedit": "node tests/test-admin-edit.js",

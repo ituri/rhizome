@@ -3240,6 +3240,9 @@ document.addEventListener('keydown', onKeydown);
 
 function onKeydown(e) {
   if (e.isComposing) return;
+  // a caret popover (slash menu / tag / date / link / block-ref autocomplete) always closes on
+  // Escape first — before any other overlay or shortcut can claim the key
+  if (e.key === 'Escape' && window.caretPopOpen?.()) { e.preventDefault(); window.closeCaretPop(); return; }
   const mod = e.ctrlKey || e.metaKey;
 
   // overlays & caret popovers first
