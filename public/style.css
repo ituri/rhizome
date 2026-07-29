@@ -2425,7 +2425,7 @@ a.side-nav.current { background: var(--accent-softer); color: var(--ink); }
 .side-page a { flex: 1; }
 .pages-view { max-width: 720px; }
 .pages-head { font-size: 26px; margin: 4px 0 18px; }
-.map-view { max-width: 1100px; }
+.map-view { max-width: 2200px; }
 .map-canvas {
   height: calc(100dvh - var(--topbar-h) - 120px);
   min-height: 380px;
