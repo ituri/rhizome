@@ -36,6 +36,7 @@
     "test:sidebartime": "node tests/test-sidebartime.js",
     "test:logo": "node tests/test-logo.js",
     "test:multiselect": "node tests/test-multiselect.js",
+    "test:map": "node tests/test-map.js",
     "test:mcp": "node tests/test-mcp.js",
     "test:security": "node tests/test-security.js",
     "test:adminedit": "node tests/test-admin-edit.js",

@@ -592,6 +592,71 @@ function renderPagesView(frag) {
 }
 window.renderPagesView = renderPagesView;
 
+/* ---------------- Map view: every geocoded page as a clickable marker ---------------- */
+
+function mapViewActive() {
+  return state.view === 'map' && state.zoom === ROOT && !SHARE_TOKEN && !searchActive();
+}
+window.mapViewActive = mapViewActive;
+
+let pageMap = null;   // the current Leaflet instance (torn down on every re-render)
+
+function renderMapView(frag) {
+  const view = document.createElement('div');
+  view.className = 'map-view';
+  const h = document.createElement('h1');
+  h.className = 'pages-head';
+  h.textContent = 'Map';
+  view.append(h);
+
+  // collect every page carrying a coordinate — from its first bullet OR its title (pageCoords
+  // handles both storage styles: coord-titled pages and address-titled pages with a coords bullet)
+  const points = [];
+  for (const pid of pagesOf()) {
+    const coords = pageCoords(pid);
+    if (coords) points.push({ id: pid, coords, title: plainOf(N(pid).text).trim() || 'Untitled' });
+  }
+
+  if (!points.length) {
+    const hint = document.createElement('div');
+    hint.className = 'pages-empty';
+    hint.textContent = 'No geocoded pages yet — capture a location (iOS location button) to see it here.';
+    view.append(hint);
+    frag.append(view);
+    return;
+  }
+
+  const canvas = document.createElement('div');
+  canvas.className = 'map-canvas';
+  view.append(canvas);
+  frag.append(view);
+
+  if (pageMap) { try { pageMap.remove(); } catch { /* noop */ } pageMap = null; }
+  loadLeaflet().then(() => {
+    if (!canvas.isConnected) return;   // navigated away while Leaflet loaded
+    pageMap = L.map(canvas, { zoomControl: true, attributionControl: true, scrollWheelZoom: true });
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19, attribution: '© OpenStreetMap contributors',
+    }).addTo(pageMap);
+    const latlngs = [];
+    for (const p of points) {
+      latlngs.push([p.coords.lat, p.coords.lon]);
+      L.circleMarker([p.coords.lat, p.coords.lon], {
+        radius: 7, weight: 2, color: '#bf562f', fillColor: '#bf562f', fillOpacity: 0.85,
+      })
+        .bindTooltip(p.title)
+        .on('click', () => { location.hash = '#/n/' + p.id; })
+        .addTo(pageMap);
+    }
+    if (latlngs.length === 1) pageMap.setView(latlngs[0], 14);
+    else pageMap.fitBounds(latlngs, { padding: [30, 30] });
+    setTimeout(() => pageMap && pageMap.invalidateSize(), 60);
+  }).catch(() => {
+    canvas.textContent = 'Map failed to load.';
+  });
+}
+window.renderMapView = renderMapView;
+
 /* ---------------- sidebar: Daily Notes / All Pages / Shortcuts / page list --- */
 
 // the page (top-level page or journal day) a node belongs to, for recency
@@ -654,6 +719,7 @@ window.renderSidebar = function renderSidebar() {
   $('#side-daily')?.classList.toggle('current', state.zoom === ROOT && state.view === 'daily');
   $('#side-pages-link')?.classList.toggle('current', state.view === 'pages');
   $('#side-assets')?.classList.toggle('current', state.view === 'assets');
+  $('#side-map')?.classList.toggle('current', state.view === 'map');
 
   const starsBox = $('#side-stars');
   const starsSection = $('#side-stars-section');
