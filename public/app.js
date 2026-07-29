@@ -2999,14 +2999,31 @@ window.addEventListener('hashchange', () => { if (doc) applyHash(); });
 
 /* ---------------- 14. selection mode ---------------- */
 
+// item ids in top-to-bottom visible order (deduped across transcluded copies). Selection ranges run
+// over THIS order, so they span indentation levels — a parent and its children select together.
+function visibleItemIds() {
+  const seen = new Set(), out = [];
+  for (const item of treeEl.querySelectorAll('.item')) {
+    const id = item.dataset.id;
+    if (id && item.offsetParent !== null && !seen.has(id)) { seen.add(id); out.push(id); }
+  }
+  return out;
+}
+
 function selIds() {
   if (!state.sel) return [];
-  const arr = kidsOf(state.sel.parent);
-  const a = arr.indexOf(state.sel.anchor);
-  const f = arr.indexOf(state.sel.focus);
+  const vis = visibleItemIds();
+  const a = vis.indexOf(state.sel.anchor), f = vis.indexOf(state.sel.focus);
   if (a < 0 || f < 0) return [];
   const [lo, hi] = a <= f ? [a, f] : [f, a];
-  return arr.slice(lo, hi + 1);
+  return vis.slice(lo, hi + 1);
+}
+
+// the top-level items of a selection: those whose parent isn't also selected. Their subtrees follow
+// them for move/delete, so selecting a parent (with or without its children) acts on it once.
+function selRoots(ids) {
+  const set = new Set(ids);
+  return ids.filter(id => !set.has(parentOf(id)));
 }
 
 function selRender() {
@@ -3019,9 +3036,18 @@ function selRender() {
 
 function selEnter(id) {
   commitActiveText();
-  const p = parentOf(id);
-  if (!p) return;
-  state.sel = { parent: p, anchor: id, focus: id };
+  if (!parentOf(id)) return;
+  state.sel = { anchor: id, focus: id };
+  document.activeElement?.blur?.();
+  getSelection().removeAllRanges();
+  selRender();
+}
+
+// Shift+click a bullet → select the visible range from the anchor (existing selection or the line
+// being edited) to the clicked item, across indentation levels
+function selShiftClick(id, anchor) {
+  commitActiveText();
+  state.sel = { anchor: anchor || id, focus: id };
   document.activeElement?.blur?.();
   getSelection().removeAllRanges();
   selRender();
@@ -3035,12 +3061,13 @@ function selClear(rerender = true) {
 
 function selExtend(dir) {
   if (!state.sel) return;
-  const arr = kidsOf(state.sel.parent);
-  const i = arr.indexOf(state.sel.focus);
-  const j = clamp(i + dir, 0, arr.length - 1);
-  state.sel.focus = arr[j];
+  const vis = visibleItemIds();
+  const i = vis.indexOf(state.sel.focus);
+  if (i < 0) return;
+  const j = clamp(i + dir, 0, vis.length - 1);
+  state.sel.focus = vis[j];
   selRender();
-  elById.get(arr[j])?.scrollIntoView({ block: 'nearest' });
+  elById.get(vis[j])?.scrollIntoView({ block: 'nearest' });
 }
 
 function selKeydown(e) {
@@ -3065,27 +3092,30 @@ function selKeydown(e) {
     return true;
   }
   if (state.readOnly) return true;
+  const roots = selRoots(ids);
+  // structural moves (indent/outdent, reorder) need the selection's roots to be siblings; a
+  // mixed-level range (e.g. some children plus a following top-level item) is left untouched
+  const rootsSiblings = roots.length > 0 && roots.every(id => parentOf(id) === parentOf(roots[0]));
   if (e.key === 'Tab') {
     e.preventDefault();
+    if (!rootsSiblings) return true;
+    const p = parentOf(roots[0]);
     if (e.shiftKey) {
-      const p = sel.parent;
       if (p === state.zoom || !parentOf(p)) return true; // impossible move — no undo entry
       commitActiveText();
       snapshot();
       const gp = parentOf(p);
       let at = kidsOf(gp).indexOf(p) + 1;
-      for (const id of ids) { moveNode(id, gp, at); at = kidsOf(gp).indexOf(id) + 1; }
-      state.sel.parent = gp;
+      for (const id of roots) { moveNode(id, gp, at); at = kidsOf(gp).indexOf(id) + 1; }
     } else {
-      const arr = kidsOf(sel.parent);
-      const first = arr.indexOf(ids[0]);
+      const arr = kidsOf(p);
+      const first = arr.indexOf(roots[0]);
       if (first <= 0) return true; // impossible move — no undo entry
       commitActiveText();
       snapshot();
       const np = arr[first - 1];
       N(np).collapsed = false;
-      for (const id of ids) moveNode(id, np, kidsOf(np).length);
-      state.sel.parent = np;
+      for (const id of roots) moveNode(id, np, kidsOf(np).length);
     }
     renderPage();
     state.sel = sel;
@@ -3095,10 +3125,11 @@ function selKeydown(e) {
   }
   if ((mod || e.altKey) && e.shiftKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
     e.preventDefault();
+    if (!rootsSiblings) return true;
     const dir = e.key === 'ArrowDown' ? 1 : -1;
-    const arr = kidsOf(sel.parent);
-    const lo = arr.indexOf(ids[0]);
-    const hi = arr.indexOf(ids[ids.length - 1]);
+    const arr = kidsOf(parentOf(roots[0]));
+    const lo = arr.indexOf(roots[0]);
+    const hi = arr.indexOf(roots[roots.length - 1]);
     if (dir < 0 && lo === 0) return true;
     if (dir > 0 && hi === arr.length - 1) return true;
     snapshot();
@@ -3114,8 +3145,8 @@ function selKeydown(e) {
     e.preventDefault();
     snapshot();
     const count = ids.length;
-    const nf = neighborFocus(ids.map(x => elById.get(x)));
-    for (const id of ids) { promoteDoomed(id); deleteSubtree(id); }
+    const nf = neighborFocus(ids.map(x => elById.get(x)).filter(Boolean));
+    for (const id of roots) { promoteDoomed(id); deleteSubtree(id); }  // roots' subtrees cover the rest
     selClear(false);
     renderPage();
     applyNeighborFocus(nf);
@@ -3135,20 +3166,10 @@ function selKeydown(e) {
     return true;
   }
   if (mod && (e.key === 'a' || e.key === 'A')) {
-    // Ctrl+A ladder, continued: all siblings at this level, then one level up
-    // each press, stopping at the zoom page's top level
+    // grow the selection to every visible item
     e.preventDefault();
-    const arr = kidsOf(sel.parent);
-    if (ids.length < arr.length) {
-      sel.anchor = arr[0];
-      sel.focus = arr[arr.length - 1];
-    } else if (sel.parent !== state.zoom) {
-      const gp = parentOf(sel.parent);
-      if (gp) {
-        const up = kidsOf(gp);
-        state.sel = { parent: gp, anchor: up[0], focus: up[up.length - 1] };
-      }
-    }
+    const vis = visibleItemIds();
+    if (vis.length) state.sel = { anchor: vis[0], focus: vis[vis.length - 1] };
     selRender();
     elById.get(state.sel.focus)?.scrollIntoView({ block: 'nearest' });
     return true;
@@ -3732,8 +3753,23 @@ shellEl.addEventListener('click', e => {
   if (activateTarget(e.target)) e.preventDefault();
 });
 
+// Shift+click a bullet → select the range (across levels) from the anchor to the clicked item.
+// Handled on mousedown (capture) so we read the anchor — the line currently being edited — BEFORE
+// the click moves focus, and preventDefault keeps the caret from jumping into the clicked bullet.
+// Only fires when it spans a DIFFERENT bullet, so a plain Shift+click still selects text in-line.
+treeEl.addEventListener('mousedown', e => {
+  if (e.button !== 0 || !e.shiftKey || e.altKey || e.ctrlKey || e.metaKey) return;
+  const item = e.target.closest('.item[data-id]');
+  const anchor = state.sel?.anchor || editableCtx(document.activeElement)?.id;
+  if (item && anchor && item.dataset.id !== anchor && treeEl.contains(item)) {
+    e.preventDefault();
+    selShiftClick(item.dataset.id, anchor);
+  }
+}, true);
+
 treeEl.addEventListener('click', e => {
   if (suppressActivationClick && Date.now() < suppressActivationClick) { suppressActivationClick = 0; return; }
+  if (state.sel && e.shiftKey) { e.preventDefault(); return; }   // the mousedown already range-selected
   if (activateTarget(e.target)) { e.preventDefault(); return; }
   const colTog = e.target.closest('[data-col-toggle]');
   if (colTog) {
@@ -4900,7 +4936,7 @@ function welcomeDoc() {
   add(power, 'Type <b>/</b> for block types: headings, to-dos, numbered lists, boards, code, dividers…');
   add(power, 'Type a date in plain words — <b>today</b>, <b>next friday</b>, <b>oct 7</b>, <b>in 3 days</b> — then press <b>Tab</b>');
   add(power, 'Drag any bullet to reorganize. Drop it deeper or shallower by moving sideways');
-  add(power, '<b>Ctrl+A</b> twice selects whole items — then Tab, move, complete or delete in bulk');
+  add(power, '<b>Ctrl+A</b> twice (or <b>Shift+click</b> / <b>Shift+↑↓</b>) selects whole items — across levels, so a parent + its children — then Tab, move, complete or delete in bulk');
   add(power, 'Select text to format it — colors and highlights included');
   add(power, 'Search supports <code>"phrases"</code>, <code>-not</code>, <code>OR</code>, <code>is:complete</code>, <code>has:note</code>, <code>changed:7d</code>…');
   const sample = add(ROOT, 'Try it: plan something #example', { collapsed: true });
