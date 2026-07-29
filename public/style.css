@@ -19,7 +19,7 @@
   --halo: oklch(0.27 0.022 55 / 0.13);
   --shadow: 0 1px 2px oklch(0.3 0.03 60 / 0.06), 0 12px 36px -12px oklch(0.3 0.03 60 / 0.22);
   --mark: oklch(0.86 0.09 85);
-  --sans: "Instrument Sans", "Segoe UI", system-ui, sans-serif;
+  --sans: Inter, "Segoe UI", system-ui, sans-serif;
   --serif: "Newsreader", Georgia, serif;
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --indent: 26px;
@@ -2508,7 +2508,7 @@ html.ns-abbrev .ns-ref .ns-prefix { display: none; }
 
 /* ================= rhizome: Roam-inspired skin ================= */
 :root {
-  --sans: Inter, "Instrument Sans", "Segoe UI", system-ui, sans-serif;
+  --sans: Inter, "Segoe UI", system-ui, sans-serif;
 }
 html:not([data-theme="dark"]) { --ink: #202b33; }
 html, body { font-size: 14px; line-height: 1.5; }
