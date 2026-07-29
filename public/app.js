@@ -3760,6 +3760,7 @@ shellEl.addEventListener('click', e => {
 // We track the anchor ourselves (not document.activeElement, which may have moved by click time).
 let mouseAnchor = null;
 let dragSel = null;   // { startId } while a press-and-drag block selection is in progress
+let blockSelectAt = 0;   // timestamp of the last drag-select, so the trailing click doesn't clear it
 treeEl.addEventListener('mousedown', e => {
   if (e.button !== 0) return;
   const item = e.target.closest('.item[data-id]');
@@ -3793,6 +3794,10 @@ document.addEventListener('mousemove', e => {
 });
 
 document.addEventListener('mouseup', () => {
+  // a drag across bullets is followed by a click on the common ancestor (not a selected row) which
+  // "clicked outside" logic would treat as a deselect — remember when we drag-selected so the two
+  // click/mousedown deselect guards can ignore that immediate trailing event
+  if (dragSel && dragSel.active) blockSelectAt = Date.now();
   document.body.classList.remove('block-selecting');
   dragSel = null;
 });
@@ -3846,7 +3851,7 @@ treeEl.addEventListener('click', e => {
   }
   // live mirror rows are editable — clicking places the caret like any row; only a
   // BROKEN mirror's text (not editable) keeps click-through behavior, which is a no-op
-  if (state.sel && !e.target.closest('.item.selected')) selClear();
+  if (state.sel && !e.target.closest('.item.selected') && Date.now() - blockSelectAt > 250) selClear();
 });
 
 zoomHeadEl.addEventListener('click', e => {
@@ -3877,7 +3882,7 @@ pageEl.addEventListener('click', e => {
 });
 
 document.addEventListener('mousedown', e => {
-  if (state.sel && !e.target.closest('.item.selected') && !e.target.closest('.popover')) selClear();
+  if (state.sel && !e.target.closest('.item.selected') && !e.target.closest('.popover') && Date.now() - blockSelectAt > 250) selClear();
 });
 
 /* ---------------- 18. paste ---------------- */

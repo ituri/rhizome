@@ -60,9 +60,11 @@ let fl = 0; const ok = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); i
   await page.mouse.down();
   await page.mouse.move(b.x, b.y, { steps: 10 });
   await page.mouse.up();
+  // real browsers fire a click on the common ancestor after a drag — it must NOT clear the selection
+  await page.evaluate(() => document.getElementById('tree').dispatchEvent(new MouseEvent('click', { bubbles: true })));
   await sleep(150);
   const dragRange = await page.evaluate(() => selIds());
-  ok(JSON.stringify(dragRange) === JSON.stringify([ids.P, ids.C1, ids.C2]), 'drag-select (no modifier) selects the cross-level range');
+  ok(JSON.stringify(dragRange) === JSON.stringify([ids.P, ids.C1, ids.C2]), 'drag-select survives the trailing click (no deselect on release)');
 
   // bulk complete (Ctrl+Enter) marks all selected done
   await page.evaluate(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true })));
