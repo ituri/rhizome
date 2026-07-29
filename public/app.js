@@ -2279,6 +2279,8 @@ function renderPage() {
   pageEl.classList.toggle('board-page', N(state.zoom).format === 'board');
   // rhizome: day pages are normal pages — cal-page styling only wraps year/month navigation
   pageEl.classList.toggle('cal-page', ['year', 'month'].includes(N(state.zoom).cal));
+  // the map view breaks out of the reading-width cap so the map can use the full page
+  pageEl.classList.toggle('map-page', !!window.mapViewActive?.());
   const roots = kidsOf(state.zoom).filter(c => shouldShow(c, false));
   const frag = document.createDocumentFragment();
   // rhizome: an active search renders whole-outline results grouped by page
