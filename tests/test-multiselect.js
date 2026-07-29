@@ -51,6 +51,19 @@ let fl = 0; const ok = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); i
   const clickRange = await page.evaluate(() => selIds());
   ok(JSON.stringify(clickRange) === JSON.stringify([ids.P, ids.C1, ids.C2]), 'Shift+click selects the cross-level range (even with focus lost)');
 
+  // DRAG-select (no modifier): press on PARENT's text and drag down past CHILDB
+  await page.evaluate(() => selClear());
+  const pos = s => page.evaluate(sel => { const r = document.querySelector(sel).getBoundingClientRect(); return { x: r.x + 20, y: r.y + r.height / 2 }; }, s);
+  const a = await pos(`.item[data-id="${ids.P}"] .content`);
+  const b = await pos(`.item[data-id="${ids.C2}"] .content`);
+  await page.mouse.move(a.x, a.y);
+  await page.mouse.down();
+  await page.mouse.move(b.x, b.y, { steps: 10 });
+  await page.mouse.up();
+  await sleep(150);
+  const dragRange = await page.evaluate(() => selIds());
+  ok(JSON.stringify(dragRange) === JSON.stringify([ids.P, ids.C1, ids.C2]), 'drag-select (no modifier) selects the cross-level range');
+
   // bulk complete (Ctrl+Enter) marks all selected done
   await page.evaluate(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true })));
   await sleep(200);

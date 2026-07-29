@@ -3753,12 +3753,13 @@ shellEl.addEventListener('click', e => {
   if (activateTarget(e.target)) e.preventDefault();
 });
 
-// Mouse multi-select. A plain click on a bullet remembers it as the anchor; Shift+click then selects
-// the range (across levels) from that anchor to the clicked item. We track the anchor ourselves
-// rather than reading document.activeElement, because by Shift+mousedown time focus may have moved
-// (or never been on a bullet). Handled on mousedown (capture) + preventDefault so the caret doesn't
-// jump into the clicked bullet and no text gets selected.
+// Mouse multi-select. Two ways, no modifier needed:
+//  • DRAG across bullets — pressing on a bullet's text and dragging up/down over other bullets
+//    selects the range (across indentation levels). Dragging WITHIN one bullet still selects text.
+//  • Shift+click — click a bullet, then Shift+click another to select the range between them.
+// We track the anchor ourselves (not document.activeElement, which may have moved by click time).
 let mouseAnchor = null;
+let dragSel = null;   // { startId } while a press-and-drag block selection is in progress
 treeEl.addEventListener('mousedown', e => {
   if (e.button !== 0) return;
   const item = e.target.closest('.item[data-id]');
@@ -3767,10 +3768,34 @@ treeEl.addEventListener('mousedown', e => {
   if (e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
     e.preventDefault();
     selShiftClick(id, state.sel?.anchor || mouseAnchor || id);
-  } else {
-    mouseAnchor = id;   // a plain click becomes the anchor for the next Shift+click
+    return;
   }
+  if (e.altKey || e.ctrlKey || e.metaKey) return;
+  mouseAnchor = id;
+  // arm a drag-select from the TEXT area only (the bullet dot / gutter drag to reorder instead)
+  if (e.target.closest('.content')) dragSel = { startId: id };
 }, true);
+
+document.addEventListener('mousemove', e => {
+  if (!dragSel || (e.buttons & 1) === 0) return;
+  const item = document.elementFromPoint(e.clientX, e.clientY)?.closest?.('.item[data-id]');
+  if (!item || !treeEl.contains(item)) return;
+  const id = item.dataset.id;
+  // still hovering the start bullet and no block selection yet → leave it to normal text selection
+  if (id === dragSel.startId && !dragSel.active) return;
+  e.preventDefault();
+  dragSel.active = true;
+  document.activeElement?.blur?.();
+  getSelection().removeAllRanges();
+  document.body.classList.add('block-selecting');
+  state.sel = { anchor: dragSel.startId, focus: id };
+  selRender();
+});
+
+document.addEventListener('mouseup', () => {
+  document.body.classList.remove('block-selecting');
+  dragSel = null;
+});
 
 treeEl.addEventListener('click', e => {
   if (suppressActivationClick && Date.now() < suppressActivationClick) { suppressActivationClick = 0; return; }

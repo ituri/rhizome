@@ -648,6 +648,8 @@ mark {
 
 body.dragging-item { cursor: grabbing; user-select: none; }
 body.dragging-item .content, body.dragging-item .note { cursor: grabbing; }
+/* while drag-selecting bullets, suppress text selection so whole rows highlight cleanly */
+body.block-selecting, body.block-selecting .content { user-select: none; -webkit-user-select: none; cursor: default; }
 
 /* ---------------- popover menus ---------------- */
 
