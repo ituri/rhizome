@@ -43,6 +43,7 @@ const settings = Object.assign(
     width: 'reading', arrows: 'hover', capitalize: false, richTags: false,
     dateFormat: 'medium', weekStart: 'mon', markdownPaste: true, animations: true,
     showLogo: true, // the "rhizome." wordmark next to the sidebar toggle
+    nsAbbrev: false, // abbreviate namespaced page titles to their last segment (hide the "Foo/" prefix)
     captureTimestamp: true, // prefix quick-capture lines with the local HH:mm
     opSync: true, // op delta-sync is the default save path (PUT remains the fallback)
   },
@@ -376,6 +377,22 @@ function decorate(html, opts = {}) {
           child.textContent = t ? (plainOf(t.text).trim().slice(0, 140) || 'Untitled') : '(deleted block)';
           child.setAttribute('contenteditable', 'false');
           continue;
+        }
+        // rhizome: a namespaced page ref ([[Foo/Bar]]) shows only its leaf, with the prefix kept
+        // in a span for dimming/hiding via CSS (Roam-style). Tags and block-refs are left alone.
+        if (child.tagName === 'A' && !opts.plain && !opts.editing
+            && /^#\/n\//.test(child.getAttribute('href') || '')
+            && !child.classList.contains('tag') && !child.classList.contains('block-ref')) {
+          const ns = window.splitNamespace?.(child.textContent);
+          if (ns) {
+            child.classList.add('ns-ref');
+            child.setAttribute('data-ns', ns.prefix);
+            child.textContent = '';
+            const pre = document.createElement('span'); pre.className = 'ns-prefix'; pre.textContent = ns.prefix;
+            const leaf = document.createElement('span'); leaf.className = 'ns-leaf'; leaf.textContent = ns.leaf;
+            child.append(pre, leaf);
+            continue;
+          }
         }
         if (child.tagName === 'TIME' && child.getAttribute('datetime')) {
           const dt = child.getAttribute('datetime');
@@ -1463,7 +1480,7 @@ function parseQuery(q) {
     let cond = null;
     if (!tok.quoted) {
       // longest operator names first so e.g. `date-before:` wins over `date:`
-      const op = text.match(/^(is|has|text|highlight|changed|created|in|on|link|date-before|date-after|day-of-week|date):(.*)$/i);
+      const op = text.match(/^(is|has|text|highlight|changed|created|in|on|link|namespace|date-before|date-after|day-of-week|date):(.*)$/i);
       // 'text:' gets its own kind so it can't collide with plain search terms
       if (op) cond = { neg, kind: op[1].toLowerCase() === 'text' ? 'textfmt' : op[1].toLowerCase(), value: op[2].toLowerCase() };
     }
@@ -1593,6 +1610,14 @@ function nodeMeetsCond(n, cond, hay, html) {
       // match by URL/href even when the link's display text was changed
       const hrefs = [...html.matchAll(/href="([^"]*)"/gi)].map(x => x[1].toLowerCase());
       hit = cond.value ? hrefs.some(h => h.includes(cond.value)) : hrefs.length > 0;
+      break;
+    }
+    case 'namespace': {
+      // Roam-style: match pages whose own title sits under the "Foo/" namespace prefix.
+      // Accepts "Foo" or "Foo/"; with no value, matches any namespaced (slash-bearing) title.
+      const title = plainOf(n.text).trim().toLowerCase();
+      const v = cond.value.replace(/\/+$/, '');
+      hit = v ? title.startsWith(v + '/') : title.slice(1).includes('/');
       break;
     }
   }
@@ -4795,6 +4820,7 @@ function applyTheme() {
   if (settings.arrows === 'always') html.dataset.arrows = 'always'; else delete html.dataset.arrows;
   html.classList.toggle('no-anim', settings.animations === false);
   html.classList.toggle('hide-logo', settings.showLogo === false);
+  html.classList.toggle('ns-abbrev', settings.nsAbbrev === true);
   document.body.classList.toggle('sidebar-open', !!settings.sidebar && !SHARE_TOKEN);
 }
 darkMQ.addEventListener('change', () => { if (settings.theme === 'auto') applyTheme(); });

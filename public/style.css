@@ -2434,6 +2434,19 @@ a.side-nav.current { background: var(--accent-softer); color: var(--ink); }
   overflow: hidden;
 }
 .map-canvas .leaflet-container { height: 100%; }
+
+/* Namespaces (Roam-style "Foo/Bar" titles): the leaf shows normally, the "Foo/" prefix is dimmed
+   by default and hidden entirely when the "Abbreviate namespaces" setting is on. */
+.ns-ref .ns-prefix { color: var(--ink-faint); font-weight: inherit; }
+html.ns-abbrev .ns-ref .ns-prefix { display: none; }
+/* grouping in All Pages (header per top-level namespace) + indented children */
+.pages-table tr.ns-group td {
+  padding: 16px 0 4px; border: none; color: var(--ink-faint);
+  font-size: 11.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+}
+.pages-table tr.ns-child td:first-child { padding-left: 22px; }
+/* sidebar: nudge namespaced pages in a touch */
+.side-item.side-page.ns-child { padding-left: 16px; }
 .pages-table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
 .pages-table th {
   text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em;

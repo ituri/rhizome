@@ -416,6 +416,7 @@ const QUERY_OPS = [
   { label: '{date:this week}', insert: '{date:this week}', match: 'date' },
   { label: '{day-of-week:monday}', insert: '{day-of-week:monday}', match: 'day-of-week' },
   { label: '{link: … }', insert: '{link:}', back: 1, match: 'link' },
+  { label: '{namespace: … }  — pages under Foo/', insert: '{namespace:}', back: 1, match: 'namespace' },
   { label: '{text:bold}', insert: '{text:bold}', match: 'text' },
   { label: '{view:table}', insert: '{view:table}', match: 'view:table' },
   { label: '{view:board}', insert: '{view:board}', match: 'view:board' },
@@ -2899,6 +2900,7 @@ function showSettings(initialTab) {
     g = group('Display');
     bool(g, 'Show rhizome logo', () => settings.showLogo !== false, v => { settings.showLogo = v; applyTheme(); });
     bool(g, 'Show completed items', () => !!settings.showCompleted, v => { settings.showCompleted = v; renderPage(); });
+    bool(g, 'Abbreviate namespaces', () => settings.nsAbbrev === true, v => { settings.nsAbbrev = v; applyTheme(); renderPage(); window.renderSidebar?.(); });
     bool(g, 'Smooth animations', () => settings.animations !== false, v => { settings.animations = v; applyTheme(); });
     bool(g, 'Live hover preview', () => settings.hoverPreview !== false, v => { settings.hoverPreview = v; if (!v) window.__closeHoverPreview?.(); });
     g = group('Custom CSS');
@@ -3173,6 +3175,7 @@ async function init() {
       sub('is:', () => ['complete', 'incomplete', 'todo', 'heading', 'mirror', 'shared'].map(v => val(v, `is:${v}`))),
       sub('has:', () => ['note', 'date', 'file', 'link', 'comment', 'tag'].map(v => val(v, `has:${v}`))),
       op('in:note:', 'in:note:'),
+      op('namespace:', 'namespace:'),
       sub('text:', () => ['bold', 'italic', 'underline', 'strike', 'code', 'color'].map(v => val(v, `text:${v}`))),
       op('link:', 'link:'),
       sub('highlight:', () => ['any', ...(typeof COLOR_NAMES !== 'undefined' ? COLOR_NAMES : [])].map(v => val(v, `highlight:${v}`))),

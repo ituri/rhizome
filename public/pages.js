@@ -43,6 +43,32 @@ function findPageByTitle(title) {
     || pageAliasMap().get(want) || null;
 }
 
+/* ---------------- Namespaces (Roam-style "Foo/Bar" page titles) ---------------- */
+// A namespaced title "Foo/Bar" (or multi-level "A/B/C") is still ONE flat page — the slash is a
+// naming convention. We surface it: the display shows only the leaf, with the prefix kept for
+// dimming/hiding via CSS, and the top-level segment drives sidebar/All-Pages grouping.
+function splitNamespace(title) {
+  const s = (title || '').trim();
+  const last = s.lastIndexOf('/');
+  if (last <= 0 || last >= s.length - 1) return null;         // no slash, or leading/trailing slash
+  return { prefix: s.slice(0, last + 1), leaf: s.slice(last + 1), top: s.slice(0, s.indexOf('/')).trim() };
+}
+window.splitNamespace = splitNamespace;
+
+// set a page link's label with namespace-aware markup (prefix + leaf spans) so CSS can dim or hide
+// the prefix; falls back to a plain title when there's no namespace.
+function setPageLabel(a, title) {
+  const ns = splitNamespace(title);
+  if (!ns) { a.textContent = title; return; }
+  a.classList.add('ns-ref');
+  a.setAttribute('data-ns', ns.prefix);
+  a.textContent = '';
+  const pre = document.createElement('span'); pre.className = 'ns-prefix'; pre.textContent = ns.prefix;
+  const leaf = document.createElement('span'); leaf.className = 'ns-leaf'; leaf.textContent = ns.leaf;
+  a.append(pre, leaf);
+}
+window.setPageLabel = setPageLabel;
+
 // pages append at the top level; callers wrap in snapshot()
 function createPage(title) {
   const id = makeNode(escHtml(title.trim()));
@@ -552,12 +578,28 @@ function renderPagesView(frag) {
   table.append(thead);
 
   const tbody = document.createElement('tbody');
+  let lastTop = null;   // for namespace grouping when sorted by title
   for (const r of rows) {
+    const ns = splitNamespace(r.title);
+    // group header per top-level namespace (only meaningful when the list is title-sorted)
+    if (key === 'title' && ns && ns.top !== lastTop) {
+      lastTop = ns.top;
+      const gtr = document.createElement('tr');
+      gtr.className = 'ns-group';
+      const gtd = document.createElement('td');
+      gtd.colSpan = 4;
+      gtd.textContent = ns.top + '/';
+      gtr.append(gtd);
+      tbody.append(gtr);
+    } else if (key !== 'title' || !ns) {
+      lastTop = null;
+    }
     const tr = document.createElement('tr');
+    if (ns) tr.className = 'ns-child';
     const tdTitle = document.createElement('td');
     const a = document.createElement('a');
     a.href = '#/n/' + r.id;
-    a.textContent = r.title;
+    setPageLabel(a, r.title);
     tdTitle.append(a);
     const tdC = document.createElement('td');
     tdC.textContent = r.c ? roamDateLabel(isoOf(new Date(r.c))) : '—';
@@ -760,8 +802,10 @@ window.renderSidebar = function renderSidebar() {
     if (!n) continue;
     if (n.done && !settings.showCompleted) continue;
     const isPinned = pinnedSet.has(id);
+    const title = plainOf(n.text).trim() || 'Untitled';
+    const ns = splitNamespace(title);
     const row = document.createElement('div');
-    row.className = 'side-item side-page' + (isPinned ? ' pinned' : '');
+    row.className = 'side-item side-page' + (isPinned ? ' pinned' : '') + (ns ? ' ns-child' : '');
     if (state.zoom !== ROOT && (currentPage === id || currentPage === cid)) row.classList.add('current');
     const pin = document.createElement('button');
     pin.className = 'side-pin' + (isPinned ? ' on' : '');
@@ -770,7 +814,7 @@ window.renderSidebar = function renderSidebar() {
     pin.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); togglePin(id); });
     const a = document.createElement('a');
     a.href = '#/n/' + cid;
-    a.textContent = plainOf(n.text).trim() || 'Untitled';
+    setPageLabel(a, title);
     const time = document.createElement('span');
     time.className = 'side-time';
     time.textContent = relTime(rec[id] ?? rec[cid]);   // relative last-edit, greyed on the right
@@ -781,7 +825,6 @@ window.renderSidebar = function renderSidebar() {
     del.addEventListener('click', e => {
       e.preventDefault();
       e.stopPropagation();
-      const title = plainOf(n.text).trim() || 'Untitled';
       if (!confirm(`Delete the page “${title}” and everything in it? It moves to the trash.`)) return;
       if (state.zoom === id || state.zoom === cid) location.hash = '#/'; // leave the page we're deleting
       opDelete(id);
@@ -1107,7 +1150,7 @@ window.parseLiveQuery = function parseLiveQuery(raw) {
   // {view:…}{group:…}{sort:…} are rendering hints, not match clauses — pull them out before parsing.
   const body = qm[1].replace(/\{(?:view|group|sort)\s*:[^}]*\}/gi, ' ');
   const tokens = [];
-  const FIELD = 'is|has|text|highlight|changed|created|in|on|link|date-before|date-after|day-of-week|date';
+  const FIELD = 'is|has|text|highlight|changed|created|in|on|link|namespace|date-before|date-after|day-of-week|date';
   const re = new RegExp(
     '\\{(and|or|not|between)\\s*:' +                                  // 1: boolean group
     '|\\{(' + FIELD + ')\\s*:\\s*([^}]*)\\}' +                        // 2: field op, 3: value
