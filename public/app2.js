@@ -136,7 +136,14 @@ $('#btn-sidebar').addEventListener('click', () => {
     if (!peeking()) return;
     document.body.classList.add('sidebar-peek-closing');      // play the slide-out first
     clearTimeout(closeTimer);
-    closeTimer = setTimeout(() => document.body.classList.remove('sidebar-peek', 'sidebar-peek-closing'), 150);
+    closeTimer = setTimeout(() => {
+      // dropping the peek class re-enters the flex flow, where the base width transition
+      // would animate 252px → 0 IN LAYOUT and shove the page ("jitter"). Suppress it for
+      // the collapse, restore afterwards.
+      panel.style.transition = 'none';
+      document.body.classList.remove('sidebar-peek', 'sidebar-peek-closing');
+      requestAnimationFrame(() => requestAnimationFrame(() => { panel.style.transition = ''; }));
+    }, 150);
   };
   const hideSoon = () => {
     clearTimeout(hideTimer);
