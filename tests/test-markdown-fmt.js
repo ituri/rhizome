@@ -38,6 +38,27 @@ const cookieFrom=sc=>{const m=(sc||'').match(/rz_session=([^;]+)/);return m?'rz_
   ok(r.code,'`code` → <code>');
   ok(/fmt-quote/.test(r.quote),`> zitat → quote (${r.quote})`);
   ok(/fmt-number/.test(r.number),`1. eins → number (${r.number})`);
+
+  // Regression: "> " typed at the START of an existing line converts the format but must
+  // KEEP the text (it used to wipe the whole line — el.textContent='' assumed an empty line)
+  await p.evaluate(()=>{
+    const id=opNewAt('pg',0); window.__keep=id;
+    N(id).text='bestehender <b>Text</b> bleibt'; markDirty(); renderPage();
+  });
+  await sleep(250);
+  await p.evaluate(()=>{
+    const el=document.querySelector(`.item[data-id="${window.__keep}"] .content`);
+    el.focus();
+    const sel=getSelection(); const rng=document.createRange();
+    rng.setStart(el.firstChild||el,0); rng.collapse(true);
+    sel.removeAllRanges(); sel.addRange(rng);
+  });
+  await sleep(120);
+  await p.keyboard.type('> ',{delay:12});
+  await sleep(400);
+  const keep=await p.evaluate(()=>({ text:N(window.__keep).text, fmt:N(window.__keep).format }));
+  ok(keep.fmt==='quote' && /bestehender/.test(keep.text) && /<b>Text<\/b>/.test(keep.text),
+    `"> " vor bestehendem Text: quote + Text und <b> bleiben (${JSON.stringify(keep)})`);
   console.log('PAGE ERRORS:',errs.length?errs:'keine'); if(errs.length)fail++;
   console.log(fail?`\n${fail} FEHL`:'\nInline+Block-Markdown (Web) funktioniert');
   await b.close(); srv.kill(); process.exit(fail?1:0);

@@ -3375,11 +3375,13 @@ function onKeydown(e) {
       const before = (el.textContent || '').slice(0, off);
       let fmt = BLOCK_MARKERS[before];
       if (!fmt && /^\d+[.)]$/.test(before)) fmt = 'number';
-      if (fmt && off === before.length) {
+      if (fmt) {
         e.preventDefault();
-        el.textContent = ''; // opSetFormat re-serializes this element via commitActiveText
-        N(id).text = '';
-        opSetFormat(id, fmt);
+        // remove ONLY the typed marker; anything after the caret survives with its
+        // formatting intact (typing "> " at the start of an existing line used to wipe it)
+        selectPlainRange(el, 0, off);
+        document.execCommand('delete');
+        opSetFormat(id, fmt); // re-serializes this element via commitActiveText
         return;
       }
     }
