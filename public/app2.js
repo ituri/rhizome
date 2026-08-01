@@ -166,8 +166,9 @@ $('#side-collapse').addEventListener('click', () => $('#btn-sidebar').click());
     const pending = pendingOps.length + (dirty && !pendingOps.length ? 1 : 0);
     let lastServer = 0;
     if (doc) for (const id in doc.nodes) { const m = doc.nodes[id].m; if (m > lastServer) lastServer = m; }
+    // en-GB pins day/month/year with slashes (01/08/2026), matching the Roam card
     const when = lastServer
-      ? new Date(lastServer).toLocaleString(undefined, {
+      ? new Date(lastServer).toLocaleString('en-GB', {
         day: '2-digit', month: '2-digit', year: 'numeric',
         hour: '2-digit', minute: '2-digit', second: '2-digit', timeZoneName: 'short',
       })
