@@ -150,6 +150,9 @@ $('#btn-sidebar').addEventListener('click', () => {
   panel.addEventListener('mouseleave', () => { if (peeking()) hideSoon(); });
 }
 
+// docked mode: the collapse toggle in the sidebar's top row is the same switch
+$('#side-collapse').addEventListener('click', () => $('#btn-sidebar').click());
+
 /* ---------------- B. backlinks ---------------- */
 
 window.renderBacklinks = function renderBacklinks() {

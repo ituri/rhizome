@@ -77,6 +77,26 @@ let fl = 0; const ok = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); i
   cls = await page.evaluate(() => [document.body.classList.contains('sidebar-open'), document.body.classList.contains('sidebar-peek')]);
   ok(cls[0] && !cls[1], `clicking the toggle docks the sidebar (open=${cls[0]}, peek=${cls[1]})`);
 
+  // docked (Roam layout): full viewport height, topbar shifted right, toggle moves inside
+  const dock = await page.evaluate(() => {
+    const sb = getComputedStyle(document.querySelector('#sidebar'));
+    return {
+      pos: sb.position, top: sb.top,
+      topbarShift: getComputedStyle(document.querySelector('.topbar')).marginLeft,
+      topToggle: getComputedStyle(document.querySelector('#btn-sidebar')).display,
+      sideToggle: getComputedStyle(document.querySelector('#side-collapse')).display,
+    };
+  });
+  ok(dock.pos === 'fixed' && dock.top === '0px', `docked sidebar owns the full left height (${dock.pos}, top ${dock.top})`);
+  ok(dock.topbarShift === '252px', `topbar starts right of the sidebar (margin-left ${dock.topbarShift})`);
+  ok(dock.topToggle === 'none' && dock.sideToggle !== 'none',
+    `toggle lives in the sidebar's top row while docked (topbar: ${dock.topToggle}, sidebar: ${dock.sideToggle})`);
+
+  // the in-sidebar toggle collapses it again
+  await page.click('#side-collapse');
+  await sleep(200);
+  ok(await page.evaluate(() => !document.body.classList.contains('sidebar-open')), 'the in-sidebar toggle collapses the docked sidebar');
+
   await browser.close();
   console.log(fl ? `\n${fl} PEEK TESTS FAILING` : '\nPEEK TESTS PASSED');
   process.exit(fl ? 1 : 0);

@@ -1402,6 +1402,27 @@ body.sidebar-peek.sidebar-peek-closing .sidebar {
   to { transform: translateX(-16px); opacity: 0; }
 }
 
+/* Sidebar top row: graph switcher left, collapse toggle right (docked mode only) */
+.side-top { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; }
+.side-top .graph-switcher { flex: 1 1 auto; width: auto; margin-bottom: 0; }
+#side-collapse { display: none; margin-left: auto; flex: none; }
+
+/* Docked (desktop): the sidebar owns the full left height, Roam-style — the topbar and the
+   content start to its right, and the collapse toggle moves into the sidebar's top row. */
+@media (min-width: 901px) {
+  body.sidebar-open .topbar { margin-left: 252px; }
+  body.sidebar-open .shell { padding-left: 252px; }
+  body.sidebar-open .sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    height: 100dvh;
+    z-index: 45;
+  }
+  body.sidebar-open #btn-sidebar { display: none; }
+  body.sidebar-open #side-collapse { display: inline-flex; }
+}
+
 /* the edge hot zone that summons the peek — inert while the sidebar is docked */
 .side-hotzone {
   position: fixed;
