@@ -504,7 +504,7 @@ button { font-family: inherit; }
 .tag {
   color: var(--accent);
   background: var(--accent-soft);
-  border-radius: 6px;
+  border-radius: 999px;   /* full capsule */
   padding: 0.06em 0.4em;
   font-size: 1em;   /* Roam renders tags at full body size (.rm-page-ref--tag) */
   cursor: pointer;
@@ -2698,7 +2698,7 @@ html, body { font-size: 14px; line-height: 1.5; }
 .content a.tag:hover, .ref-row a.tag:hover {
   color: var(--accent);
   background: var(--accent-soft);
-  border-radius: 6px;
+  border-radius: 999px;
   padding: 0.06em 0.4em;
   font-size: 1em;
   text-decoration: none;
