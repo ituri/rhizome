@@ -1364,8 +1364,7 @@ html.no-anim, html.no-anim *, html.no-anim *::before, html.no-anim *::after {
 }
 body.sidebar-open .sidebar {
   width: 252px;
-  /* soft fade into the page instead of a hard rule */
-  box-shadow: inset -28px 0 22px -28px var(--halo);
+  border-right: 1px solid var(--line-soft);
   overflow-y: auto;
 }
 .sidebar { padding: 6px 0 30px; }
