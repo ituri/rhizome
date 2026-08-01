@@ -2533,6 +2533,17 @@ a.side-nav.current { background: var(--accent-softer); color: var(--ink); }
 }
 .map-canvas .leaflet-container { height: 100%; }
 
+/* {{table}}: the block's children rendered as a Roam-style table */
+.rz-table-block { margin: 4px 0 8px; overflow-x: auto; }
+.rz-table { border-collapse: collapse; font-size: 14px; }
+.rz-table td {
+  border: 1px solid var(--line);
+  padding: 5px 12px;
+  vertical-align: top;
+  min-width: 70px;
+}
+.rz-table td:hover { background: var(--accent-softer); cursor: pointer; }
+
 /* Graph view: full-page force-directed canvas */
 .graph-view { max-width: 2200px; margin: 0 auto; }
 .graph-head { display: flex; align-items: baseline; gap: 18px; }

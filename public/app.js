@@ -2209,6 +2209,8 @@ function mountItem(id, underMatch = false) {
   if (embed) item.append(embed);
   const qr = window.buildQueryResults?.(cn); // live {{query:…}} result list
   if (qr) item.append(qr);
+  const tbl = window.buildTableBlock?.(cn); // {{table}}: children rendered as a table
+  if (tbl) item.append(tbl);
   const geoMini = window.buildGeoMini?.(cn); // small map under a bullet linking to a location page
   if (geoMini) item.append(geoMini);
 

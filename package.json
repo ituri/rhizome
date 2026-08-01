@@ -43,6 +43,7 @@
     "test:syncpop": "node tests/test-syncpop.js",
     "test:sidebarmobile": "node tests/test-sidebar-mobile.js",
     "test:blockreveal": "node tests/test-block-reveal.js",
+    "test:table": "node tests/test-table.js",
     "test:namespace": "node tests/test-namespace.js",
     "test:fonts": "node tests/test-fonts.js",
     "test:slashesc": "node tests/test-slash-esc.js",

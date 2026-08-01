@@ -1067,6 +1067,10 @@ window.rhizomeSlashCommands = function rhizomeSlashCommands(ctx, popStart) {
       // typing "[[" re-enters the normal autocomplete flow via the input hook
       fn: () => { refocus(); document.execCommand('insertText', false, '[['); },
     },
+    {
+      label: 'Table', icon: '⊞', hint: '{{table}}',
+      fn: () => { refocus(); document.execCommand('insertText', false, '{{table}}'); },
+    },
     { label: 'Today', icon: icon('calendar'), fn: () => insertJournalLink(ctx, dateOffset(0), at) },
     { label: 'Tomorrow', icon: icon('calendar'), fn: () => insertJournalLink(ctx, dateOffset(1), at) },
     { label: 'Yesterday', icon: icon('calendar'), fn: () => insertJournalLink(ctx, dateOffset(-1), at) },
@@ -1081,6 +1085,58 @@ window.rhizomeSlashCommands = function rhizomeSlashCommands(ctx, popStart) {
       },
     },
   ];
+};
+
+/* ---------------- {{table}}: children rendered as a Roam-style table ---------------- */
+
+// Roam semantics: each child of the {{table}} block is a row, each nesting level a column;
+// a parent cell spans all its leaf paths (rowspan). The source bullets stay editable below
+// (fold the block to see just the table). Cell click focuses/zooms the underlying bullet.
+window.buildTableBlock = function buildTableBlock(n) {
+  if (!/\{\{table\}\}/.test(n.text || '')) return null;
+  const box = document.createElement('div');
+  box.className = 'rz-table-block';
+  const kids = kidsOf(contentIdOf(n.id));
+  if (!kids.length) {
+    box.innerHTML = '<div class="ref-none">Add child bullets: each child is a row, each nesting level a column.</div>';
+    return box;
+  }
+  const leaves = id => {
+    const k = kidsOf(contentIdOf(id));
+    return k.length ? k.reduce((s, c) => s + leaves(c), 0) : 1;
+  };
+  const rows = [];
+  const walk = (id, row) => {
+    const cid = contentIdOf(id);
+    row.push({ id: cid, span: leaves(cid) });
+    const k = kidsOf(cid);
+    if (!k.length) { rows.push(row); return; }
+    walk(k[0], row);                       // first child continues this row
+    for (const rest of k.slice(1)) walk(rest, []);   // siblings open spanned continuation rows
+  };
+  for (const k of kids) walk(k, []);
+  const table = document.createElement('table');
+  table.className = 'rz-table';
+  for (const r of rows) {
+    const tr = document.createElement('tr');
+    for (const cell of r) {
+      const td = document.createElement('td');
+      if (cell.span > 1) td.rowSpan = cell.span;
+      td.dataset.id = cell.id;
+      td.innerHTML = displayHtml(N(cell.id));
+      tr.append(td);
+    }
+    table.append(tr);
+  }
+  box.append(table);
+  box.addEventListener('click', e => {
+    if (e.target.closest('a, .tag, time, .attr-key')) return;   // links/tags keep their behaviour
+    const td = e.target.closest('td[data-id]');
+    if (!td || state.readOnly) return;
+    if (editableNode(td.dataset.id)) focusItem(td.dataset.id, 'text', 'end');
+    else zoomTo(td.dataset.id);
+  });
+  return box;
 };
 
 /* ---------------- Linked & Unlinked References ---------------- */
