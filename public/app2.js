@@ -153,6 +153,18 @@ $('#btn-sidebar').addEventListener('click', () => {
 // docked mode: the collapse toggle in the sidebar's top row is the same switch
 $('#side-collapse').addEventListener('click', () => $('#btn-sidebar').click());
 
+// Mobile: the sidebar is a full overlay, so navigating from it must also close it —
+// otherwise the overlay keeps covering the page you just picked. Remove buttons (×),
+// the graph switcher and the collapse toggle don't navigate, so they don't close it.
+$('#sidebar').addEventListener('click', e => {
+  if (!document.body.classList.contains('sidebar-mobile') || !document.body.classList.contains('sidebar-open')) return;
+  if (e.target.closest('.side-remove, #side-collapse, #graph-switcher')) return;
+  if (!e.target.closest('a')) return;
+  settings.sidebar = false;
+  saveSettings();
+  document.body.classList.remove('sidebar-open', 'sidebar-mobile');
+});
+
 // Sync popover (Roam-style): hovering the save-state chip shows what the sync is doing —
 // online/offline, pending local ops, doc version and the server's last change.
 {
