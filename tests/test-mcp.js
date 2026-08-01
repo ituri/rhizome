@@ -60,7 +60,7 @@ const srv = spawn('node', [path.join(__dirname, '..', 'server.js')], {
   /* ---- tools/list ---- */
   r = await rpc('tools/list', {});
   const tools = (r.json.result.tools || []).map(t => t.name).sort();
-  assert(tools.length === 8, `tools/list returns 8 tools (${tools.join(', ')})`);
+  assert(tools.length === 9, `tools/list returns 9 tools (${tools.join(', ')})`);
   assert(tools.includes('search') && tools.includes('create_node') && tools.includes('capture'), 'core tools present');
   assert((r.json.result.tools[0].inputSchema || {}).type === 'object', 'tools carry a JSON-Schema inputSchema');
 
@@ -120,6 +120,18 @@ const srv = spawn('node', [path.join(__dirname, '..', 'server.js')], {
   /* ---- unknown method → JSON-RPC method-not-found ---- */
   r = await rpc('does/notExist', {});
   assert(r.json.error && r.json.error.code === -32601, 'unknown method → JSON-RPC -32601');
+
+  /* ---- journal tool: today's day subtree in one call ---- */
+  {
+    const cap = await callTool('capture', { text: 'journal-tool probe' });
+    assert(!cap.isError, 'capture into today works');
+    const day = await callTool('journal', {});
+    assert(!day.isError && /journal-tool probe/.test(JSON.stringify(day.data)), 'journal (no args) returns today with its content');
+    const none = await callTool('journal', { date: '1999-01-01' });
+    assert(none.isError && /no journal entries/.test(JSON.stringify(none.raw)), 'journal for a day without entries says so');
+    const bad = await callTool('journal', { date: 'gestern' });
+    assert(bad.isError, 'a non-ISO date is rejected');
+  }
 
   /* ---- token in the PATH (/mcp/<token>) — claude.ai connectors can't set headers ---- */
   const pr = await fetch(base + '/mcp/' + AGENT, {

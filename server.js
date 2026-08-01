@@ -1050,8 +1050,10 @@ const MCP_WRITE_TOOLS = new Set(['create_node', 'update_node', 'move_node', 'del
 const MCP_TOOLS = [
   { name: 'search', description: 'Full-text search the graph. Returns matching nodes with their id, plain text, breadcrumb path and done state.',
     inputSchema: { type: 'object', properties: { query: { type: 'string', description: 'space-separated terms (AND)' }, limit: { type: 'integer', description: 'max results (default 50, max 200)' } }, required: ['query'] } },
-  { name: 'list_pages', description: 'List the top-level pages (direct children of the root). Start here to discover the graph.',
+  { name: 'list_pages', description: 'List the top-level pages (direct children of the root). Start here to discover the graph. Journal days are NOT here — they live under the calendar; use the journal tool for them.',
     inputSchema: { type: 'object', properties: {} } },
+  { name: 'journal', description: "A journal day's full subtree — today by default. THE tool for “what did I write today/on <date>”.",
+    inputSchema: { type: 'object', properties: { date: { type: 'string', description: 'YYYY-MM-DD (default: today, server time)' }, depth: { type: 'integer', description: 'subtree depth limit' } } } },
   { name: 'get_node', description: 'Read a single node by id. With tree=true, returns the whole subtree (optionally limited by depth).',
     inputSchema: { type: 'object', properties: { id: { type: 'string' }, tree: { type: 'boolean', description: 'include descendants' }, depth: { type: 'integer', description: 'subtree depth limit when tree=true' } }, required: ['id'] } },
   { name: 'create_node', description: 'Create a node under a parent (default root). Text is inline HTML-ish markup; [[Page]] links and #tags work. Returns the new node.',
@@ -1119,7 +1121,7 @@ async function mcpDispatch(m, g, scope) {
         protocolVersion: (params && typeof params.protocolVersion === 'string') ? params.protocolVersion : MCP_PROTOCOL,
         capabilities: { tools: { listChanged: false } },
         serverInfo: MCP_SERVER,
-        instructions: 'Rhizome is a page-based outliner. Call list_pages to discover pages, search to find nodes, get_node (tree=true) to read a subtree, then the write tools to edit. Node ids are opaque strings; the tree lives in each node\'s children array.',
+        instructions: 'Rhizome is a page-based outliner. Call list_pages to discover pages, search to find nodes, get_node (tree=true) to read a subtree, then the write tools to edit. Journal days live under the calendar, NOT in list_pages — call the journal tool (today by default) to read a day; always read the full subtree before concluding a day is empty. Node ids are opaque strings; the tree lives in each node\'s children array.',
       });
     case 'ping': return mcpResult(id, {});
     case 'tools/list': return mcpResult(id, { tools: MCP_TOOLS });
@@ -1157,6 +1159,13 @@ async function mcpCallTool(id, params, g, scope) {
         const nid = String(args.id || '');
         if (!doc.nodes[nid]) return fail('node not found: ' + nid);
         return ok(args.tree ? nodeTree(doc, nid, args.depth != null ? parseInt(args.depth, 10) : undefined) : nodeView(doc, nid));
+      }
+      case 'journal': {
+        const date = String(args.date || todayIso());
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return fail('date must be YYYY-MM-DD');
+        const day = Object.keys(doc.nodes).find(k => doc.nodes[k].cal === 'day' && doc.nodes[k].cd === date);
+        if (!day) return fail(`no journal entries for ${date}`);
+        return ok(nodeTree(doc, day, args.depth != null ? parseInt(args.depth, 10) : undefined));
       }
       case 'create_node': {
         const parent = String(args.parent || 'root');
