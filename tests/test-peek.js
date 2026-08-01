@@ -51,6 +51,9 @@ let fl = 0; const ok = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); i
   await page.mouse.move(box.x, box.y);
   await sleep(400);
   ok(await page.evaluate(() => document.body.classList.contains('sidebar-peek')), 'panel keeps the peek open while hovered');
+  const labelShown = await page.evaluate(() =>
+    getComputedStyle(document.querySelector('#side-map span')).display !== 'none');
+  ok(labelShown, 'nav labels (Map …) are visible while peeked');
   await page.click('#side-pages-link');
   await sleep(300);
   ok(await page.evaluate(() => location.hash.startsWith('#/pages')), `a peeked sidebar is fully usable (navigated to ${await page.evaluate(() => location.hash)})`);

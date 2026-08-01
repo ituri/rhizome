@@ -1431,7 +1431,7 @@ body.sidebar-open .side-hotzone { display: none; }
 }
 .side-today svg { width: 17px; height: 17px; flex: none; }
 .side-today:hover { background: var(--accent-softer); color: var(--ink); }
-body:not(.sidebar-open) .side-today span { display: none; }
+body:not(.sidebar-open):not(.sidebar-peek) .side-today span { display: none; }
 
 /* calendar gets the full page width; title/crumbs/content keep the reading column */
 .page.cal-page { max-width: none; }
