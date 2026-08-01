@@ -153,6 +153,56 @@ $('#btn-sidebar').addEventListener('click', () => {
 // docked mode: the collapse toggle in the sidebar's top row is the same switch
 $('#side-collapse').addEventListener('click', () => $('#btn-sidebar').click());
 
+// Sync popover (Roam-style): hovering the save-state chip shows what the sync is doing —
+// online/offline, pending local ops, doc version and the server's last change.
+{
+  const chip = $('#save-state');
+  let pop = null, refreshTimer = 0;
+  const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const fill = () => {
+    if (!pop) return;
+    const offline = chip.classList.contains('offline');
+    const saving = chip.classList.contains('saving');
+    const pending = pendingOps.length + (dirty && !pendingOps.length ? 1 : 0);
+    let lastServer = 0;
+    if (doc) for (const id in doc.nodes) { const m = doc.nodes[id].m; if (m > lastServer) lastServer = m; }
+    const when = lastServer
+      ? new Date(lastServer).toLocaleString(undefined, {
+        day: '2-digit', month: '2-digit', year: 'numeric',
+        hour: '2-digit', minute: '2-digit', second: '2-digit', timeZoneName: 'short',
+      })
+      : '—';
+    const title = offline ? 'Offline — edits are kept here'
+      : (saving || pending) ? 'Syncing…' : 'Everything is synced!';
+    pop.innerHTML = `
+      <div class="sync-pop-title">${title}</div>
+      <hr>
+      <div>Rhizome is <b>${offline ? 'offline' : 'online'}</b></div>
+      <div><b>${pending}</b> pending local change${pending === 1 ? '' : 's'}</div>
+      <div>Doc version <b>${esc(state.version ?? '—')}</b></div>
+      <div>Last change in server:<br>${esc(when)}</div>`;
+  };
+  const show = () => {
+    if (!matchMedia('(hover: hover) and (pointer: fine)').matches || pop) return;
+    pop = document.createElement('div');
+    pop.className = 'sync-pop';
+    document.body.append(pop);
+    fill();
+    const r = chip.getBoundingClientRect();
+    pop.style.top = r.bottom + 10 + 'px';
+    pop.style.left = Math.max(8, Math.min(innerWidth - pop.offsetWidth - 8, r.left + r.width / 2 - pop.offsetWidth / 2)) + 'px';
+    pop.style.setProperty('--arrow-x', (r.left + r.width / 2 - pop.offsetLeft) + 'px');
+    refreshTimer = setInterval(fill, 1000);   // tick while visible
+  };
+  const hide = () => {
+    clearInterval(refreshTimer);
+    pop?.remove();
+    pop = null;
+  };
+  chip.addEventListener('mouseenter', show);
+  chip.addEventListener('mouseleave', hide);
+}
+
 /* ---------------- B. backlinks ---------------- */
 
 window.renderBacklinks = function renderBacklinks() {

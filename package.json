@@ -40,6 +40,7 @@
     "test:map": "node tests/test-map.js",
     "test:graph": "node tests/test-graph.js",
     "test:peek": "node tests/test-peek.js",
+    "test:syncpop": "node tests/test-syncpop.js",
     "test:namespace": "node tests/test-namespace.js",
     "test:fonts": "node tests/test-fonts.js",
     "test:slashesc": "node tests/test-slash-esc.js",

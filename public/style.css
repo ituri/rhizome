@@ -1423,6 +1423,38 @@ body.sidebar-peek.sidebar-peek-closing .sidebar {
   body.sidebar-open #side-collapse { display: inline-flex; }
 }
 
+/* Sync popover: hover on the save-state chip (Roam-style status card) */
+.sync-pop {
+  position: fixed;
+  z-index: 95;
+  min-width: 220px;
+  max-width: 300px;
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  padding: 12px 16px;
+  font-size: 13.5px;
+  line-height: 1.75;
+  color: var(--ink);
+  pointer-events: none;
+  animation: hp-fade 0.12s var(--ease-out, ease-out);
+}
+.sync-pop::before {
+  content: "";
+  position: absolute;
+  top: -6px;
+  left: var(--arrow-x, 50%);
+  margin-left: -6px;
+  width: 11px; height: 11px;
+  background: var(--bg-raised);
+  border-left: 1px solid var(--line);
+  border-top: 1px solid var(--line);
+  transform: rotate(45deg);
+}
+.sync-pop-title { font-weight: 600; }
+.sync-pop hr { border: 0; border-top: 1px solid var(--line-soft); margin: 8px 0; }
+
 /* the edge hot zone that summons the peek — inert while the sidebar is docked */
 .side-hotzone {
   position: fixed;
