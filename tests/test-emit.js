@@ -10,11 +10,13 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 let failures = 0;
 const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) failures++; };
 
-// live nodes only, $hlc stripped, keys sorted — comparable across client and server
+// live nodes only, $hlc AND m stripped, keys sorted — comparable across client and server.
+// m is server-authoritative (the applier stamps Date.now() on update/move), so it can never
+// deterministically equal the client's value; comparing it made the oracle a timing flake.
 function liveCanon(nodes) {
   const sortKeys = o => Array.isArray(o) ? o.map(sortKeys) : (o && typeof o === 'object' ? Object.fromEntries(Object.keys(o).sort().map(k => [k, sortKeys(o[k])])) : o);
   const out = {};
-  for (const id of Object.keys(nodes).sort()) { const { $hlc, ...rest } = nodes[id]; out[id] = sortKeys(rest); }
+  for (const id of Object.keys(nodes).sort()) { const { $hlc, m, ...rest } = nodes[id]; out[id] = sortKeys(rest); }
   return JSON.stringify(out);
 }
 function subtreeIds(doc, id) { const out = [], st = [id], seen = new Set(); while (st.length) { const x = st.pop(); if (!doc.nodes[x] || seen.has(x)) continue; seen.add(x); out.push(x); st.push(...(doc.nodes[x].children || [])); } return out; }

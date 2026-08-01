@@ -132,7 +132,9 @@ let H = 0; const hlc = () => String(++H).padStart(8, '0') + ':d'; // monotonic s
 function subtreeIds(doc, id) { const out = []; const st = [id]; const seen = new Set(); while (st.length) { const x = st.pop(); if (!doc.nodes[x] || seen.has(x)) continue; seen.add(x); out.push(x); st.push(...(doc.nodes[x].children || [])); } return out; }
 function detach(doc, id) { for (const k in doc.nodes) { const a = doc.nodes[k].children || []; const i = a.indexOf(id); if (i >= 0) { a.splice(i, 1); return; } } }
 
-// 5. real server round-trip: POST /api/ops, GET /api/doc reflects + persists
+// 5. real server round-trip: POST ops, GET doc reflects + persists. Post-multigraph the
+// endpoints are graph-scoped (/api/g/<id>/…); an open-mode instance uses the fixed 'default'
+// graph and its DB lives under DATA/graphs/default/.
 (async () => {
   const PORT = 38241;
   const DATA = fs.mkdtempSync(path.join(os.tmpdir(), 'tendril-ops-'));
@@ -146,18 +148,18 @@ function detach(doc, id) { for (const k in doc.nodes) { const a = doc.nodes[k].c
     { id: 'a2', hlc: '00000101:dz', kind: 'insert', node: 'y', parent: 'x', ord: 0, data: { text: 'child' } },
     { id: 'a3', hlc: '00000102:dz', kind: 'update', node: 'x', patch: { text: 'edited <script>bad</script>' } },
   ];
-  let r = await req('POST', '/api/ops', { ops });
-  ok(r.s === 200 && JSON.parse(r.b).applied === 3, `POST /api/ops applied 3 (${r.b})`);
-  let doc = JSON.parse((await req('GET', '/api/doc')).b).doc;
+  let r = await req('POST', '/api/g/default/ops', { ops });
+  ok(r.s === 200 && JSON.parse(r.b).applied === 3, `POST /api/g/default/ops applied 3 (${r.b})`);
+  let doc = JSON.parse((await req('GET', '/api/g/default/doc')).b).doc;
   ok(doc.nodes.x && doc.nodes.root.children.includes('x') && doc.nodes.x.children.includes('y'), 'tree built via ops');
   ok(/edited/.test(doc.nodes.x.text) && !/<script/i.test(doc.nodes.x.text), `server stripped the <script> tag from op text (${doc.nodes.x.text})`);
-  r = await req('POST', '/api/ops', { ops }); // replay
+  r = await req('POST', '/api/g/default/ops', { ops }); // replay
   ok(JSON.parse(r.b).applied === 0, 'replaying the same ops is a no-op (idempotent at the endpoint)');
 
   // reopen the DB to prove persistence
   const { Store } = require('../db');
   await new Promise(r2 => setTimeout(r2, 200));
-  const s2 = new Store(path.join(DATA, 'outline.db'));
+  const s2 = new Store(path.join(DATA, 'graphs', 'default', 'outline.db'));
   const reloaded = s2.loadDoc().doc;
   ok(reloaded.nodes.x && reloaded.nodes.x.children.includes('y'), 'op changes persisted to SQLite');
   s2.close();

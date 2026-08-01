@@ -4951,13 +4951,20 @@ function resolveEditSource(html, resolveWiki = true) {
     if (/^www\./i.test(url)) url = 'https://' + url;
     return `<a href="${escAttr(url)}" rel="noopener">${text}</a>`;
   });
-  // [[Name]] → internal page link (found or created). Skipped while still typing (resolveWiki=false)
-  // so partially-typed links don't spawn a page per prefix — see commitPending.
-  if (resolveWiki) out = out.replace(/\[\[([^[\]\n]+)\]\]/g, (m, name) => {
+  // [[Name]] → internal page link (found or created); #[[Name]] / @[[Name]] keep their sigil
+  // and become a tag pill / mention, matching what the caret-pop pick would have made.
+  // Skipped while still typing (resolveWiki=false) so partially-typed links don't spawn a
+  // page per prefix — see commitPending.
+  if (resolveWiki) out = out.replace(/([#@]?)\[\[([^[\]\n]+)\]\]/g, (m, sig, name) => {
     const plain = unesc(name).trim();
     if (!plain) return m;
     const id = getOrCreatePage(plain);
-    return id ? `<a href="#/n/${id}" rel="noopener">${name.trim()}</a>` : m;
+    if (!id) return m;
+    if (sig) {
+      return `<a href="#/n/${id}" rel="noopener" class="tag${sig === '@' ? ' mention' : ''}"`
+        + ` data-tag="${escAttr(sig + plain)}">${sig}${name.trim()}</a>`;
+    }
+    return `<a href="#/n/${id}" rel="noopener">${name.trim()}</a>`;
   });
   // inline formatting → tags (code first; bold before italic so ** isn't eaten by *)
   out = out.replace(/`([^`\n]+?)`/g, '<code>$1</code>');

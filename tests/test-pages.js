@@ -226,7 +226,8 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   const dayLabel = await page.evaluate(() => roamDateLabel(todayStr()).slice(0, 6)); // e.g. "July 1"
   await page.keyboard.type('am [[' + dayLabel);
   await sleep(350);
-  const dayHit = await page.evaluate(() => [...document.querySelectorAll('.caret-pop .pop-item')].some(b => /📅/.test(b.textContent)));
+  // day suggestions carry a "Journal" type chip (the emoji icons became chips)
+  const dayHit = await page.evaluate(() => [...document.querySelectorAll('.caret-pop .pop-item .pop-chip')].some(b => b.textContent === 'Journal'));
   assert(dayHit, '[[ offers journal day pages');
   await page.keyboard.press('Escape');
   await sleep(150);
@@ -319,7 +320,11 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   await page.evaluate(() => document.querySelector(`.item[data-id="${window.__wlHost}"] .content`)?.focus());
   await sleep(150);
   await page.keyboard.type('ping [[Frisch Angelegt]]');
-  await sleep(450);
+  await sleep(300);
+  // links finalise when editing leaves the line (live conversion would create a page per
+  // typed prefix — see resolveEditSource); blur like a user would
+  await page.evaluate(() => document.activeElement?.blur());
+  await sleep(400);
   const wl = await page.evaluate(() => {
     const n = N(window.__wlHost);
     const pageId = pagesOf().find(p => plainOf(N(p).text).trim() === 'Frisch Angelegt');
@@ -429,7 +434,9 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   await page.keyboard.type('Zielort');
   await sleep(200);
   await page.keyboard.type(']]'); // type-over the auto-inserted close → completes the link
-  await sleep(450);
+  await sleep(300);
+  await page.evaluate(() => document.activeElement?.blur());   // links finalise on leaving the line
+  await sleep(400);
   const linked = await page.evaluate(() => ({
     text: N(window.__bk).text,
     page: pagesOf().some(p => plainOf(N(p).text).trim() === 'Zielort'),
@@ -446,9 +453,9 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   await page.keyboard.type('siehe #[[Wichtiges Thema');
   await sleep(250);
   await page.keyboard.type(']]');
+  await sleep(300);
+  await page.evaluate(() => document.activeElement?.blur());   // links finalise on leaving the line
   await sleep(400);
-  await page.evaluate(() => commitActiveText());
-  await sleep(200);
   const mwt = await page.evaluate(() => {
     const pid = pagesOf().find(p => plainOf(N(p).text).trim() === 'Wichtiges Thema');
     return {
@@ -610,17 +617,27 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
     return {
       barOpen: document.body.classList.contains('rightbar-open'),
       title: bar?.querySelector('.rb-title')?.textContent,
-      rows: bar ? bar.querySelectorAll('.rb-line').length : -1,
+      // panes are fully editable mountItem() trees now, not read-only .rb-line rows
+      rows: bar ? bar.querySelectorAll('.rb-tree .item').length : -1,
     };
   }, rbPg);
   assert(rbOpen.barOpen, 'openInRightbar opens the right sidebar');
   assert(rbOpen.title === 'Sidebar Page', 'the sidebar entry shows the page title');
-  assert(rbOpen.rows >= 2, 'the sidebar renders the page’s children read-only');
-  const rbClosed = await page.evaluate(() => {
+  assert(rbOpen.rows >= 2, 'the sidebar renders the page’s children as an editable pane');
+  // removing the last entry keeps the (empty) sidebar open; the bar-head × closes it
+  const rbEmptied = await page.evaluate(() => {
     document.querySelector('#right-sidebar .rb-entry .rb-x').click();
+    return {
+      open: document.body.classList.contains('rightbar-open'),
+      empty: !!document.querySelector('#right-sidebar .rb-empty'),
+    };
+  });
+  assert(rbEmptied.open && rbEmptied.empty, 'removing the last entry leaves the empty sidebar open');
+  const rbClosed = await page.evaluate(() => {
+    document.querySelector('#right-sidebar .rb-bar-head .rb-x').click();
     return document.body.classList.contains('rightbar-open');
   });
-  assert(!rbClosed, 'removing the last entry closes the sidebar');
+  assert(!rbClosed, 'the bar-head × closes the sidebar');
   const rbShift = await page.evaluate(pg => {
     state.rightbar = []; renderRightbar();
     const host = opNewAt('root', 0);
