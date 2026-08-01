@@ -149,6 +149,7 @@ Streamable-HTTP transport, implemented natively (no SDK — the core server stay
 | `search` | read | `{query, limit?}` | full-text search → `{id, plain, path, done}[]` |
 | `list_pages` | read | — | top-level pages (children of root) |
 | `get_node` | read | `{id, tree?, depth?}` | one node, or its subtree with `tree:true` |
+| `journal` | read | `{date?, depth?}` | a journal day's full subtree (today by default) — "what did I write today" |
 | `create_node` | write | `{parent?, text, note?, done?, format?, index?}` | create a node (text is inline HTML-ish; `[[Page]]`/`#tag` work) |
 | `update_node` | write | `{id, text?, note?, done?, format?, collapsed?}` | edit in place (only the fields you pass) |
 | `move_node` | write | `{id, parent, index?}` | reparent a node + its subtree |
