@@ -106,10 +106,38 @@ $('#btn-star').addEventListener('click', () => window.toggleStar());
 $('#btn-sidebar').addEventListener('click', () => {
   settings.sidebar = !settings.sidebar;
   saveSettings();
+  document.body.classList.remove('sidebar-peek');   // docking wins over the hover peek
   document.body.classList.toggle('sidebar-open', settings.sidebar && !SHARE_TOKEN);
   document.body.classList.toggle('sidebar-mobile', innerWidth < 900);
   if (settings.sidebar) window.renderSidebar();
 });
+
+// Roam-style hover peek: hovering the toggle floats the sidebar over the page; it stays
+// while the pointer is on the panel and folds shortly after leaving both. Pointer devices
+// only — on touch, the click/dock path above is the whole story.
+{
+  const btn = $('#btn-sidebar');
+  const panel = $('#sidebar');
+  const peeking = () => document.body.classList.contains('sidebar-peek');
+  let hideTimer = 0;
+  const show = () => {
+    if (!matchMedia('(hover: hover) and (pointer: fine)').matches) return;
+    if (SHARE_TOKEN || !doc || document.body.classList.contains('sidebar-open')) return;
+    clearTimeout(hideTimer);
+    if (!peeking()) {
+      document.body.classList.add('sidebar-peek');
+      window.renderSidebar();
+    }
+  };
+  const hideSoon = () => {
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(() => document.body.classList.remove('sidebar-peek'), 260);
+  };
+  btn.addEventListener('mouseenter', show);
+  btn.addEventListener('mouseleave', () => { if (peeking()) hideSoon(); });
+  panel.addEventListener('mouseenter', () => { if (peeking()) clearTimeout(hideTimer); });
+  panel.addEventListener('mouseleave', () => { if (peeking()) hideSoon(); });
+}
 
 /* ---------------- B. backlinks ---------------- */
 

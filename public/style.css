@@ -1369,6 +1369,29 @@ body.sidebar-open .sidebar {
 }
 .sidebar { padding: 6px 0 30px; }
 body.sidebar-open .sidebar { padding: 6px 10px 30px 14px; }
+
+/* Hover peek (Roam-style): hovering the toggle floats the sidebar over the page at full
+   left height, without shifting the layout; it stays usable while the pointer is on it.
+   A click on the toggle docks it (sidebar-open), which takes precedence. */
+body.sidebar-peek:not(.sidebar-open) .sidebar {
+  position: fixed;
+  left: 0;
+  top: var(--topbar-h);
+  height: calc(100dvh - var(--topbar-h));
+  width: 252px;
+  padding: 6px 10px 30px 14px;
+  background: var(--bg);
+  border-right: 1px solid var(--line-soft);
+  box-shadow: var(--shadow);
+  overflow-y: auto;
+  z-index: 50;
+  transition: none;
+  animation: sidebarPeek 0.16s var(--ease-out);
+}
+@keyframes sidebarPeek {
+  from { transform: translateX(-16px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
 .shell .page { flex: 1 1 auto; min-width: 0; }
 
 .side-today {
