@@ -1364,7 +1364,8 @@ html.no-anim, html.no-anim *, html.no-anim *::before, html.no-anim *::after {
 }
 body.sidebar-open .sidebar {
   width: 252px;
-  border-right: 1px solid var(--line-soft);
+  /* soft fade into the page instead of a hard rule */
+  box-shadow: inset -28px 0 22px -28px var(--halo);
   overflow-y: auto;
 }
 .sidebar { padding: 6px 0 30px; }
@@ -2450,8 +2451,6 @@ a.side-nav.current { background: var(--accent-softer); color: var(--ink); }
   width: 100%;
   height: calc(100dvh - var(--topbar-h) - 120px);
   min-height: 380px;
-  border: 1px solid var(--line-soft);
-  border-radius: 8px;
   background: var(--bg);
   cursor: grab;
   touch-action: none;   /* pan/zoom/drag are ours, not the browser's */
