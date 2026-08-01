@@ -189,6 +189,8 @@ fs.mkdirSync(FILES_DIR, { recursive: true });
 
 // Accounts (users, sessions, graphs, memberships) — separate DB from the doc store.
 const accounts = new Accounts(path.join(DATA_DIR, 'accounts.db'));
+const { createOAuth } = require('./oauth');
+const oauth = createOAuth({ accounts, dataDir: DATA_DIR });   // OAuth for MCP clients (claude.ai)
 // first run with an admin password configured bootstraps the admin account
 if (accounts.userCount() === 0 && ADMIN_PASSWORD) {
   const u = accounts.createUser(ADMIN_USER, ADMIN_PASSWORD, true);
@@ -1083,7 +1085,13 @@ async function handleMcp(req, res, url) {
   if (key) { g = getGraph(key.graphId); scope = key.scope; }
   else if (AGENT_TOKEN && timingSafeEq(reqToken(req, url), AGENT_TOKEN)) { g = getGraph(defaultGraphId()); scope = 'write'; }
   else if (accounts.userCount() === 0) { g = getGraph(defaultGraphId()); scope = 'write'; } // fresh/open instance
-  if (!g) return send(res, 401, { error: 'unauthorized — send Authorization: Bearer <rzk_… API key>' }, { ...cors, 'WWW-Authenticate': 'Bearer' });
+  if (!g) {
+    // point OAuth-capable clients (claude.ai) at the resource metadata (RFC 9728)
+    const proto = (req.headers['x-forwarded-proto'] || 'http').split(',')[0].trim();
+    const meta = `${proto}://${req.headers.host || 'localhost'}/.well-known/oauth-protected-resource`;
+    return send(res, 401, { error: 'unauthorized — send Authorization: Bearer <rzk_… API key>' },
+      { ...cors, 'WWW-Authenticate': `Bearer resource_metadata="${meta}"` });
+  }
   if (apiRateLimited('mcp:' + (key ? key.id : clientIp(req)))) return send(res, 429, { error: 'rate limited — slow down' }, cors);
 
   let msg;
@@ -1625,6 +1633,9 @@ const server = http.createServer(async (req, res) => {
   const url = req.url || '/';
 
   try {
+    /* ---- OAuth for MCP clients: discovery metadata, DCR, consent, token (oauth.js) ---- */
+    if (await oauth.handle(req, res, url, { send, currentUser, rateLimited: apiRateLimited })) return;
+
     /* ---- MCP server (JSON-RPC over HTTP): a key/agent-token client reads + edits its graph.
        The key may ride in the path (/mcp/rzk_…) for clients that can't set headers and may
        mangle query strings (claude.ai custom connectors) — rewritten to ?token= here. ---- */

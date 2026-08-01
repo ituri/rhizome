@@ -46,6 +46,7 @@
     "test:fonts": "node tests/test-fonts.js",
     "test:slashesc": "node tests/test-slash-esc.js",
     "test:mcp": "node tests/test-mcp.js",
+    "test:oauth": "node tests/test-oauth.js",
     "test:security": "node tests/test-security.js",
     "test:adminedit": "node tests/test-admin-edit.js",
     "test:serverstatus": "node tests/test-server-status.js",
