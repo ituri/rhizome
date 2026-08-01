@@ -2270,7 +2270,18 @@ window.renderAssetsView = function renderAssetsView(frag) {
     row.innerHTML = `${img ? `<img class="asset-thumb" loading="lazy" alt="">` : `<div class="asset-thumb asset-file">${icon('attachment')}</div>`}
       <div class="asset-info"><div class="asset-name"></div><div class="asset-meta"></div><div class="asset-refs"></div></div>
       <div class="asset-actions"><a class="asset-dl" download title="Download">${icon('download')}</a><button class="asset-rename" title="Rename">Rename</button><button class="asset-del">Delete</button></div>`;
-    if (img) $('.asset-thumb', row).src = fileHref(a.url) || '';
+    if (img) {
+      // thumb first; a missing sidecar falls back to the original AND generates the thumb in
+      // the background (self-healing — the next visit gets the small file)
+      const el = $('.asset-thumb', row);
+      const orig = fileHref(a.url) || '';
+      if (thumbable(orig) && orig.startsWith('/files/')) {
+        el.onerror = () => { el.onerror = null; el.src = orig; ensureThumb(orig, el); };
+        el.src = thumbHref(orig);
+      } else {
+        el.src = orig;
+      }
+    }
     $('.asset-name', row).textContent = a.name || a.url.split('/').pop();
     const bits = [fmtBytes(a.size)];
     if (a.mtime) bits.push(new Date(a.mtime).toLocaleDateString());
@@ -2607,6 +2618,52 @@ $('#attach-file').addEventListener('change', e => {
   if (files.length && attachTargetId) window.uploadAttachments(attachTargetId, files);
 });
 
+/* ---------------- client-side thumbnails ----------------
+   The zero-dep server has no image codecs, so the BROWSER downsamples: at upload time for
+   new images, and lazily for old ones (whoever views the full-size original anyway generates
+   the sidecar <stored>.thumb.webp in the background — self-healing, next visit is fast). */
+const THUMB_MAX = 480;
+const thumbable = url => /\.(png|jpe?g|webp|gif|bmp)$/i.test((url || '').split('?')[0]);
+const thumbHref = url => url + '.thumb.webp';
+async function makeThumbBlob(source) {
+  const bmp = await createImageBitmap(source);
+  const scale = Math.min(1, THUMB_MAX / Math.max(bmp.width, bmp.height));
+  if (scale === 1 && source.size < 100 * 1024) { bmp.close(); return null; }   // already small
+  const c = new OffscreenCanvas(Math.max(1, Math.round(bmp.width * scale)), Math.max(1, Math.round(bmp.height * scale)));
+  c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+  bmp.close();
+  return c.convertToBlob({ type: 'image/webp', quality: 0.8 });
+}
+function uploadThumb(storedUrl, blob) {
+  const name = decodeURIComponent(storedUrl.replace(/^\/files\//, ''));
+  return fetch('/api/thumb?name=' + encodeURIComponent(name), { method: 'POST', body: blob });
+}
+const thumbQueue = [];
+let thumbBusy = false;
+function ensureThumb(url, imgEl) {
+  if (!thumbable(url) || !url.startsWith('/files/')) return;
+  thumbQueue.push({ url, imgEl });
+  pumpThumbs();
+}
+async function pumpThumbs() {
+  if (thumbBusy) return;
+  const job = thumbQueue.shift();
+  if (!job) return;
+  thumbBusy = true;
+  try {
+    const r = await fetch(job.url);
+    if (r.ok) {
+      const t = await makeThumbBlob(await r.blob());
+      if (t) {
+        await uploadThumb(job.url, t);
+        if (job.imgEl?.isConnected) job.imgEl.src = thumbHref(job.url);
+      }
+    }
+  } catch { /* thumbs are best-effort (HEIC etc. won't decode — the original stays) */ }
+  thumbBusy = false;
+  pumpThumbs();
+}
+
 window.uploadAttachments = async function uploadAttachments(id, files) {
   if (state.readOnly || SHARE_TOKEN) { showToast('Attachments are unavailable on shared links'); return; }
   id = contentIdOf(id); // attachments are content — a paste onto a mirror attaches to the target
@@ -2627,6 +2684,10 @@ window.uploadAttachments = async function uploadAttachments(id, files) {
         throw new Error(err || 'upload failed');
       }
       const data = await res.json();
+      // new images ship their thumbnail right away (fire-and-forget, from the local blob)
+      if (/^image\//.test(file.type || '')) {
+        makeThumbBlob(file).then(t => t && uploadThumb(data.url, t)).catch(() => { /* best-effort */ });
+      }
       const n = N(id);
       if (!n.files) n.files = [];
       n.files.push({ url: data.url, name: data.name, type: file.type || '', size: data.size });

@@ -2121,6 +2121,7 @@ const server = http.createServer(async (req, res) => {
             const refd = allReferencedUrls(gid);
             const out = [];
             for (const name of fs.readdirSync(FILES_DIR)) {
+              if (name.endsWith('.thumb.webp')) continue;   // sidecar thumbs are never orphans
               const furl = `/files/${encodeURIComponent(name)}`;
               if (refd.has(furl)) continue;
               const st = fileStat(name);
@@ -2136,6 +2137,7 @@ const server = http.createServer(async (req, res) => {
               const stored = storedFromUrl(`/files/${encodeURIComponent(String(name))}`);
               if (!stored || refd.has(`/files/${encodeURIComponent(stored)}`)) continue; // still used → skip
               try { fs.unlinkSync(path.join(FILES_DIR, stored)); removed++; } catch { /* already gone */ }
+              try { fs.unlinkSync(path.join(FILES_DIR, stored + '.thumb.webp')); } catch { /* no thumb */ }
             }
             return send(res, 200, { removed });
           }
@@ -2302,6 +2304,22 @@ const server = http.createServer(async (req, res) => {
         const stored = `${crypto.randomBytes(12).toString('hex')}-${safe}`; // 96-bit unguessable prefix
         await fsp.writeFile(path.join(FILES_DIR, stored), cryptobox.encrypt(data));
         return send(res, 200, { url: `/files/${encodeURIComponent(stored)}`, name: safe, size: data.length });
+      }
+
+      // Client-generated thumbnail for an existing upload — the zero-dep server has no image
+      // codecs, so the BROWSER downsamples (at upload time, or lazily for old files) and posts
+      // the result here. Writes <stored>.thumb.webp next to the original, never anything else.
+      if (url.startsWith('/api/thumb') && req.method === 'POST') {
+        const stored = path.basename(decodeURIComponent(new URL(url, 'http://x').searchParams.get('name') || ''));
+        const orig = path.normalize(path.join(FILES_DIR, stored));
+        if (!stored || stored.endsWith('.thumb.webp') || !orig.startsWith(FILES_DIR)) {
+          return send(res, 400, { error: 'bad name' });
+        }
+        try { await fsp.access(orig); } catch { return send(res, 404, { error: 'unknown file' }); }
+        const data = await readBody(req, 1024 * 1024);   // thumbs are small
+        if (!data.length) return send(res, 400, { error: 'empty' });
+        await fsp.writeFile(orig + '.thumb.webp', cryptobox.encrypt(data));
+        return send(res, 200, { url: `/files/${encodeURIComponent(stored + '.thumb.webp')}` });
       }
 
       if (url === '/api/ai' && req.method === 'POST') {
