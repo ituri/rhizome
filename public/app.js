@@ -1406,6 +1406,29 @@ function commitPending(redecorateOk = false) {
     // per prefix (SO, SOTA, SOTA-, …). Finalise links only once editing leaves the line (blur).
     const stillEditing = document.activeElement === el;
     if (ctx.field === 'text' && node.format !== 'codeblock') html = resolveEditSource(html, !stillEditing);
+    // Block markers are VIEW-ONLY: a leading "# / ## / ### / > " never reaches node.text
+    // (the redecorate below restores it from the live DOM). The FORMAT only follows the
+    // marker once editing leaves the line — mid-edit the old format stays. ('>' arrives as
+    // &gt; through serializeEl.) Demotion is judged in the focusout healer, which knows
+    // whether this visit actually revealed a marker.
+    if (ctx.field === 'text' && node.format !== 'codeblock') {
+      const m = html.match(/^(#{1,3}|&gt;) /);
+      if (m) {
+        html = html.slice(m[0].length);
+        const want = { '#': 'h1', '##': 'h2', '###': 'h3', '&gt;': 'quote' }[m[1]];
+        if (!stillEditing && want !== node.format) {
+          recOld(node.id);
+          node.format = want;
+          markDirty();
+          if (!undoTxn) uncommittedNodeEdit = true;
+          const item = el.closest('.item');
+          if (item) {
+            item.classList.remove('fmt-h1', 'fmt-h2', 'fmt-h3', 'fmt-quote');
+            item.classList.add('fmt-' + want);
+          }
+        }
+      }
+    }
     if (settings.capitalize && (ctx.field === 'text' || ctx.field === 'title')) html = applyCapitalize(html);
     if (node.text !== html) {
       recOld(node.id);
@@ -1422,7 +1445,14 @@ function commitPending(redecorateOk = false) {
         ? displayHtml(node)
         : node.format === 'codeblock'
           ? decorate(node.text, { plain: true, editing: true })
-          : editSourceHtml(node.text);
+          : (() => {
+            // preserve the LIVE DOM's leading block marker instead of re-deriving it from the
+            // format — re-adding a marker the user just deleted would undo their edit mid-line
+            let d = editSourceHtml(node.text);
+            const dm = ((el.textContent || '').match(/^(#{1,3}|>) /) || [])[0];
+            if (dm) d = dm.replace('>', '&gt;') + d;
+            return d;
+          })();
       if (display !== el.innerHTML) {
         const off = caretOffsetIn(el);
         const selLen = getSelection().rangeCount ? getSelection().toString().length : 0;
@@ -3375,6 +3405,8 @@ function onKeydown(e) {
       const before = (el.textContent || '').slice(0, off);
       let fmt = BLOCK_MARKERS[before];
       if (!fmt && /^\d+[.)]$/.test(before)) fmt = 'number';
+      // same format again = the revealed marker of this very line (opSetFormat would toggle it OFF)
+      if (fmt === (N(id).format || 'bullet')) fmt = null;
       if (fmt) {
         e.preventDefault();
         // remove ONLY the typed marker; anything after the caret survives with its
@@ -3721,6 +3753,11 @@ shellEl.addEventListener('compositionend', e => {
 shellEl.addEventListener('focusout', e => {
   const ctx = editableCtx(e.target);
   if (!ctx) return;
+  // the live DOM's leading block marker, read BEFORE commitActiveText — the commit's
+  // syncMirrorRows repaints this (no longer active) element to display HTML, marker gone
+  const preBlockMark = ctx.field === 'text'
+    ? (((ctx.el.textContent || '').match(/^(#{1,3}|>) /) || [])[1] || null)
+    : null;
   window.clearDateSuggest?.();
   commitActiveText();
   // rhizome: a page can't be renamed onto an existing page/day title — revert if it collides.
@@ -3748,7 +3785,26 @@ shellEl.addEventListener('focusout', e => {
     // resolve any raw markdown left in the stored text (idempotent on already-HTML content) — heals
     // bullets that were saved as literal source and would otherwise render as **foo** until re-edited
     if (N(cid).format !== 'codeblock') {
-      const resolved = resolveEditSource(N(cid).text);
+      let resolved = resolveEditSource(N(cid).text);
+      // Block-marker round-trip. What the user LEFT IN THE LINE decides the format — the
+      // editing DOM still shows the revealed marker here (before the display swap below).
+      // The stored text only carries a marker when a mid-edit commit ran; strip it either way.
+      const live = ctx.el.isConnected;   // re-renders fire focusout on detached elements
+      const domWant = live && preBlockMark ? { '#': 'h1', '##': 'h2', '###': 'h3', '>': 'quote' }[preBlockMark] : null;
+      const storedM = resolved.match(/^(#{1,3}|&gt;) /);
+      if (storedM) resolved = resolved.slice(storedM[0].length);
+      const wasRevealed = live && ctx.el.dataset.blockMark === '1';
+      delete ctx.el.dataset.blockMark;
+      if ((domWant || wasRevealed) && domWant !== (N(cid).format || null)) {
+        recOld(cid);
+        if (domWant) N(cid).format = domWant; else delete N(cid).format;
+        markDirty();
+        if (!undoTxn) uncommittedNodeEdit = true;   // no open txn → force a PUT
+        for (const it of treeEl.querySelectorAll(`.item[data-id="${cid}"], .item[data-mirror="${cid}"]`)) {
+          it.classList.remove('fmt-h1', 'fmt-h2', 'fmt-h3', 'fmt-quote');
+          if (N(cid).format) it.classList.add('fmt-' + N(cid).format);
+        }
+      }
       if (resolved !== N(cid).text) { recOld(cid); N(cid).text = resolved; touch(cid); markDirty(); syncMirrorRows(cid); }
     }
     const display = displayHtml(N(cid));
@@ -4904,7 +4960,20 @@ let titleBeforeEdit = null; // the page title as it was when editing began (to r
 // [text](url) (bare URLs stay bare), formatting <b>/<i>/<u>/<s>/<code> → ** * __ ~~ `. Highlight/
 // colour spans, tags, <time> stay as they are (not markdown). The inverse is resolveEditSource().
 const EDIT_MARK = { B: '**', STRONG: '**', I: '*', EM: '*', U: '__', S: '~~', STRIKE: '~~', DEL: '~~', CODE: '`' };
-function toEditSource(el) {
+// block formats whose marker is revealed while editing (and parsed back on leaving the line)
+const BLOCK_EDIT_MARK = { h1: '# ', h2: '## ', h3: '### ', quote: '> ' };
+
+function toEditSource(el, fmt) {
+  // default-colour highlights → ==…== (other colours keep their span: == carries no colour,
+  // so converting them would lose it on the round-trip)
+  let hl;
+  while ((hl = [...el.querySelectorAll('span.hl-yellow')].find(n => (n.getAttribute('class') || '').trim() === 'hl-yellow'))) {
+    const frag = document.createDocumentFragment();
+    frag.append(document.createTextNode('=='));
+    while (hl.firstChild) frag.append(hl.firstChild);
+    frag.append(document.createTextNode('=='));
+    hl.replaceWith(frag);
+  }
   // formatting → markers, innermost first so nesting stays balanced
   let f;
   const fmtSel = 'b,strong,i,em,u,s,strike,del,code';
@@ -4932,14 +5001,19 @@ function toEditSource(el) {
       a.replaceWith(document.createTextNode(bare ? text : `[${text}](${href})`));
     }
   }
+  // the block format's marker, revealed at the start of the line (h1/h2/h3/quote)
+  const mark = BLOCK_EDIT_MARK[fmt];
+  if (mark && !(el.textContent || '').startsWith(mark)) {
+    el.prepend(document.createTextNode(mark));
+  }
   el.normalize();
 }
 
 // the innerHTML for a bullet's editing view: its stored HTML shown as markdown source
-function editSourceHtml(text) {
+function editSourceHtml(text, fmt) {
   const tpl = document.createElement('div');
   tpl.innerHTML = text || '';
-  toEditSource(tpl);
+  toEditSource(tpl, fmt);
   return tpl.innerHTML;
 }
 
@@ -4973,13 +5047,19 @@ function resolveEditSource(html, resolveWiki = true) {
   out = out.replace(/\*\*([^\n]+?)\*\*/g, '<b>$1</b>');
   out = out.replace(/__([^\n]+?)__/g, '<u>$1</u>');
   out = out.replace(/~~([^\n]+?)~~/g, '<s>$1</s>');
+  out = out.replace(/==([^=\n]+?)==/g, '<span class="hl-yellow">$1</span>');
   out = out.replace(/(?<!\*)\*([^*\n]+?)\*(?!\*)/g, '<i>$1</i>');
   return out;
 }
 
 pageEl.addEventListener('focusin', e => {
   const ctx = editableCtx(e.target);
-  if (ctx && ctx.field === 'text' && fmtOf(ctx.id) !== 'codeblock') toEditSource(ctx.el);
+  if (ctx && ctx.field === 'text' && fmtOf(ctx.id) !== 'codeblock') {
+    toEditSource(ctx.el, fmtOf(ctx.id));
+    // remember that THIS visit revealed a block marker — the focusout round-trip may only
+    // demote when that is true (stale/empty elements from re-renders must never demote)
+    if (BLOCK_EDIT_MARK[fmtOf(ctx.id)]) ctx.el.dataset.blockMark = '1';
+  }
   if (ctx && ctx.field !== 'title' && ctx.field !== 'zoom-note') lastItemId = ctx.id;
   if (ctx && ctx.field === 'title') titleBeforeEdit = N(contentIdOf(ctx.id))?.text ?? null;
   if (isCoarse && ctx && !state.readOnly) mobilebarEl.hidden = false;

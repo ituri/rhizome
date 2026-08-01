@@ -42,6 +42,7 @@
     "test:peek": "node tests/test-peek.js",
     "test:syncpop": "node tests/test-syncpop.js",
     "test:sidebarmobile": "node tests/test-sidebar-mobile.js",
+    "test:blockreveal": "node tests/test-block-reveal.js",
     "test:namespace": "node tests/test-namespace.js",
     "test:fonts": "node tests/test-fonts.js",
     "test:slashesc": "node tests/test-slash-esc.js",
