@@ -134,7 +134,7 @@ button { font-family: inherit; }
 }
 #search::placeholder { color: var(--ink-faint); }
 /* focused search grows, Roam-style (the block already transitions width) */
-#search:focus { background: var(--bg-raised); box-shadow: inset 0 0 0 1.5px var(--accent); width: clamp(240px, 38vw, 460px); }
+#search:focus { background: var(--bg-raised); width: clamp(240px, 38vw, 460px); }
 #search::-webkit-search-cancel-button { display: none; }
 .search-clear {
   position: absolute;
