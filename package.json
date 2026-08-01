@@ -38,6 +38,7 @@
     "test:logo": "node tests/test-logo.js",
     "test:multiselect": "node tests/test-multiselect.js",
     "test:map": "node tests/test-map.js",
+    "test:graph": "node tests/test-graph.js",
     "test:namespace": "node tests/test-namespace.js",
     "test:fonts": "node tests/test-fonts.js",
     "test:slashesc": "node tests/test-slash-esc.js",

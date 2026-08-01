@@ -1782,7 +1782,7 @@ const searchDebounced = debounce(q => setSearch(q, { fromInput: true }), 160);
 
 function updateDocTitle() {
   document.title = state.zoom === HOME && !SHARE_TOKEN
-    ? (state.view === 'pages' ? 'All Pages — Rhizome' : state.view === 'assets' ? 'Assets — Rhizome' : state.view === 'map' ? 'Map — Rhizome' : state.view === 'daily' ? 'Daily Notes — Rhizome' : 'Outline — Rhizome')
+    ? (state.view === 'pages' ? 'All Pages — Rhizome' : state.view === 'assets' ? 'Assets — Rhizome' : state.view === 'map' ? 'Map — Rhizome' : state.view === 'graph' ? 'Graph — Rhizome' : state.view === 'daily' ? 'Daily Notes — Rhizome' : 'Outline — Rhizome')
     : (plainOf(N(state.zoom).text).trim() || 'Untitled') + ' — Rhizome';
 }
 
@@ -2286,13 +2286,14 @@ function renderPage() {
   // rhizome: day pages are normal pages — cal-page styling only wraps year/month navigation
   pageEl.classList.toggle('cal-page', ['year', 'month'].includes(N(state.zoom).cal));
   // the map view breaks out of the reading-width cap so the map can use the full page
-  pageEl.classList.toggle('map-page', !!window.mapViewActive?.());
+  pageEl.classList.toggle('map-page', !!window.mapViewActive?.() || !!window.graphViewActive?.());
   const roots = kidsOf(state.zoom).filter(c => shouldShow(c, false));
   const frag = document.createDocumentFragment();
   // rhizome: an active search renders whole-outline results grouped by page
   const specialView = searchActive() && window.renderSearchResults ? 'search'
     : window.assetsViewActive?.() ? 'assets'
     : window.mapViewActive?.() ? 'map'
+    : window.graphViewActive?.() ? 'graph'
     : window.pagesViewActive?.() ? 'pages' : window.dailyViewActive?.() ? 'daily' : null;
   if (specialView === 'search') {
     window.renderSearchResults(frag);
@@ -2300,6 +2301,8 @@ function renderPage() {
     window.renderAssetsView(frag);
   } else if (specialView === 'map') {
     window.renderMapView(frag);
+  } else if (specialView === 'graph') {
+    window.renderGraphView(frag);
   } else if (specialView === 'pages') {
     window.renderPagesView(frag);
   } else if (specialView === 'daily') {
@@ -2971,6 +2974,7 @@ function parseHashView() {
   if (/^#\/pages\b/.test(location.hash)) return 'pages';
   if (/^#\/assets\b/.test(location.hash)) return 'assets';
   if (/^#\/map\b/.test(location.hash)) return 'map';
+  if (/^#\/graph\b/.test(location.hash)) return 'graph';
   if (/^#\/outline\b/.test(location.hash)) return null; // legacy: the full root outline
   const m = location.hash.match(/^#\/n\/([A-Za-z0-9]+)/);
   return m ? null : 'daily';

@@ -762,6 +762,7 @@ window.renderSidebar = function renderSidebar() {
   $('#side-pages-link')?.classList.toggle('current', state.view === 'pages');
   $('#side-assets')?.classList.toggle('current', state.view === 'assets');
   $('#side-map')?.classList.toggle('current', state.view === 'map');
+  $('#side-graph')?.classList.toggle('current', state.view === 'graph');
 
   const starsBox = $('#side-stars');
   const starsSection = $('#side-stars-section');
