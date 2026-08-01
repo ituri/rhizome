@@ -1625,8 +1625,14 @@ const server = http.createServer(async (req, res) => {
   const url = req.url || '/';
 
   try {
-    /* ---- MCP server (JSON-RPC over HTTP): a key/agent-token client reads + edits its graph ---- */
+    /* ---- MCP server (JSON-RPC over HTTP): a key/agent-token client reads + edits its graph.
+       The key may ride in the path (/mcp/rzk_…) for clients that can't set headers and may
+       mangle query strings (claude.ai custom connectors) — rewritten to ?token= here. ---- */
     if (url.split('?')[0] === '/mcp') return await handleMcp(req, res, url);
+    {
+      const pm = url.match(/^\/mcp\/([A-Za-z0-9_-]+)(\?.*)?$/);
+      if (pm) return await handleMcp(req, res, '/mcp?token=' + encodeURIComponent(pm[1]));
+    }
 
     /* ---- per-node REST API — agent token / session → the admin's graph; an rzk_ key → its graph at its scope ---- */
     if (url.startsWith('/api/v1')) {

@@ -121,6 +121,22 @@ const srv = spawn('node', [path.join(__dirname, '..', 'server.js')], {
   r = await rpc('does/notExist', {});
   assert(r.json.error && r.json.error.code === -32601, 'unknown method → JSON-RPC -32601');
 
+  /* ---- token in the PATH (/mcp/<token>) — claude.ai connectors can't set headers ---- */
+  const pr = await fetch(base + '/mcp/' + AGENT, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: ++rpcId, method: 'tools/list', params: {} }),
+  });
+  const pj = await pr.json();
+  assert(pr.status === 200 && pj.result && Array.isArray(pj.result.tools) && pj.result.tools.length >= 8,
+    `path-embedded token authenticates (/mcp/<token> → ${pj.result?.tools?.length} tools)`);
+  const prBad = await fetch(base + '/mcp/not-a-real-token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: ++rpcId, method: 'tools/list', params: {} }),
+  });
+  assert(prBad.status === 401, `a bogus path token is still rejected (${prBad.status})`);
+
   console.log(failures ? `\n${failures} FAILED` : '\nAll MCP tests passed');
   srv.kill();
   process.exit(failures ? 1 : 0);

@@ -164,6 +164,11 @@ claude mcp add --transport http rhizome https://rhizome.syslinx.org/mcp \
   --header "Authorization: Bearer rzk_…"
 ```
 
+Connect from a client that can't set headers (claude.ai custom connectors): embed the key in
+the **path** — `https://rhizome.syslinx.org/mcp/rzk_…` (query `?token=` works too). Without a
+credential in the very first request, claude.ai falls back to its OAuth flow, which this
+server doesn't offer ("Couldn't register with … sign-in service").
+
 ## Server environment (ops)
 
 `PORT`, `HOST`, `DATA_DIR`, `RHIZOME_ADMIN_USER` (default `phil`), `RHIZOME_ADMIN_PASSWORD`
