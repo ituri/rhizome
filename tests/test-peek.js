@@ -55,10 +55,18 @@ let fl = 0; const ok = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); i
   await sleep(300);
   ok(await page.evaluate(() => location.hash.startsWith('#/pages')), `a peeked sidebar is fully usable (navigated to ${await page.evaluate(() => location.hash)})`);
 
-  // leave the panel → folds after the grace period
+  // leave the panel → slides out after the grace period
   await page.mouse.move(900, 500);
-  await sleep(500);
+  await sleep(800);
   ok(await page.evaluate(() => !document.body.classList.contains('sidebar-peek')), 'leaving the panel folds the peek');
+
+  // Roam's edge summon: touching the left screen edge peeks it too
+  await page.mouse.move(3, 450);
+  await sleep(150);
+  ok(await page.evaluate(() => document.body.classList.contains('sidebar-peek')), 'hovering the left screen edge peeks the sidebar');
+  await page.mouse.move(900, 500);
+  await sleep(800);
+  ok(await page.evaluate(() => !document.body.classList.contains('sidebar-peek')), 'leaving the edge folds it again');
 
   // click → docked full-height sidebar, peek gone
   await page.click('#btn-sidebar');

@@ -106,36 +106,47 @@ $('#btn-star').addEventListener('click', () => window.toggleStar());
 $('#btn-sidebar').addEventListener('click', () => {
   settings.sidebar = !settings.sidebar;
   saveSettings();
-  document.body.classList.remove('sidebar-peek');   // docking wins over the hover peek
+  document.body.classList.remove('sidebar-peek', 'sidebar-peek-closing');   // docking wins over the hover peek
   document.body.classList.toggle('sidebar-open', settings.sidebar && !SHARE_TOKEN);
   document.body.classList.toggle('sidebar-mobile', innerWidth < 900);
   if (settings.sidebar) window.renderSidebar();
 });
 
-// Roam-style hover peek: hovering the toggle floats the sidebar over the page; it stays
-// while the pointer is on the panel and folds shortly after leaving both. Pointer devices
-// only — on touch, the click/dock path above is the whole story.
+// Roam-style hover peek: hovering the toggle OR the left screen edge floats the sidebar
+// over the page; it stays while the pointer is on the panel and slides back out shortly
+// after leaving. Pointer devices only — on touch, the click/dock path above is the story.
 {
   const btn = $('#btn-sidebar');
   const panel = $('#sidebar');
+  const hotzone = $('#side-hotzone');
   const peeking = () => document.body.classList.contains('sidebar-peek');
-  let hideTimer = 0;
+  let hideTimer = 0, closeTimer = 0;
   const show = () => {
     if (!matchMedia('(hover: hover) and (pointer: fine)').matches) return;
     if (SHARE_TOKEN || !doc || document.body.classList.contains('sidebar-open')) return;
     clearTimeout(hideTimer);
+    clearTimeout(closeTimer);
+    document.body.classList.remove('sidebar-peek-closing');   // re-entered mid-slide-out
     if (!peeking()) {
       document.body.classList.add('sidebar-peek');
       window.renderSidebar();
     }
   };
+  const fold = () => {
+    if (!peeking()) return;
+    document.body.classList.add('sidebar-peek-closing');      // play the slide-out first
+    clearTimeout(closeTimer);
+    closeTimer = setTimeout(() => document.body.classList.remove('sidebar-peek', 'sidebar-peek-closing'), 150);
+  };
   const hideSoon = () => {
     clearTimeout(hideTimer);
-    hideTimer = setTimeout(() => document.body.classList.remove('sidebar-peek'), 260);
+    hideTimer = setTimeout(fold, 260);
   };
-  btn.addEventListener('mouseenter', show);
-  btn.addEventListener('mouseleave', () => { if (peeking()) hideSoon(); });
-  panel.addEventListener('mouseenter', () => { if (peeking()) clearTimeout(hideTimer); });
+  for (const el of [btn, hotzone]) {
+    el.addEventListener('mouseenter', show);
+    el.addEventListener('mouseleave', () => { if (peeking()) hideSoon(); });
+  }
+  panel.addEventListener('mouseenter', () => { if (peeking()) { clearTimeout(hideTimer); clearTimeout(closeTimer); document.body.classList.remove('sidebar-peek-closing'); } });
   panel.addEventListener('mouseleave', () => { if (peeking()) hideSoon(); });
 }
 

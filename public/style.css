@@ -21,6 +21,7 @@
   --mark: oklch(0.86 0.09 85);
   --sans: Inter, "Segoe UI", system-ui, sans-serif;
   --serif: "Newsreader", Georgia, serif;
+  --sidebar-bg: var(--bg);   /* themable: docked AND peeked sidebar share this */
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --indent: 26px;
   --topbar-h: 52px;
@@ -1365,6 +1366,7 @@ html.no-anim, html.no-anim *, html.no-anim *::before, html.no-anim *::after {
 body.sidebar-open .sidebar {
   width: 252px;
   border-right: 1px solid var(--line-soft);
+  background: var(--sidebar-bg);
   overflow-y: auto;
 }
 .sidebar { padding: 6px 0 30px; }
@@ -1380,7 +1382,7 @@ body.sidebar-peek:not(.sidebar-open) .sidebar {
   height: calc(100dvh - var(--topbar-h));
   width: 252px;
   padding: 6px 10px 30px 14px;
-  background: var(--bg);
+  background: var(--sidebar-bg);
   border-right: 1px solid var(--line-soft);
   box-shadow: var(--shadow);
   overflow-y: auto;
@@ -1392,6 +1394,24 @@ body.sidebar-peek:not(.sidebar-open) .sidebar {
   from { transform: translateX(-16px); opacity: 0; }
   to { transform: none; opacity: 1; }
 }
+/* slide back out before the peek class is dropped */
+body.sidebar-peek.sidebar-peek-closing .sidebar {
+  animation: sidebarPeekOut 0.14s var(--ease-out) forwards;
+}
+@keyframes sidebarPeekOut {
+  to { transform: translateX(-16px); opacity: 0; }
+}
+
+/* the edge hot zone that summons the peek — inert while the sidebar is docked */
+.side-hotzone {
+  position: fixed;
+  left: 0;
+  top: var(--topbar-h);
+  width: 7px;
+  height: calc(100dvh - var(--topbar-h));
+  z-index: 40;
+}
+body.sidebar-open .side-hotzone { display: none; }
 .shell .page { flex: 1 1 auto; min-width: 0; }
 
 .side-today {

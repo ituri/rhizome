@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Rhizome">
 <link rel="stylesheet" href="/fonts/fonts.css?v=1">
-<link rel="stylesheet" href="/style.css?v=115">
+<link rel="stylesheet" href="/style.css?v=116">
 </head>
 <body>
 
@@ -59,6 +59,9 @@
     </button>
   </div>
 </header>
+
+<!-- invisible strip along the left edge: hovering it peeks the sidebar (Roam behaviour) -->
+<div class="side-hotzone" id="side-hotzone" aria-hidden="true"></div>
 
 <div class="shell">
   <nav class="sidebar" id="sidebar" aria-label="Navigation">
@@ -230,7 +233,7 @@
 
 <script src="/icons.js?v=87"></script>
 <script src="/app.js?v=111"></script>
-<script src="/app2.js?v=106"></script>
+<script src="/app2.js?v=107"></script>
 <script src="/pages.js?v=96"></script>
 <script src="/graph.js?v=1"></script>
 <script src="/preview.js?v=86"></script>
