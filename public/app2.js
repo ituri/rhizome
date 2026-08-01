@@ -3270,7 +3270,9 @@ async function init() {
       sub('changed:', () => TIME_VALUES.map(v => val(v, `changed:${v}`))),
       sub('created:', () => TIME_VALUES.map(v => val(v, `created:${v}`))),
     ] },
-    { key: 'people', icon: SVG.people, title: 'People', build: () => [val('me', '-is:shared'), val('others', 'is:shared')] },
+    // share-link filter (blocks with/without a /s/<token> share) — was mislabeled "People";
+    // rhizome has no per-block authorship, so a true person filter isn't possible
+    { key: 'shared', icon: SVG.people, title: 'Shared', build: () => [val('shared', 'is:shared'), val('not shared', '-is:shared')] },
     { key: 'more', icon: '…', title: 'More filters', build: () => [
       sub('is:', () => ['complete', 'incomplete', 'todo', 'heading', 'mirror', 'shared'].map(v => val(v, `is:${v}`))),
       sub('has:', () => ['note', 'date', 'file', 'link', 'comment', 'tag'].map(v => val(v, `has:${v}`))),
