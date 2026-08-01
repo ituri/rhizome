@@ -3289,6 +3289,13 @@ function onKeydown(e) {
     return;
   }
   if (e.altKey && e.shiftKey && (e.key === 'p' || e.key === 'P' || e.code === 'KeyP')) { e.preventDefault(); window.openCommandPalette?.(); return; }
+  // Ctrl+U → jump to search (Roam). While editing a block it stays underline (handled below).
+  if (mod && !e.shiftKey && (e.key === 'u' || e.key === 'U') && !editableCtx(document.activeElement)) {
+    e.preventDefault();
+    $('#search').focus();
+    $('#search').select();
+    return;
+  }
   if (mod && (e.key === '/' || e.key === '?')) { e.preventDefault(); showHelp(); return; }
   if (mod && e.key === "'") { e.preventDefault(); if (SHARE_TOKEN) zoomTo(HOME); else location.hash = '#/'; return; } // rhizome: home = daily notes
   if (mod && !e.shiftKey && (e.key === 'o' || e.key === 'O')) {
@@ -4619,6 +4626,7 @@ const HELP = [
     ['Daily Notes', "Ctrl+'"],
     ['Expand / collapse', 'Ctrl+↓ / Ctrl+↑'],
     ['Find or create a page', 'Ctrl+K · Shift+↵ creates'],
+    ['Jump to search', 'Ctrl+U'],
     ['Command palette', 'Alt+Shift+P'],
     ['Star this page', 'Ctrl+Shift+8'],
     ['Show / hide completed', 'Ctrl+O'],
