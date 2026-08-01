@@ -31,21 +31,35 @@ const clamp = (ord, len) => { ord |= 0; return ord < 0 ? 0 : ord > len ? len : o
 function applyOpsToDoc(doc, ops, trashFn) {
   const pm = parentMap(doc);
   const out = [];
+  // An insert whose parent isn't in the doc YET may just be ordered ahead of its parent's
+  // insert in the same batch (clients aren't guaranteed to emit topologically). Defer it and
+  // retry after the rest of the batch; only a parent that never materialises falls back to
+  // root. Without this, a day emitted before its new month landed at the document root.
+  const deferred = [];
+  const applyInsert = (op, allowRootFallback) => {
+    if (doc.nodes[op.node]) return true;                     // idempotent
+    let par = doc.nodes[op.parent];
+    if (!par) {
+      if (!allowRootFallback) return false;
+      console.warn(`insert ${op.node}: parent ${op.parent} unknown — attaching to root`);
+      par = doc.nodes.root;
+    }
+    const now = Date.now();
+    const node = { ...(op.data || {}), id: op.node, children: [] };
+    if (node.c == null) node.c = now;                        // created / modified time (server-set;
+    if (node.m == null) node.m = now;                        // clients read them for "last edited")
+    node.$hlc = { struct: op.hlc, text: op.hlc, flags: op.hlc, meta: op.hlc };
+    doc.nodes[op.node] = node;
+    if (par) { par.children.splice(clamp(op.ord, par.children.length), 0, op.node); pm[op.node] = par.id; }
+    out.push(op);
+    return true;
+  };
   for (const op of ops) {
     if (!op || typeof op.node !== 'string' || typeof op.hlc !== 'string') continue;
     const n = doc.nodes[op.node];
     switch (op.kind) {
       case 'insert': {
-        if (doc.nodes[op.node]) break;                       // idempotent
-        const now = Date.now();
-        const node = { ...(op.data || {}), id: op.node, children: [] };
-        if (node.c == null) node.c = now;                    // created / modified time (server-set;
-        if (node.m == null) node.m = now;                    // clients read them for "last edited")
-        node.$hlc = { struct: op.hlc, text: op.hlc, flags: op.hlc, meta: op.hlc };
-        doc.nodes[op.node] = node;
-        const par = doc.nodes[op.parent] || doc.nodes.root;
-        if (par) { par.children.splice(clamp(op.ord, par.children.length), 0, op.node); pm[op.node] = par.id; }
-        out.push(op);
+        if (!applyInsert(op, false)) deferred.push(op);
         break;
       }
       case 'update': {
@@ -88,6 +102,13 @@ function applyOpsToDoc(doc, ops, trashFn) {
       // restore = the removed nodes reappear as normal insert ops + an untrash that clears the entry
       default: break;
     }
+  }
+  // settle deferred inserts: keep retrying while parents materialise, then root-fallback
+  let pending = deferred;
+  while (pending.length) {
+    const next = pending.filter(op => !applyInsert(op, false));
+    if (next.length === pending.length) { for (const op of next) applyInsert(op, true); break; }
+    pending = next;
   }
   return out;
 }

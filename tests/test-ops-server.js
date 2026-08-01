@@ -105,6 +105,29 @@ let H = 0; const hlc = () => String(++H).padStart(8, '0') + ':d'; // monotonic s
   ok(JSON.stringify(doc) === before, 'insert is idempotent on replay');
 }
 
+// 4b. out-of-order insert chain — a child arriving before its parent (the first-of-month
+// ensureDay emission) must be deferred within the batch and land under its parent, not root
+{
+  const doc = freshDoc();
+  applyOpsToDoc(doc, [
+    { id: 'd1', hlc: '00000011:d', kind: 'insert', node: 'day', parent: 'month', ord: 0, data: { cal: 'day', cd: '2026-08-01' } },
+    { id: 'm1', hlc: '00000010:d', kind: 'insert', node: 'month', parent: 'root', ord: 0, data: { cal: 'month', cm: 7 } },
+  ]);
+  const pm = parentMap(doc);
+  ok(pm.day === 'month' && pm.month === 'root',
+    `child-before-parent insert deferred within the batch (day→${pm.day})`);
+}
+
+// 4c. an insert whose parent never arrives still falls back to root (nothing is lost)
+{
+  const doc = freshDoc();
+  applyOpsToDoc(doc, [
+    { id: 'o1', hlc: '00000010:d', kind: 'insert', node: 'orphan', parent: 'ghost', ord: 0, data: { text: 'x' } },
+  ]);
+  const pm = parentMap(doc);
+  ok(pm.orphan === 'root' && doc.nodes.orphan, `parentless insert falls back to root (orphan→${pm.orphan})`);
+}
+
 // helpers mirroring the server's trash semantics
 function subtreeIds(doc, id) { const out = []; const st = [id]; const seen = new Set(); while (st.length) { const x = st.pop(); if (!doc.nodes[x] || seen.has(x)) continue; seen.add(x); out.push(x); st.push(...(doc.nodes[x].children || [])); } return out; }
 function detach(doc, id) { for (const k in doc.nodes) { const a = doc.nodes[k].children || []; const i = a.indexOf(id); if (i >= 0) { a.splice(i, 1); return; } } }

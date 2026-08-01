@@ -534,13 +534,26 @@ function calRootInDoc(doc) {
   doc.meta.calendar = id;
   return id;
 }
-// find-or-create today's journal day node in the calendar subtree (same layout as the client)
+// find-or-create today's journal day node in the calendar subtree (same layout as the client).
+// The day is looked up GLOBALLY by its stable cd, not just under the month: a stray day (e.g.
+// root-fallback of an out-of-order insert) must be found — and re-homed — rather than duplicated.
 function ensureDayInDoc(doc, iso) {
   const [y, m] = iso.split('-').map(Number);
   const yr = ensureCalChild(doc, calRootInDoc(doc), id => doc.nodes[id].cal === 'year' && doc.nodes[id].cy === y,
     () => makeNode(String(y), { cal: 'year', cy: y }));
   const mo = ensureCalChild(doc, yr, id => doc.nodes[id].cal === 'month' && doc.nodes[id].cm === m - 1,
     () => makeNode(MONTHS_LONG[m - 1], { cal: 'month', cy: y, cm: m - 1 }));
+  const stray = Object.keys(doc.nodes).find(k => doc.nodes[k].cal === 'day' && doc.nodes[k].cd === iso);
+  if (stray && !doc.nodes[mo].children.includes(stray)) {
+    // heal: detach from wherever it ended up and put it under its month
+    for (const n of Object.values(doc.nodes)) {
+      const i = (n.children || []).indexOf(stray);
+      if (i >= 0) n.children.splice(i, 1);
+    }
+    doc.nodes[mo].children.push(stray);
+    sortCalChildren(doc, mo);
+    console.warn(`ensureDayInDoc: re-homed stray day ${stray} (${iso}) under its month`);
+  }
   return ensureCalChild(doc, mo, id => doc.nodes[id].cal === 'day' && doc.nodes[id].cd === iso,
     () => makeNode(roamDateLabel(iso), { cal: 'day', cd: iso }));
 }

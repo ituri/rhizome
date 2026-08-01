@@ -33,6 +33,10 @@ const FUZZ = `(${function fuzz(seed, steps) {
   let cnt = 0;
   const ops = [
     () => { const p = pickP(); snapshot(); const id = makeNode('f' + (cnt++)); insertAt(p, rint(3), id); rebuildParentMap(); markDirty(); },
+    // a CHAIN of new nodes in one txn (new child under new parent) — the ensureDay shape on
+    // the first of a month. Regression: emission must stay topological (parent's insert
+    // before the child's), or the server root-falls-back the child.
+    () => { const p = pickP(); snapshot(); const a = makeNode('c' + (cnt++)); insertAt(p, rint(3), a); const b = makeNode('c' + (cnt++)); insertAt(a, 0, b); rebuildParentMap(); markDirty(); },
     () => opToggleDone(pick()),
     () => opSetFormat(pick(), ['bullet', 'todo', 'h1', 'quote'][rint(4)]),
     () => opIndent(pick()),

@@ -1228,12 +1228,18 @@ function opsFromJournal(txn) {
 
   const handled = new Set();
   // inserts in tree order (parents before children), then moves/reorders — walk the NEW
-  // children of every touched node, breadth-first from the touched roots
+  // children of every touched node, breadth-first from the touched roots.
+  // A NEW node may only be walked as a parent AFTER its own insert op is emitted (it is
+  // re-queued right below the mk('insert')): the seed queue is in touch order, and walking a
+  // new node early would emit its children's inserts ahead of its own. That happened on the
+  // first day of a month (ensureMonth touches the new month before the new day): the server
+  // received [insert day parent=month, insert month] and root-fell-back the day.
   const queue = [...txn.nodes.keys()];
   while (queue.length) {
     const pid = queue.shift();
     const pn = doc.nodes[pid];
     if (!pn) continue;
+    if (txn.nodes.get(pid) === null && !handled.has(pid)) continue;   // new + not yet inserted
     (pn.children || []).forEach((c, ord) => {
       if (handled.has(c)) return;
       const isNew = txn.nodes.has(c) && txn.nodes.get(c) === null;

@@ -15,6 +15,7 @@
     "test:optrash": "node tests/test-optrash.js",
     "test:undo": "node tests/test-undo.js",
     "test:emit": "node tests/test-emit.js",
+    "test:emitorder": "node tests/test-emit-order.js",
     "test:rbconverge": "node tests/test-rb-converge.js",
     "test:worker": "node tests/test-worker.js",
     "test:opsync": "node tests/test-opsync.js",

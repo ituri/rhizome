@@ -1453,6 +1453,10 @@ function ensureMonth(y, m) {
     () => makeNode(MONTHS_LONG[m], { cal: 'month', cy: y, cm: m }));
 }
 function ensureDay(iso) {
+  // stable-id lookup ANYWHERE first: a day that ended up outside its month (e.g. the
+  // root-fallback of an out-of-order insert) must be reused, never duplicated
+  const anywhere = Object.keys(doc.nodes).find(id => N(id).cal === 'day' && N(id).cd === iso);
+  if (anywhere) return anywhere;
   const [y, m] = iso.split('-').map(Number);
   return ensureCalChild(ensureMonth(y, m - 1), id => N(id).cal === 'day' && N(id).cd === iso,
     () => makeNode(calDayLabel(iso), { cal: 'day', cd: iso }));
@@ -1460,9 +1464,12 @@ function ensureDay(iso) {
 function findDay(iso) {
   const root = calRoot(false); if (!root) return null;
   const [y, m] = iso.split('-').map(Number);
-  const yr = kidsOf(root).find(id => N(id).cal === 'year' && N(id).cy === y); if (!yr) return null;
-  const mo = kidsOf(yr).find(id => N(id).cal === 'month' && N(id).cm === m - 1); if (!mo) return null;
-  return kidsOf(mo).find(id => N(id).cal === 'day' && N(id).cd === iso) || null;
+  const chain = (() => {
+    const yr = kidsOf(root).find(id => N(id).cal === 'year' && N(id).cy === y); if (!yr) return null;
+    const mo = kidsOf(yr).find(id => N(id).cal === 'month' && N(id).cm === m - 1); if (!mo) return null;
+    return kidsOf(mo).find(id => N(id).cal === 'day' && N(id).cd === iso) || null;
+  })();
+  return chain || Object.keys(doc.nodes).find(id => N(id).cal === 'day' && N(id).cd === iso) || null;
 }
 
 function gotoDate(iso) {
