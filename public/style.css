@@ -2530,6 +2530,11 @@ a.side-nav.current { background: var(--accent-softer); color: var(--ink); }
   border: 1px solid var(--line-soft);
   border-radius: 8px;
   overflow: hidden;
+  /* own stacking context: Leaflet's internal z-indexes (400+) must not beat the
+     fixed/peeked sidebar (z 45/50) */
+  position: relative;
+  z-index: 0;
+  isolation: isolate;
 }
 .map-canvas .leaflet-container { height: 100%; }
 
