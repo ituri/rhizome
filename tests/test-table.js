@@ -65,6 +65,17 @@ let fl = 0; const ok = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); i
   }, t);
   ok(focused === t.b2a, `clicking a cell focuses its bullet (${focused})`);
 
+  // live update: editing a source bullet refreshes the rendered table without a re-render
+  await page.evaluate(t => document.querySelector(`.item[data-id="${t.b2a}"] .content`)?.focus(), t);
+  await sleep(200);
+  await page.keyboard.press('End');
+  await page.keyboard.type(' NEU');
+  await sleep(700);   // past the commit debounce
+  const liveCell = await page.evaluate(t => document.querySelector(`.rz-table td[data-id="${t.b2a}"]`)?.textContent, t);
+  ok(/B2a NEU/.test(liveCell || ''), `editing a source bullet live-updates its cell (${liveCell})`);
+  await page.evaluate(() => document.activeElement?.blur());
+  await sleep(300);
+
   // empty table shows the hint
   await page.evaluate(() => {
     snapshot();

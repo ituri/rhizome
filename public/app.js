@@ -1473,6 +1473,7 @@ function commitActiveText(redecorateOk = false) {
 // (data-mirror) AND transcluded/duplicate copies of the node itself (same data-id can
 // render in several places once mirrors transclude their subtree)
 function syncMirrorRows(targetId) {
+  window.refreshTableBlocks?.(targetId);   // a cell's source changed → rebuild its {{table}}
   const html = displayHtml(N(targetId));
   const sel = `.item[data-mirror="${targetId}"] > .row .content, .item[data-id="${targetId}"] > .row .content`;
   for (const el of treeEl.querySelectorAll(sel)) {

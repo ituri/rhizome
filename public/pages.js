@@ -1139,6 +1139,20 @@ window.buildTableBlock = function buildTableBlock(n) {
   return box;
 };
 
+// Re-render every mounted table whose subtree contains the changed node — text commits
+// don't re-render the page, so without this an edited cell went stale until the next render.
+window.refreshTableBlocks = function refreshTableBlocks(changedId) {
+  for (const box of treeEl.querySelectorAll('.rz-table-block')) {
+    const hostId = box.closest('.item')?.dataset.id;
+    if (!hostId || !doc.nodes[hostId]) continue;
+    let p = changedId, inside = false;
+    while (p) { if (p === hostId) { inside = true; break; } p = parentOf(p); }
+    if (!inside) continue;
+    const fresh = window.buildTableBlock(N(contentIdOf(hostId)));
+    if (fresh) box.replaceWith(fresh);
+  }
+};
+
 /* ---------------- Linked & Unlinked References ---------------- */
 
 // references from daily notes group under their day page, not the calendar container
