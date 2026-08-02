@@ -1033,10 +1033,20 @@ window.buildRoamCalendar = function buildRoamCalendar(onPick, onEscape) {
       blank.className = 'dp-blank';
       grid.append(blank);
     }
+    // days whose journal holds content (any non-empty descendant text) get a dot
+    const journalDays = new Set();
+    if (typeof doc !== 'undefined' && doc?.nodes) {
+      const hasText = id => kidsOf(id).some(c => plainOf(N(c)?.text || '').trim() || hasText(c));
+      for (const id of Object.keys(doc.nodes)) {
+        const n = doc.nodes[id];
+        if (n.cal === 'day' && n.cd && hasText(id)) journalDays.add(n.cd);
+      }
+    }
     const today = todayStr();
     for (let d = 1; d <= daysInMonth; d++) {
       const iso = isoOf(new Date(view.getFullYear(), view.getMonth(), d));
-      grid.append(mk('dp-day' + (iso === today ? ' today' : ''), String(d), () => onPick(iso)));
+      grid.append(mk('dp-day' + (iso === today ? ' today' : '') + (journalDays.has(iso) ? ' has-journal' : ''),
+        String(d), () => onPick(iso)));
     }
     wrap.append(grid);
   };
