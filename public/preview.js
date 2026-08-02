@@ -112,6 +112,9 @@
     if (!a || a.closest('.hover-preview')) return;   // no previews of previews
     const id = idFor(a);
     if (!id || id === state.zoom) return;            // skip links to the page you're already on
+    // share views: ride-along nodes (coordinate essence for the geo minis) exist only to
+    // power the maps — never present them as browsable pages
+    if (N(id)?.orphanRef) return;
     clearTimeout(closeTimer);
     if (panel && targetId === id) return;
     clearTimeout(openTimer);

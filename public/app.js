@@ -3939,6 +3939,7 @@ function activateTarget(target) {
   if (link && !link.classList.contains('bullet') && !link.classList.contains('att-chip')) {
     const href = link.getAttribute('href');
     const m = href.match(/#\/n\/([A-Za-z0-9]+)/);
+    if (m && doc.nodes[m[1]]?.orphanRef) { showToast('Not part of this share'); return true; }
     if (m && doc.nodes[m[1]]) zoomTo(m[1]);
     else window.open(href, '_blank', 'noopener');
     return true;
