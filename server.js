@@ -1102,27 +1102,39 @@ async function handleMcp(req, res, url) {
 
   if (Array.isArray(msg)) {
     const out = [];
-    for (const m of msg) { const r = await mcpDispatch(m, g, scope); if (r) out.push(r); }
+    for (const m of msg) { const r = await mcpDispatch(m, g, scope, req); if (r) out.push(r); }
     if (!out.length) { res.writeHead(202, cors); return res.end(); }
     return send(res, 200, out, cors);
   }
-  const resp = await mcpDispatch(msg, g, scope);
+  const resp = await mcpDispatch(msg, g, scope, req);
   if (!resp) { res.writeHead(202, cors); return res.end(); } // a notification → no body
   return send(res, 200, resp, cors);
 }
 
-async function mcpDispatch(m, g, scope) {
+async function mcpDispatch(m, g, scope, req) {
   if (!m || m.jsonrpc !== '2.0' || typeof m.method !== 'string') return mcpErr(m && m.id, -32600, 'invalid request');
   const { id, method, params } = m;
   const isNotification = id === undefined || id === null;
   switch (method) {
-    case 'initialize':
+    case 'initialize': {
+      const proto = ((req && req.headers['x-forwarded-proto']) || 'http').split(',')[0].trim();
+      const mcpOrigin = `${proto}://${(req && req.headers.host) || 'localhost'}`;
       return mcpResult(id, {
         protocolVersion: (params && typeof params.protocolVersion === 'string') ? params.protocolVersion : MCP_PROTOCOL,
         capabilities: { tools: { listChanged: false } },
-        serverInfo: MCP_SERVER,
+        serverInfo: {
+          ...MCP_SERVER,
+          title: 'Rhizome',
+          websiteUrl: mcpOrigin,
+          // connector UIs (claude.ai) prefer declared icons over favicon guessing
+          icons: [
+            { src: mcpOrigin + '/icon-192.png', mimeType: 'image/png', sizes: ['192x192'] },
+            { src: mcpOrigin + '/icon-512.png', mimeType: 'image/png', sizes: ['512x512'] },
+          ],
+        },
         instructions: 'Rhizome is a page-based outliner. Call list_pages to discover pages, search to find nodes, get_node (tree=true) to read a subtree, then the write tools to edit. Journal days live under the calendar, NOT in list_pages — call the journal tool (today by default) to read a day; always read the full subtree before concluding a day is empty. Node ids are opaque strings; the tree lives in each node\'s children array.',
       });
+    }
     case 'ping': return mcpResult(id, {});
     case 'tools/list': return mcpResult(id, { tools: MCP_TOOLS });
     case 'resources/list': return mcpResult(id, { resources: [] });
