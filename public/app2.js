@@ -3456,7 +3456,12 @@ async function init() {
   connectSSE();
   // localhost is a secure context too, so the SW (and offline shell) work in dev/tests
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
-    navigator.serviceWorker.register('/sw.js').catch(() => {});
+    navigator.serviceWorker.register('/sw.js').then(reg => {
+      // browsers only re-check sw.js on navigation — a long-lived tab would never
+      // learn about a deploy. Check when the tab regains focus and every 30 min.
+      document.addEventListener('visibilitychange', () => { if (!document.hidden) reg.update().catch(() => {}); });
+      setInterval(() => reg.update().catch(() => {}), 30 * 60 * 1000);
+    }).catch(() => {});
     // the shell is served stale-while-revalidate, so the first load after a deploy still
     // runs the previous version — surface the swap instead of leaving the tab silently stale
     let hadController = !!navigator.serviceWorker.controller;
