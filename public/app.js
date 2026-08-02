@@ -4898,11 +4898,12 @@ const darkMQ = matchMedia('(prefers-color-scheme: dark)');
 function applyTheme() {
   const mode = settings.theme === 'auto' ? (darkMQ.matches ? 'dark' : 'light') : settings.theme;
   const html = document.documentElement;
-  // kill every transition for the switch itself: staggered per-element fades
-  // (save-dot, sidebar, iconbtns, …) read as flicker when the palette flips
+  // for the switch itself, every element shares ONE colour transition (0.45s):
+  // the stylesheet's staggered per-element fades read as flicker when the palette flips
   if (html.dataset.theme && html.dataset.theme !== mode) {
     html.classList.add('theme-flip');
-    requestAnimationFrame(() => requestAnimationFrame(() => html.classList.remove('theme-flip')));
+    clearTimeout(applyTheme._flipTimer);
+    applyTheme._flipTimer = setTimeout(() => html.classList.remove('theme-flip'), 500);
   }
   html.dataset.theme = mode;
   if (settings.skin && settings.skin !== 'default') html.dataset.skin = settings.skin;

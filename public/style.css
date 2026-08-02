@@ -234,8 +234,14 @@ button { font-family: inherit; }
 .save-state.saving .save-label::after { content: ""; }
 @keyframes pulse { 50% { opacity: 0.4; } }
 .save-label { display: none; } /* the dot alone conveys saved/saving/offline */
-/* while the palette flips, nothing may fade individually (see applyTheme) */
+/* while the palette flips, everything fades in lockstep (see applyTheme):
+   one shared colour transition instead of the stylesheet's staggered
+   per-element ones — coherent, so it reads as a soft switch, not flicker */
 html.theme-flip *, html.theme-flip *::before, html.theme-flip *::after {
+  transition: background 0.45s ease, background-color 0.45s ease, color 0.45s ease,
+    border-color 0.45s ease, fill 0.45s ease, stroke 0.45s ease, box-shadow 0.45s ease !important;
+}
+html.no-anim.theme-flip *, html.no-anim.theme-flip *::before, html.no-anim.theme-flip *::after {
   transition: none !important;
 }
 
