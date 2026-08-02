@@ -3258,6 +3258,28 @@ function selKeydown(e) {
     showToast(`Deleted ${count} item${count === 1 ? '' : 's'}`, { label: 'Undo', fn: undo });
     return true;
   }
+  // Ctrl+C / Ctrl+X on selected items: nothing is focused in selection mode, so the browser
+  // never fires copy/cut events — write the clipboard ourselves (markdown, so pasting into
+  // rhizome rebuilds the bullets with nesting/todos, and other apps get a sane list)
+  if (mod && !e.shiftKey && !e.altKey && ['c', 'C', 'x', 'X'].includes(e.key)) {
+    e.preventDefault();
+    const text = roots.map(id => subtreeToMarkdown(id, 0)).join('');
+    navigator.clipboard?.writeText(text).catch(() => {});
+    const count = ids.length;
+    if (e.key === 'x' || e.key === 'X') {
+      snapshot();
+      const nf = neighborFocus(ids.map(x => elById.get(x)).filter(Boolean));
+      for (const id of roots) { promoteDoomed(id); deleteSubtree(id); }
+      selClear(false);
+      renderPage();
+      applyNeighborFocus(nf);
+      markDirty();
+      showToast(`Cut ${count} item${count === 1 ? '' : 's'}`, { label: 'Undo', fn: undo });
+    } else {
+      showToast(`Copied ${count} item${count === 1 ? '' : 's'}`);
+    }
+    return true;
+  }
   if (mod && e.key === 'Enter') {
     e.preventDefault();
     snapshot();
@@ -3299,12 +3321,14 @@ function selKeydown(e) {
   return true;
 }
 
+// fallback for copy events that DO fire (e.g. the browser's Edit menu) — roots only
+// (mapping every selected id duplicated the subtrees), markdown like the keyboard path
 document.addEventListener('copy', e => {
   if (!state.sel) return;
   const ids = selIds();
   if (!ids.length) return;
   e.preventDefault();
-  e.clipboardData.setData('text/plain', ids.map(id => subtreeToText(id, 0)).join(''));
+  e.clipboardData.setData('text/plain', selRoots(ids).map(id => subtreeToMarkdown(id, 0)).join(''));
 });
 
 /* ---------------- 15. keyboard ---------------- */
