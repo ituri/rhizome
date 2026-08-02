@@ -184,6 +184,17 @@ function loadLeaflet() {
 let geoMap = null;
 const geocoding = new Set();
 
+// Norwegian coordinates render on Kartverket's own topo tiles (what sotl.as uses there).
+// Two boxes approximate mainland Norway so Kartverket's blank out-of-coverage tiles never
+// show — outside them the caller keeps its default layer.
+function norwayTopoLayer(lat, lon) {
+  const inNorway = (lat >= 57.9 && lat < 65 && lon >= 4.5 && lon <= 14.5)
+    || (lat >= 65 && lat <= 71.4 && lon >= 11 && lon <= 31.5);
+  if (!inNorway) return null;
+  return L.tileLayer('https://cache.kartverket.no/v1/wmts/1.0.0/topo/default/webmercator/{z}/{y}/{x}.png',
+    { maxZoom: 18, attribution: '© Kartverket' });
+}
+
 // render (or clear) the mini-map for the current page, and kick off geocoding when the title is
 // still raw coordinates. Called from renderPage.
 window.renderGeo = function renderGeo() {
@@ -201,9 +212,9 @@ window.renderGeo = function renderGeo() {
         if (el.dataset.coords !== key) return;   // navigated away while Leaflet loaded
         geoMap = L.map(el, { zoomControl: true, attributionControl: true, scrollWheelZoom: false })
           .setView([coords.lat, coords.lon], 16);
-        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        (norwayTopoLayer(coords.lat, coords.lon) || L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
           maxZoom: 19, attribution: '© OpenStreetMap contributors',
-        }).addTo(geoMap);
+        })).addTo(geoMap);
         L.circleMarker([coords.lat, coords.lon], {
           radius: 8, weight: 2, color: '#bf562f', fillColor: '#bf562f', fillOpacity: 0.85,
         }).addTo(geoMap);
@@ -314,7 +325,8 @@ window.buildGeoMini = function buildGeoMini(n) {
       zoomControl: false, attributionControl: false, dragging: false, scrollWheelZoom: false,
       doubleClickZoom: false, boxZoom: false, keyboard: false, tap: false, touchZoom: false,
     }).setView([coords.lat, coords.lon], 15);
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(entry.map);
+    (norwayTopoLayer(coords.lat, coords.lon)
+      || L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 })).addTo(entry.map);
     L.circleMarker([coords.lat, coords.lon], { radius: 6, weight: 2, color: '#bf562f', fillColor: '#bf562f', fillOpacity: 0.85 }).addTo(entry.map);
     setTimeout(() => entry.map.invalidateSize(), 60);
   }).catch(() => { el.remove(); geoMiniCache.delete(n.id); });
@@ -367,12 +379,10 @@ window.buildSotaMini = function buildSotaMini(n) {
       zoomControl: false, attributionControl: false, dragging: false, scrollWheelZoom: false,
       doubleClickZoom: false, boxZoom: false, keyboard: false, tap: false, touchZoom: false,
     }).setView([c.lat, c.lon], 11);   // wide terrain context, like the sotl.as summit view
-    // topo styles like sotl.as uses: Norway gets the same Kartverket tiles sotl.as itself
-    // renders there; everywhere else OpenTopoMap is the closest keyless topo look
-    (ref.startsWith('LA/')
-      ? L.tileLayer('https://cache.kartverket.no/v1/wmts/1.0.0/topo/default/webmercator/{z}/{y}/{x}.png', { maxZoom: 18 })
-      : L.tileLayer('https://tile.opentopomap.org/{z}/{x}/{y}.png', { maxZoom: 17 })
-    ).addTo(entry.map);
+    // topo styles like sotl.as uses: Norwegian coordinates get Kartverket (see
+    // norwayTopoLayer), everywhere else OpenTopoMap is the closest keyless topo look
+    (norwayTopoLayer(c.lat, c.lon)
+      || L.tileLayer('https://tile.opentopomap.org/{z}/{x}/{y}.png', { maxZoom: 17 })).addTo(entry.map);
     L.circleMarker([c.lat, c.lon], { radius: 6, weight: 2, color: '#bf562f', fillColor: '#bf562f', fillOpacity: 0.85 }).addTo(entry.map);
     setTimeout(() => entry.map.invalidateSize(), 60);
   }).catch(() => { el.remove(); sotaMiniCache.delete(n.id); });
