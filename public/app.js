@@ -2485,15 +2485,30 @@ function opSplit(ctx) {
 
   // reveal: both halves come straight from the editing DOM (raw markdown) → resolve to stored HTML
   const doResolve = ctx.field === 'text' && n.format !== 'codeblock';
-  const beforeText = doResolve ? resolveEditSource(beforeHtml) : beforeHtml;
-  const afterText = doResolve ? resolveEditSource(afterHtml) : afterHtml;
+  let beforeText = doResolve ? resolveEditSource(beforeHtml) : beforeHtml;
+  let afterText = doResolve ? resolveEditSource(afterHtml) : afterHtml;
+
+  // block markers are VIEW-ONLY (see commitPending): an Enter-split serializes the editing
+  // DOM, so a revealed "# / ## / ### / >" must be stripped here too or it leaks into
+  // node.text. The format follows the marker exactly like the blur finalize would have.
+  const markFmt = { '#': 'h1', '##': 'h2', '###': 'h3', '&gt;': 'quote' };
+  let ownFmt = null, afterFmt = null;
+  if (doResolve) {
+    const mb = beforeText.match(/^(#{1,3}|&gt;) /);
+    if (mb) { beforeText = beforeText.slice(mb[0].length); ownFmt = markFmt[mb[1]]; }
+    const ma = afterText.match(/^(#{1,3}|&gt;) /);
+    if (ma) { afterText = afterText.slice(ma[0].length); afterFmt = markFmt[ma[1]]; }
+  }
 
   snapshot();
   recOld(n.id);
   n.text = beforeText;
+  if (ownFmt && ownFmt !== n.format) n.format = ownFmt;
   touch(n.id);
-  // a split item inherits to-do / numbered format so lists stay homogeneous
+  // a split item inherits to-do / numbered format so lists stay homogeneous; a marker
+  // that travelled into the after-half (caret before it) carries its format along
   const inherit = (n.format === 'todo' || n.format === 'number') ? { format: n.format } : {};
+  if (afterFmt) inherit.format = afterFmt;
   const nid = makeNode(afterText, inherit);
   if (ctx.field === 'title') {
     insertAt(id, 0, nid);

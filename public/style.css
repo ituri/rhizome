@@ -2539,7 +2539,11 @@ time[datetime].today { color: oklch(0.5 0.14 150); background: oklch(0.55 0.14 1
 
 .zoom-title:focus, .zoom-note:focus, .content:focus, .note:focus { outline: none; }
 
-.item.fmt-h1 > .row .toggle, .item.fmt-h2 > .row .toggle { margin-top: 0.5em; }
+/* heading toggles: same treatment as the heading bullets — box as tall as the
+   heading's first line box so the centred arrow rides mid-line, no magic margins */
+.item.fmt-h1 > .row .toggle { height: 2.0625em; }   /* 1.65 × 1.25 */
+.item.fmt-h2 > .row .toggle { height: 1.755em; }    /* 1.35 × 1.3  */
+.item.fmt-h3 > .row .toggle { height: 1.54em; }     /* 1.1 × 1.4  */
 
 @media (max-width: 760px) {
   .board { margin-left: 6px; }
