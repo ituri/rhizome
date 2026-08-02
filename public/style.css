@@ -247,6 +247,8 @@ html.no-anim.theme-flip *, html.no-anim.theme-flip *::before, html.no-anim.theme
 
 /* topbar customization: the dragged icon ghosts while it rides along */
 .topbar-right .tb-dragging { opacity: 0.35; }
+body.tb-reordering { user-select: none; cursor: grabbing; }
+body.tb-reordering .topbar-right * { cursor: grabbing; }
 .popover .ic .save-dot { display: inline-block; }
 
 /* theme toggle: moon while light (click → dark), sun while dark */

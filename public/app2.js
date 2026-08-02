@@ -3285,36 +3285,57 @@ function restoreTopbarIcon(key) {
 
 if (!SHARE_TOKEN) {
   const bar = $('.topbar-right');
-  let tbDragKey = null;
+  // pointer-based reordering (HTML5 drag & drop on <button>s is unreliable):
+  // grab any icon and pull — after 6px of travel it ghosts and rides the pointer,
+  // the bar re-sorts live, release persists. The click that ends a drag is
+  // swallowed by a capturing listener so the button's action doesn't fire.
+  let tbDrag = null;   // { el, key, x, moved }
   for (const [k, v] of Object.entries(TOPBAR_ITEMS)) {
     const el = $(v.el);
     el.dataset.tbKey = k;
-    // draggable only when the grab is not inside the search input (text selection)
-    el.addEventListener('pointerdown', e => { el.draggable = !e.target.closest('input'); });
-    el.addEventListener('dragstart', e => {
-      e.dataTransfer.effectAllowed = 'move';
-      e.dataTransfer.setData('text/plain', k);
-      el.classList.add('tb-dragging');
-      tbDragKey = k;
-    });
-    el.addEventListener('dragend', () => {
-      el.classList.remove('tb-dragging');
-      el.draggable = false;
-      tbDragKey = null;
-      topbarCfg().order = [...bar.children].map(c => c.dataset.tbKey).filter(Boolean);
-      saveSettings();
+    el.addEventListener('pointerdown', e => {
+      if (e.button !== 0) return;
+      // the search input is a drag handle only while empty and unfocused —
+      // with content or focus it keeps normal text-selection behaviour
+      const input = e.target.closest('input');
+      if (input && (input.value || input === document.activeElement)) return;
+      tbDrag = { el, key: k, x: e.clientX, moved: false };
     });
   }
-  bar.addEventListener('dragover', e => {
-    if (!tbDragKey) return;
-    e.preventDefault();
-    const dragEl = $(TOPBAR_ITEMS[tbDragKey].el);
+  // moves and the release land on document — pointer capture on <button>s is flaky
+  document.addEventListener('pointermove', e => {
+    if (!tbDrag) return;
+    const el = tbDrag.el;
+    if (!tbDrag.moved) {
+      if (Math.abs(e.clientX - tbDrag.x) < 6) return;
+      tbDrag.moved = true;
+      el.classList.add('tb-dragging');
+      document.body.classList.add('tb-reordering');
+      document.activeElement?.blur?.();   // the grab may have focused the search input
+    }
     const next = [...bar.children].find(c =>
-      c !== dragEl && c.dataset.tbKey && c.style.display !== 'none'
+      c !== el && c.dataset.tbKey && c.style.display !== 'none'
       && e.clientX < c.getBoundingClientRect().left + c.getBoundingClientRect().width / 2);
-    bar.insertBefore(dragEl, next || $('#btn-menu'));
+    bar.insertBefore(el, next || $('#btn-menu'));
   });
-  bar.addEventListener('drop', e => { if (tbDragKey) e.preventDefault(); });
+  const tbFinish = () => {
+    if (!tbDrag) return;
+    const { el, moved } = tbDrag;
+    tbDrag = null;
+    el.classList.remove('tb-dragging');
+    document.body.classList.remove('tb-reordering');
+    if (moved) {
+      topbarCfg().order = [...bar.children].map(c => c.dataset.tbKey).filter(Boolean);
+      saveSettings();
+      el.dataset.tbSquelch = '1';
+      setTimeout(() => delete el.dataset.tbSquelch, 250);
+    }
+  };
+  document.addEventListener('pointerup', tbFinish);
+  document.addEventListener('pointercancel', tbFinish);
+  bar.addEventListener('click', e => {
+    if (e.target.closest('[data-tb-squelch]')) { e.preventDefault(); e.stopPropagation(); }
+  }, true);
   bar.addEventListener('contextmenu', e => {
     const hit = Object.entries(TOPBAR_ITEMS).find(([, v]) => e.target.closest(v.el));
     if (!hit) return;
