@@ -2213,6 +2213,8 @@ function mountItem(id, underMatch = false) {
   if (tbl) item.append(tbl);
   const geoMini = window.buildGeoMini?.(cn); // small map under a bullet linking to a location page
   if (geoMini) item.append(geoMini);
+  const sotaMini = !geoMini && window.buildSotaMini?.(cn); // SOTA summit link → same mini map
+  if (sotaMini) item.append(sotaMini);
 
   const um = underMatch || (searchActive() && state.matchSet?.has(id));
 
@@ -5085,6 +5087,13 @@ function resolveEditSource(html, resolveWiki = true) {
     }
     return `<a href="#/n/${id}" rel="noopener">${name.trim()}</a>`;
   });
+  // bare SOTA summit references (LA/FM-178) autolink to their sotl.as page. Finalised
+  // with the wiki links (not mid-typing). Skipped inside an existing link/code (the next
+  // closing tag would be </a>/</code>) and inside URLs/attributes (preceded by / " = or \w).
+  if (resolveWiki) {
+    out = out.replace(/(?<![\w/"=-])([A-Z0-9]{1,3}\/[A-Z]{2}-\d{3})(?![\w-])(?![^<]*<\/(?:a|code)>)/g,
+      (m, ref) => `<a href="https://sotl.as/summits/${ref}" rel="noopener">${ref}</a>`);
+  }
   // inline formatting → tags (code first; bold before italic so ** isn't eaten by *)
   out = out.replace(/`([^`\n]+?)`/g, '<code>$1</code>');
   out = out.replace(/\*\*([^\n]+?)\*\*/g, '<b>$1</b>');

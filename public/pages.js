@@ -321,6 +321,59 @@ window.buildGeoMini = function buildGeoMini(n) {
   return el;
 };
 
+/* ---------------- SOTA summit references ---------------- */
+// a typed reference like LA/FM-178 autolinks to sotl.as (resolveEditSource) and gets the
+// same inline mini map as geocoordinates. Coordinates come from the SOTA API
+// (api2.sota.org.uk, CORS *) and are cached persistently — one fetch per summit, ever.
+const SOTA_HREF_RE = /https:\/\/sotl\.as\/summits\/([A-Z0-9]{1,3}\/[A-Z]{2}-\d{3})/;
+let sotaCoords = {};
+try { sotaCoords = JSON.parse(localStorage.getItem('sota-coords') || '{}'); } catch { /* fresh */ }
+const sotaPending = new Map();
+function sotaLookup(ref) {
+  if (sotaCoords[ref]) return Promise.resolve(sotaCoords[ref]);
+  if (sotaPending.has(ref)) return sotaPending.get(ref);
+  const p = fetch('https://api2.sota.org.uk/api/summits/' + ref)
+    .then(r => { if (!r.ok) throw new Error('sota ' + r.status); return r.json(); })
+    .then(j => {
+      const c = { lat: j.latitude, lon: j.longitude };
+      sotaCoords[ref] = c;
+      try { localStorage.setItem('sota-coords', JSON.stringify(sotaCoords)); } catch { /* full */ }
+      return c;
+    })
+    .finally(() => sotaPending.delete(ref));
+  sotaPending.set(ref, p);
+  return p;
+}
+const sotaMiniCache = new Map(); // nodeId → { el, map, key }
+window.buildSotaMini = function buildSotaMini(n) {
+  const ref = (SOTA_HREF_RE.exec(n.text || '') || [])[1];
+  const cached = sotaMiniCache.get(n.id);
+  if (!ref) {
+    if (cached) { try { cached.map?.remove(); } catch { /* noop */ } sotaMiniCache.delete(n.id); }
+    return null;
+  }
+  if (cached && cached.key === ref) {
+    if (cached.map) requestAnimationFrame(() => cached.map.invalidateSize());
+    return cached.el; // reuse the live map element — no flash
+  }
+  if (cached) { try { cached.map?.remove(); } catch { /* noop */ } }
+  const el = document.createElement('div');
+  el.className = 'geo-mini sota-mini';
+  const entry = { el, map: null, key: ref };
+  sotaMiniCache.set(n.id, entry);
+  Promise.all([loadLeaflet(), sotaLookup(ref)]).then(([, c]) => {
+    if (!el.isConnected || sotaMiniCache.get(n.id) !== entry) return;
+    entry.map = L.map(el, {
+      zoomControl: false, attributionControl: false, dragging: false, scrollWheelZoom: false,
+      doubleClickZoom: false, boxZoom: false, keyboard: false, tap: false, touchZoom: false,
+    }).setView([c.lat, c.lon], 13);   // a summit wants more context than a street address
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(entry.map);
+    L.circleMarker([c.lat, c.lon], { radius: 6, weight: 2, color: '#bf562f', fillColor: '#bf562f', fillOpacity: 0.85 }).addTo(entry.map);
+    setTimeout(() => entry.map.invalidateSize(), 60);
+  }).catch(() => { el.remove(); sotaMiniCache.delete(n.id); });
+  return el;
+};
+
 // in an HTML string, replace the visible text of links to `pageId` whose label is still raw
 // coordinates with `label` (the address). Leaves custom labels and #/@ tag pills untouched.
 function relabelCoordLinks(html, pageId, label) {
