@@ -986,7 +986,9 @@ async function handleV1(req, res, url, g, scope) {
     const before = Object.keys(doc.nodes).length;
     const dayId = ensureDayInDoc(doc, todayIso());
     if (Object.keys(doc.nodes).length !== before) commitDoc(g, doc);
-    return send(res, 200, nodeTree(doc, dayId, 1));   // the day + its children (with plain text)
+    // ?depth=N (max 6) so the iOS widget can read the capture bullet's items in one call
+    const depth = Math.min(Math.max(parseInt(u.searchParams.get('depth'), 10) || 1, 1), 6);
+    return send(res, 200, nodeTree(doc, dayId, depth));   // the day + its subtree (with plain text)
   }
   if (path === '/api/v1/search' && method === 'GET') {
     const q = u.searchParams.get('q') || '';
