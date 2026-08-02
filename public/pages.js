@@ -15,6 +15,8 @@ const isCalRoot = id => N(id)?.cal === 'root';
 
 // every direct child of the root except the calendar container is a page
 function pagesOf() {
+  // a share view roots at the shared node — there IS no 'root', and no pages
+  if (!doc || !doc.nodes[ROOT]) return [];
   return kidsOf(ROOT).filter(id => !isCalRoot(id));
 }
 

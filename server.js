@@ -1427,11 +1427,33 @@ function userCanReadFile(req, urlPath) {
   return false;
 }
 
+const SHARE_COORD_RE = /(-?\d{1,3}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)/;   // mirrors the client's COORD_RE
+function isCoordText(t) {
+  const m = SHARE_COORD_RE.exec(serverPlain(t || ''));
+  return !!m && Math.abs(+m[1]) <= 90 && Math.abs(+m[2]) <= 180;
+}
+
 function shareDocFor(g, share) {
   const doc = g && g.store.doc;
   if (!doc || !doc.nodes[share.id]) return null;
   const nodes = {};
   for (const id of subtreeIds(doc, share.id)) nodes[id] = doc.nodes[id];
+  // location pages linked FROM the subtree ride along in coordinate-essence form (title +
+  // the first-bullet coordinates, nothing else) so the guest view can render the geo minis —
+  // without them the link target is outside the share and pageCoords comes up empty
+  const linkRe = /#\/n\/([A-Za-z0-9_-]+)/g;
+  for (const id of Object.keys(nodes)) {
+    for (const m of String(nodes[id].text || '').matchAll(linkRe)) {
+      const tid = m[1];
+      if (nodes[tid] || !doc.nodes[tid] || doc.nodes[tid].cal) continue;
+      const t = doc.nodes[tid];
+      const firstKid = (t.children || [])[0];
+      const coordKid = firstKid && doc.nodes[firstKid] && isCoordText(doc.nodes[firstKid].text) ? firstKid : null;
+      if (!coordKid && !isCoordText(t.text)) continue;   // not a location page → don't leak it
+      nodes[tid] = { id: tid, text: t.text, children: coordKid ? [coordKid] : [], geo: t.geo, orphanRef: true };
+      if (coordKid) nodes[coordKid] = { id: coordKid, text: doc.nodes[coordKid].text, children: [] };
+    }
+  }
   return { root: share.id, nodes };
 }
 
