@@ -929,8 +929,7 @@ function setSaveUI(mode) {
   saveStateEl.classList.toggle('offline', mode === 'offline');
   $('.save-label', saveStateEl).textContent =
     mode === 'saving' ? 'saving' : mode === 'offline' ? 'offline' : 'saved';
-  saveStateEl.title =
-    mode === 'offline' ? 'Cannot reach the server — changes are kept here and retried.' : 'All changes saved';
+  // no title attribute: the native tooltip would cover the sync popover
 }
 
 const scheduleSave = debounce(() => doSave(), 600);
