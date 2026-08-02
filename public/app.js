@@ -3335,6 +3335,17 @@ function onKeydown(e) {
     showJump();
     return;
   }
+  // Ctrl+L: link the selected text (same dialog as Ctrl+K-with-selection);
+  // without a selection the browser keeps its default (address bar)
+  if (mod && !e.shiftKey && (e.key === 'l' || e.key === 'L')) {
+    const sel = getSelection();
+    const ctx0 = editableCtx(document.activeElement);
+    if (ctx0 && sel.rangeCount && !sel.getRangeAt(0).collapsed && !state.readOnly) {
+      e.preventDefault();
+      window.openLinkDialog?.(ctx0);
+      return;
+    }
+  }
   if (e.altKey && e.shiftKey && (e.key === 'p' || e.key === 'P' || e.code === 'KeyP')) { e.preventDefault(); window.openCommandPalette?.(); return; }
   // Ctrl+U → jump to search (Roam). While editing a block it stays underline (handled below).
   if (mod && !e.shiftKey && (e.key === 'u' || e.key === 'U') && !editableCtx(document.activeElement)) {
@@ -4686,7 +4697,7 @@ const HELP = [
     ['Bold / italic / underline', 'Ctrl+B I U'],
     ['Strikethrough', 'Ctrl+Shift+X'],
     ['Inline code', 'Ctrl+E'],
-    ['Link selected text', 'Ctrl+K'],
+    ['Link selected text', 'Ctrl+K / Ctrl+L'],
     ['Heading / quote / to-do', '# ## ### > [] + space'],
     ['Numbered list', '1. + space'],
     ['Divider', '--- + Enter'],
