@@ -391,6 +391,45 @@ window.buildSotaMini = function buildSotaMini(n) {
   return el;
 };
 
+// Renaming a page updates the visible label of every link to it whose text still equals
+// the old title — custom labels stay untouched; #/@ tag pills follow along (text + data-tag).
+// Called per title commit, so mid-edit commits chain (old → intermediate → final) and labels
+// never detach. Mutations journal ops via recOld, or force a PUT when no txn is open.
+window.relabelPageLinks = function relabelPageLinks(pageId, oldTitle, newTitle) {
+  oldTitle = (oldTitle || '').trim();
+  newTitle = (newTitle || '').trim();
+  if (!oldTitle || !newTitle || oldTitle === newTitle) return;
+  for (const id of Object.keys(doc.nodes)) {
+    if (id === pageId) continue;
+    const n = doc.nodes[id];
+    if (!n.text || !n.text.includes(`#/n/${pageId}`)) continue;
+    const tpl = document.createElement('template');
+    tpl.innerHTML = n.text;
+    let changed = false;
+    for (const a of tpl.content.querySelectorAll(`a[href="#/n/${pageId}"]`)) {
+      if (a.classList.contains('tag')) {
+        const sig = (a.dataset.tag || '#')[0];
+        if (a.textContent.trim() === sig + oldTitle) {
+          a.textContent = sig + newTitle;
+          a.dataset.tag = sig + newTitle;
+          changed = true;
+        }
+      } else if (a.textContent.trim() === oldTitle) {
+        a.textContent = newTitle;
+        changed = true;
+      }
+    }
+    if (changed) {
+      recOld(id);
+      n.text = tpl.innerHTML;
+      touch(id);
+      if (!undoTxn) uncommittedNodeEdit = true;
+      syncMirrorRows(id);
+    }
+  }
+  markDirty();
+};
+
 // in an HTML string, replace the visible text of links to `pageId` whose label is still raw
 // coordinates with `label` (the address). Leaves custom labels and #/@ tag pills untouched.
 function relabelCoordLinks(html, pageId, label) {

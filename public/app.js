@@ -1430,12 +1430,17 @@ function commitPending(redecorateOk = false) {
     }
     if (settings.capitalize && (ctx.field === 'text' || ctx.field === 'title')) html = applyCapitalize(html);
     if (node.text !== html) {
+      const oldTitle = ctx.field === 'title' ? plainOf(node.text) : null;
       recOld(node.id);
       node.text = html;
       touch(node.id);
       markDirty();
       if (!undoTxn) uncommittedNodeEdit = true;   // no open txn → no op carries this text; force a PUT
-      if (ctx.field === 'title') updateDocTitle();
+      if (ctx.field === 'title') {
+        updateDocTitle();
+        // a rename follows through to every link that still carries the old title as label
+        window.relabelPageLinks?.(node.id, oldTitle, plainOf(html));
+      }
       syncMirrorRows(node.id);
     }
     if (redecorateOk && document.activeElement === el && !composing && !window.caretPopOpen?.()) {
