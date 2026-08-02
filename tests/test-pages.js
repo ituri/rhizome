@@ -119,6 +119,14 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   assert(ord[0] === 'July 1st, 2026' && ord[1] === 'July 2nd, 2026' && ord[2] === 'July 3rd, 2026'
     && ord[3] === 'July 11th, 2026' && ord[4] === 'July 13th, 2026', 'ordinal suffixes (1st/2nd/3rd/11th/13th)');
 
+  // empty-page rule: a page only shows in the sidebar/All Pages once it holds content —
+  // Kompost was created via [[ and is still empty, so fill it before the listing checks
+  await page.evaluate(() => {
+    const id = pagesOf().find(p => plainOf(N(p).text).trim() === 'Kompost');
+    insertAt(id, 0, makeNode('Erster Inhalt'));
+    markDirty();
+  });
+
   /* ---- 8. sidebar: nav entries, page list, no calendar container ---- */
   await page.evaluate(() => { settings.sidebar = true; document.body.classList.add('sidebar-open'); renderSidebar(); });
   await sleep(200);
@@ -653,7 +661,12 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   /* ---- 32. a page can be deleted from the sidebar (hover × → trash) ---- */
   await page.evaluate(() => { setSearch(''); state.rightbar = []; renderRightbar(); location.hash = '#/'; });
   await sleep(200);
-  const delPg = await page.evaluate(() => { const id = getOrCreatePage('Wegwerfseite'); markDirty(); renderPage(); return id; });
+  const delPg = await page.evaluate(() => {
+    const id = getOrCreatePage('Wegwerfseite');
+    insertAt(id, 0, makeNode('Inhalt')); // empty pages are hidden from the sidebar by design
+    markDirty(); renderPage();
+    return id;
+  });
   await sleep(200);
   const hasDelBtn = await page.evaluate(id => {
     const row = [...document.querySelectorAll('#side-pages .side-page')].find(r => r.querySelector('a')?.getAttribute('href') === '#/n/' + id);
