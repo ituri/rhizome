@@ -1033,13 +1033,44 @@ window.buildRoamCalendar = function buildRoamCalendar(onPick, onEscape) {
       blank.className = 'dp-blank';
       grid.append(blank);
     }
-    // days whose journal holds content (any non-empty descendant text) get a dot
+    // days whose journal holds SELF-WRITTEN content get a dot. The #daily-template seeds
+    // every fresh day (e.g. "#Log"), so template-shaped text doesn't count: a day's text
+    // only marks it once it exceeds the template's text multiset (extra or edited lines).
     const journalDays = new Set();
     if (typeof doc !== 'undefined' && doc?.nodes) {
-      const hasText = id => kidsOf(id).some(c => plainOf(N(c)?.text || '').trim() || hasText(c));
+      const tplCounts = new Map();
+      const tpl = Object.keys(doc.nodes).find(id => plainOf(doc.nodes[id].text || '').includes('#daily-template'));
+      if (tpl) {
+        const walkTpl = id => {
+          for (const c of kidsOf(id)) {
+            const t = plainOf(N(c)?.text || '').trim();
+            if (t) tplCounts.set(t, (tplCounts.get(t) || 0) + 1);
+            walkTpl(c);
+          }
+        };
+        walkTpl(tpl);
+      }
+      const hasOwnText = day => {
+        const seen = new Map();
+        let found = false;
+        const walk = id => {
+          for (const c of kidsOf(id)) {
+            if (found) return;
+            const t = plainOf(N(c)?.text || '').trim();
+            if (t) {
+              const n = (seen.get(t) || 0) + 1;
+              seen.set(t, n);
+              if (n > (tplCounts.get(t) || 0)) { found = true; return; }
+            }
+            walk(c);
+          }
+        };
+        walk(day);
+        return found;
+      };
       for (const id of Object.keys(doc.nodes)) {
         const n = doc.nodes[id];
-        if (n.cal === 'day' && n.cd && hasText(id)) journalDays.add(n.cd);
+        if (n.cal === 'day' && n.cd && hasOwnText(id)) journalDays.add(n.cd);
       }
     }
     const today = todayStr();
