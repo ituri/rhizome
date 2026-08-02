@@ -3758,8 +3758,22 @@ shellEl.addEventListener('beforeinput', e => {
   // rhizome: auto-close brackets ([ → [], (( → (())) and type over the close
   if (e.inputType === 'insertText' && fmtOf(ctx.id) !== 'codeblock') {
     const sel = getSelection();
-    if (!sel.rangeCount || !sel.getRangeAt(0).collapsed) return;
+    if (!sel.rangeCount) return;
     const CLOSE = { '[': ']', '(': ')' };
+    // a bracket typed over a SELECTION wraps it instead of replacing it — the selection
+    // stays on the text, so typing [[ around it builds [[text]] (a link on blur), (( a block ref
+    if (!sel.getRangeAt(0).collapsed && CLOSE[e.data]
+        && ctx.el.contains(sel.anchorNode) && ctx.el.contains(sel.focusNode)) {
+      e.preventDefault();
+      const txt = sel.toString();
+      document.execCommand('insertText', false, e.data + txt + CLOSE[e.data]);
+      sel.modify('move', 'backward', 'character');   // step inside the fresh close…
+      for (let i = 0; i < txt.length; i++) sel.modify('extend', 'backward', 'character');   // …and reselect
+      scheduleCommit(ctx.el);
+      window.editorInputHook?.(ctx);
+      return;
+    }
+    if (!sel.getRangeAt(0).collapsed) return;
     if (CLOSE[e.data]) {
       e.preventDefault();
       const r = sel.getRangeAt(0);
