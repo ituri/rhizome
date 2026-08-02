@@ -3457,6 +3457,13 @@ async function init() {
   // localhost is a secure context too, so the SW (and offline shell) work in dev/tests
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
     navigator.serviceWorker.register('/sw.js').catch(() => {});
+    // the shell is served stale-while-revalidate, so the first load after a deploy still
+    // runs the previous version — surface the swap instead of leaving the tab silently stale
+    let hadController = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!hadController) { hadController = true; return; }   // first install, nothing stale
+      showToast('Rhizome wurde aktualisiert', { label: 'Neu laden', fn: () => location.reload() });
+    });
   }
 }
 
