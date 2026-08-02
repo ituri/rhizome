@@ -4723,6 +4723,12 @@ function showHelp() {
 function hideHelp() { $('#help-overlay').hidden = true; }
 $('#help-close').addEventListener('click', hideHelp);
 $('#btn-help').addEventListener('click', showHelp);
+// quick light/dark flip; pins the theme (leaves 'auto'), Settings → Theme can restore auto
+$('#btn-theme').addEventListener('click', () => {
+  settings.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  saveSettings();
+  applyTheme();
+});
 $('#help-overlay').addEventListener('mousedown', e => { if (e.target.id === 'help-overlay') hideHelp(); });
 
 /* ---------------- 23. import / export ---------------- */
