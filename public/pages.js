@@ -18,6 +18,14 @@ function pagesOf() {
   return kidsOf(ROOT).filter(id => !isCalRoot(id));
 }
 
+// a page only COUNTS as created once it holds content (a bullet or a note) — typing
+// [[Test]] materialises the target node (links need an id) but the page stays out of
+// the sidebar/All Pages and its links render dimmed until someone actually writes in it
+window.pageHasContent = function pageHasContent(id) {
+  const cid = contentIdOf(id);
+  return !!(kidsOf(cid).length || N(cid)?.note);
+};
+
 // alias (lowercased) -> pageId, gathered from each page's `Aliases:: a, b, c` child block
 function pageAliasMap() {
   const map = new Map();
@@ -645,7 +653,7 @@ function renderPagesView(frag) {
   h.textContent = 'All Pages';
   view.append(h);
 
-  const rows = pagesOf().map(id => {
+  const rows = pagesOf().filter(id => window.pageHasContent(id)).map(id => {
     const cid = contentIdOf(id);
     const n = N(cid);
     return { id: cid, title: plainOf(n.text).trim() || 'Untitled', c: n.c ?? 0, m: n.m ?? 0 };
@@ -836,7 +844,10 @@ function sidebarPageList() {
   const pins = (meta().pins || []).filter(id => doc.nodes[id]);
   const pinnedSet = new Set(pins);
   const rec = pageRecency();
-  const recent = Object.keys(rec).filter(id => !pinnedSet.has(id)).sort((a, b) => rec[b] - rec[a]);
+  // empty pages don't exist yet (journal days are exempt; pins are deliberate and stay)
+  const recent = Object.keys(rec)
+    .filter(id => !pinnedSet.has(id) && (N(id)?.cal === 'day' || window.pageHasContent(id)))
+    .sort((a, b) => rec[b] - rec[a]);
   return { list: [...pins, ...recent.slice(0, 18)], pinnedSet, rec };
 }
 

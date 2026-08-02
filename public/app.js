@@ -378,6 +378,15 @@ function decorate(html, opts = {}) {
           child.setAttribute('contenteditable', 'false');
           continue;
         }
+        // rhizome: a reference to a still-empty page renders dimmed (Roam behaviour) —
+        // the page doesn't count as created until someone writes a bullet into it
+        if (child.tagName === 'A' && !opts.editing && !child.classList.contains('block-ref')) {
+          const pm = (child.getAttribute('href') || '').match(/^#\/n\/([A-Za-z0-9]+)$/);
+          const t = pm && doc.nodes[pm[1]];
+          if (t && !t.cal && parentOf(pm[1]) === ROOT && !window.pageHasContent?.(pm[1])) {
+            child.classList.add('page-empty');
+          }
+        }
         // rhizome: a namespaced page ref ([[Foo/Bar]]) shows only its leaf, with the prefix kept
         // in a span for dimming/hiding via CSS (Roam-style). Tags and block-refs are left alone.
         if (child.tagName === 'A' && !opts.plain && !opts.editing
