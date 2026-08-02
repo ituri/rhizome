@@ -187,10 +187,12 @@ const geocoding = new Set();
 // Norwegian coordinates render on Kartverket's own topo tiles (what sotl.as uses there).
 // Two boxes approximate mainland Norway so Kartverket's blank out-of-coverage tiles never
 // show — outside them the caller keeps its default layer.
-function norwayTopoLayer(lat, lon) {
-  const inNorway = (lat >= 57.9 && lat < 65 && lon >= 4.5 && lon <= 14.5)
+function inNorway(lat, lon) {
+  return (lat >= 57.9 && lat < 65 && lon >= 4.5 && lon <= 14.5)
     || (lat >= 65 && lat <= 71.4 && lon >= 11 && lon <= 31.5);
-  if (!inNorway) return null;
+}
+function norwayTopoLayer(lat, lon) {
+  if (!inNorway(lat, lon)) return null;
   return L.tileLayer('https://cache.kartverket.no/v1/wmts/1.0.0/topo/default/webmercator/{z}/{y}/{x}.png',
     { maxZoom: 18, attribution: '© Kartverket' });
 }
@@ -211,7 +213,7 @@ window.renderGeo = function renderGeo() {
       loadLeaflet().then(() => {
         if (el.dataset.coords !== key) return;   // navigated away while Leaflet loaded
         geoMap = L.map(el, { zoomControl: true, attributionControl: true, scrollWheelZoom: false })
-          .setView([coords.lat, coords.lon], 16);
+          .setView([coords.lat, coords.lon], inNorway(coords.lat, coords.lon) ? 11 : 16);
         (norwayTopoLayer(coords.lat, coords.lon) || L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
           maxZoom: 19, attribution: '© OpenStreetMap contributors',
         })).addTo(geoMap);
@@ -324,7 +326,7 @@ window.buildGeoMini = function buildGeoMini(n) {
     entry.map = L.map(el, {
       zoomControl: false, attributionControl: false, dragging: false, scrollWheelZoom: false,
       doubleClickZoom: false, boxZoom: false, keyboard: false, tap: false, touchZoom: false,
-    }).setView([coords.lat, coords.lon], 15);
+    }).setView([coords.lat, coords.lon], inNorway(coords.lat, coords.lon) ? 11 : 15);
     (norwayTopoLayer(coords.lat, coords.lon)
       || L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 })).addTo(entry.map);
     L.circleMarker([coords.lat, coords.lon], { radius: 6, weight: 2, color: '#bf562f', fillColor: '#bf562f', fillOpacity: 0.85 }).addTo(entry.map);
