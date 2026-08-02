@@ -1570,8 +1570,19 @@ function ensureDay(iso) {
   const anywhere = Object.keys(doc.nodes).find(id => N(id).cal === 'day' && N(id).cd === iso);
   if (anywhere) return anywhere;
   const [y, m] = iso.split('-').map(Number);
-  return ensureCalChild(ensureMonth(y, m - 1), id => N(id).cal === 'day' && N(id).cd === iso,
+  const day = ensureCalChild(ensureMonth(y, m - 1), id => N(id).cal === 'day' && N(id).cd === iso,
     () => makeNode(calDayLabel(iso), { cal: 'day', cd: iso }));
+  applyDailyTemplate(day);   // the anywhere-check above proved this is a fresh creation
+  return day;
+}
+
+// The children of a bullet tagged #daily-template seed every freshly created journal day
+// (deep copies — the template itself stays untouched). No template → the day starts empty,
+// as before. Same convention on iOS and in the server's capture path.
+function applyDailyTemplate(day) {
+  const tpl = Object.keys(doc.nodes).find(id => plainOf(doc.nodes[id].text || '').includes('#daily-template'));
+  if (!tpl || tpl === day) return;
+  for (const c of kidsOf(tpl)) insertAt(day, kidsOf(day).length, cloneSubtree(c));
 }
 function findDay(iso) {
   const root = calRoot(false); if (!root) return null;

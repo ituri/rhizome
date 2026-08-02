@@ -556,8 +556,30 @@ function ensureDayInDoc(doc, iso) {
     sortCalChildren(doc, mo);
     console.warn(`ensureDayInDoc: re-homed stray day ${stray} (${iso}) under its month`);
   }
-  return ensureCalChild(doc, mo, id => doc.nodes[id].cal === 'day' && doc.nodes[id].cd === iso,
+  const day = ensureCalChild(doc, mo, id => doc.nodes[id].cal === 'day' && doc.nodes[id].cd === iso,
     () => makeNode(roamDateLabel(iso), { cal: 'day', cd: iso }));
+  if (!stray && !(doc.nodes[day].children || []).length) applyDailyTemplateInDoc(doc, day);
+  return day;
+}
+
+// The children of a bullet tagged #daily-template seed every freshly created journal day —
+// same convention as the web client and the iOS app, so capture-created days match.
+function cloneSubtreeInDoc(doc, id) {
+  const src = doc.nodes[id];
+  const n = makeNode(src.text || '');
+  if (src.note != null) n.note = src.note;
+  if (src.format) n.format = src.format;
+  if (src.done) n.done = true;
+  doc.nodes[n.id] = n;
+  n.children = (src.children || []).map(c => cloneSubtreeInDoc(doc, c));
+  return n.id;
+}
+function applyDailyTemplateInDoc(doc, dayId) {
+  const tpl = Object.keys(doc.nodes).find(k => serverPlain(doc.nodes[k].text || '').includes('#daily-template'));
+  if (!tpl || tpl === dayId) return;
+  for (const c of (doc.nodes[tpl].children || [])) {
+    doc.nodes[dayId].children.push(cloneSubtreeInDoc(doc, c));
+  }
 }
 
 // normalize an incoming files array (from the share sheet) to the stored node.files shape,
