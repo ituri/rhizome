@@ -4928,7 +4928,7 @@ function saveSettings() {
 }
 
 // preferences shared across devices for the signed-in account (web ⇄ iOS)
-const SHARED_PREF_KEYS = ['captureTimestamp'];
+const SHARED_PREF_KEYS = ['captureTimestamp', 'captureParent'];
 
 // on load, the server's stored value wins for shared keys (so a change on iOS shows up here)
 // adopt the server's Ask AI model list and settle on a current model (persisted, validated)

@@ -2455,16 +2455,19 @@ window.showCapture = function showCapture() {
   captureInput.focus();
 };
 
-// captures land under today's journal in an "Inbox" bullet: today → Inbox → item(s)
+// captures land under today's journal in a capture bullet: today → <target> → item(s).
+// The target name is the account-wide captureParent pref (Settings → Editing), default "Inbox".
+function captureTargetLabel() { return (settings.captureParent || '').trim() || 'Inbox'; }
 function findOrCreateInbox() {
   const day = ensureDay(todayStr());
   // drop stray empty bullets (e.g. an unused placeholder) so capture leaves no blank line
   for (const c of [...kidsOf(day)]) {
     if (!kidsOf(c).length && !plainOf(N(c).text).trim()) deleteSubtree(c);
   }
-  let inbox = kidsOf(day).find(id => plainOf(N(id).text).trim().toLowerCase() === 'inbox');
+  const label = captureTargetLabel();
+  let inbox = kidsOf(day).find(id => plainOf(N(id).text).trim().toLowerCase() === label.toLowerCase());
   if (!inbox) {
-    inbox = makeNode('Inbox');
+    inbox = makeNode(escHtml(label));
     insertAt(day, kidsOf(day).length, inbox);
   }
   return inbox;
@@ -2510,7 +2513,7 @@ function doCapture() {
   captureOverlay.hidden = true;
   renderPage();
   markDirty();
-  showToast(`Captured to Inbox`, { label: 'Open', fn: () => zoomTo(inbox) });
+  showToast(`Captured to ${captureTargetLabel()}`, { label: 'Open', fn: () => zoomTo(inbox) });
 }
 
 window.captureKeydown = function captureKeydown(e) {
@@ -3060,6 +3063,21 @@ function showSettings(initialTab) {
   };
   const bool = (g, label, get, set) =>
     choice(g, label, [['On', true], ['Off', false]], get, set);
+  const textRow = (g, label, get, set, opts = {}) => {
+    const row = document.createElement('div');
+    row.className = 'set-row';
+    const l = document.createElement('span');
+    l.className = 'set-label';
+    l.textContent = label;
+    const inp = document.createElement('input');
+    inp.type = 'text';
+    inp.className = 'set-text';
+    inp.value = get() || '';
+    inp.placeholder = opts.placeholder || '';
+    inp.addEventListener('change', () => { set(inp.value); saveSettings(); });
+    row.append(l, inp);
+    g.append(row);
+  };
   const action = (g, label, onClick, opts = {}) => {
     const b = document.createElement('button');
     b.className = 'set-action' + (opts.danger ? ' danger' : '');
@@ -3121,6 +3139,10 @@ function showSettings(initialTab) {
     bool(g, 'Convert markdown on paste', () => settings.markdownPaste !== false, v => { settings.markdownPaste = v; });
     g = group('Behaviour');
     bool(g, 'Timestamp quick capture', () => settings.captureTimestamp !== false, v => { settings.captureTimestamp = v; window.pushSharedPref('captureTimestamp'); });
+    textRow(g, 'Capture target bullet', () => settings.captureParent || '', v => {
+      settings.captureParent = v.trim();
+      window.pushSharedPref('captureParent');   // account-wide: server captures (share sheet, r, MCP) honor it too
+    }, { placeholder: 'Inbox' });
     bool(g, 'Tag duplicates with #copy', () => !!settings.copyTag, v => { settings.copyTag = v; });
     bool(g, 'Video embeds', () => !!settings.embeds, v => { settings.embeds = v; renderPage(); });
     choice(g, 'Week starts', [['Monday', 'mon'], ['Sunday', 'sun']],

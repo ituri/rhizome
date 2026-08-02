@@ -910,6 +910,16 @@ function reqToken(req, url) {
 // resolve a request's token to a user API key context { id, userId, graphId, scope } or null
 function apiKeyFor(req, url) { return accounts.resolveApiKey(reqToken(req, url)); }
 
+// the account's configured default capture bullet (shared pref captureParent, set in the
+// web Settings) — used whenever a capture request doesn't name a bullet itself
+function accountCaptureBullet(req, url) {
+  const key = apiKeyFor(req, url);
+  const uid = key ? key.userId : currentUser(req)?.id;
+  if (!uid) return '';
+  const p = accounts.getUserPrefs(uid);
+  return typeof p.captureParent === 'string' ? p.captureParent : '';
+}
+
 function apiAuthed(req, url) {
   if (isAuthed(req)) return true;
   if (!AGENT_TOKEN) return false;
@@ -969,7 +979,7 @@ async function handleV1(req, res, url, g, scope) {
     const raw = (await readBody(req, 1024 * 1024)).toString('utf8');
     let text = raw, deviceName = u.searchParams.get('deviceName') || '', bullet = '', html = false, files, children;
     try { const j = JSON.parse(raw); if (typeof j.text === 'string') text = j.text; if (typeof j.deviceName === 'string') deviceName = j.deviceName; if (typeof j.bullet === 'string') bullet = j.bullet; if (typeof j.html === 'boolean') html = j.html; if (Array.isArray(j.files)) files = j.files; if (Array.isArray(j.children)) children = j.children; } catch { /* plain text body */ }
-    return send(res, 200, { ok: true, captured: captureText(g, text, deviceName, bullet, html, { files, children }) });
+    return send(res, 200, { ok: true, captured: captureText(g, text, deviceName, bullet || accountCaptureBullet(req, url), html, { files, children }) });
   }
   if (path === '/api/v1/journal/today' && method === 'GET') {   // find-or-create today's day node
     if (scope !== 'write') return send(res, 403, { error: 'a write-scoped key is required (this may create the day node)' });
@@ -1124,16 +1134,16 @@ async function handleMcp(req, res, url) {
 
   if (Array.isArray(msg)) {
     const out = [];
-    for (const m of msg) { const r = await mcpDispatch(m, g, scope, req); if (r) out.push(r); }
+    for (const m of msg) { const r = await mcpDispatch(m, g, scope, req, url); if (r) out.push(r); }
     if (!out.length) { res.writeHead(202, cors); return res.end(); }
     return send(res, 200, out, cors);
   }
-  const resp = await mcpDispatch(msg, g, scope, req);
+  const resp = await mcpDispatch(msg, g, scope, req, url);
   if (!resp) { res.writeHead(202, cors); return res.end(); } // a notification → no body
   return send(res, 200, resp, cors);
 }
 
-async function mcpDispatch(m, g, scope, req) {
+async function mcpDispatch(m, g, scope, req, url) {
   if (!m || m.jsonrpc !== '2.0' || typeof m.method !== 'string') return mcpErr(m && m.id, -32600, 'invalid request');
   const { id, method, params } = m;
   const isNotification = id === undefined || id === null;
@@ -1163,14 +1173,14 @@ async function mcpDispatch(m, g, scope, req) {
     case 'tools/list': return mcpResult(id, { tools: MCP_TOOLS });
     case 'resources/list': return mcpResult(id, { resources: [] });
     case 'prompts/list': return mcpResult(id, { prompts: [] });
-    case 'tools/call': return await mcpCallTool(id, params || {}, g, scope);
+    case 'tools/call': return await mcpCallTool(id, params || {}, g, scope, req, url);
     default:
       if (isNotification) return null; // notifications/initialized, notifications/cancelled, …
       return mcpErr(id, -32601, 'method not found: ' + method);
   }
 }
 
-async function mcpCallTool(id, params, g, scope) {
+async function mcpCallTool(id, params, g, scope, req, url) {
   const name = params.name;
   const args = params.arguments || {};
   const doc = ensureDoc(g);
@@ -1265,7 +1275,7 @@ async function mcpCallTool(id, params, g, scope) {
       case 'capture': {
         const text = String(args.text || '');
         if (!text.trim()) return fail('nothing to capture');
-        return ok({ captured: captureText(g, text, 'mcp') });
+        return ok({ captured: captureText(g, text, 'mcp', accountCaptureBullet(req, url)) });
       }
       default:
         return fail('unknown tool: ' + name);
@@ -2121,7 +2131,7 @@ const server = http.createServer(async (req, res) => {
         let deviceName = new URL(url, 'http://x').searchParams.get('deviceName') || '';
         let bullet = '', html = false, files, children;
         try { const j = JSON.parse(raw); if (typeof j.text === 'string') text = j.text; if (typeof j.deviceName === 'string') deviceName = j.deviceName; if (typeof j.bullet === 'string') bullet = j.bullet; if (typeof j.html === 'boolean') html = j.html; if (Array.isArray(j.files)) files = j.files; if (Array.isArray(j.children)) children = j.children; } catch { /* plain text body */ }
-        const count = captureText(g, text, deviceName, bullet, html, { files, children });
+        const count = captureText(g, text, deviceName, bullet || accountCaptureBullet(req, url), html, { files, children });
         return send(res, 200, { ok: true, captured: count });
       }
 
@@ -2329,7 +2339,7 @@ const server = http.createServer(async (req, res) => {
           let deviceName = new URL(url, 'http://x').searchParams.get('deviceName') || '';
           let bullet = '', html = false;
           try { const j = JSON.parse(raw); if (typeof j.text === 'string') text = j.text; if (typeof j.deviceName === 'string') deviceName = j.deviceName; if (typeof j.bullet === 'string') bullet = j.bullet; if (typeof j.html === 'boolean') html = j.html; } catch { /* plain text body */ }
-          return send(res, 200, { ok: true, captured: captureText(g, text, deviceName, bullet, html) });
+          return send(res, 200, { ok: true, captured: captureText(g, text, deviceName, bullet || accountCaptureBullet(req, url), html) });
         }
         return send(res, 404, { error: 'not found' });
       }
