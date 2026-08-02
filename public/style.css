@@ -251,6 +251,10 @@ body.tb-reordering { user-select: none; cursor: grabbing; }
 body.tb-reordering .topbar-right * { cursor: grabbing; }
 .popover .ic .save-dot { display: inline-block; }
 
+/* SOTA mini map: the summit's peak-triangle marker (a divIcon — keep it chrome-free) */
+.sota-peak { background: none; border: none; }
+.sota-peak svg { display: block; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.35)); }
+
 /* links to still-empty pages ([[Test]] typed but never filled) read slightly lighter */
 a.page-empty { opacity: 0.62; }
 

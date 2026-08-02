@@ -393,7 +393,12 @@ window.buildSotaMini = function buildSotaMini(n) {
     // norwayTopoLayer), everywhere else OpenTopoMap is the closest keyless topo look
     (norwayTopoLayer(c.lat, c.lon)
       || L.tileLayer('https://tile.opentopomap.org/{z}/{x}/{y}.png', { maxZoom: 17 })).addTo(entry.map);
-    L.circleMarker([c.lat, c.lon], { radius: 6, weight: 2, color: '#bf562f', fillColor: '#bf562f', fillOpacity: 0.85 }).addTo(entry.map);
+    // a summit gets a peak triangle instead of the location dot
+    L.marker([c.lat, c.lon], { interactive: false, icon: L.divIcon({
+      className: 'sota-peak',
+      html: '<svg viewBox="0 0 24 22" width="22" height="20"><path d="M12 2 L23 20 H1 Z" fill="#bf562f" stroke="#fff" stroke-width="2" stroke-linejoin="round"/></svg>',
+      iconSize: [22, 20], iconAnchor: [11, 10],
+    }) }).addTo(entry.map);
     setTimeout(() => entry.map.invalidateSize(), 60);
   }).catch(() => { el.remove(); sotaMiniCache.delete(n.id); });
   return el;
