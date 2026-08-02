@@ -234,7 +234,8 @@ button { font-family: inherit; }
 .save-state.saving .save-label::after { content: ""; }
 @keyframes pulse { 50% { opacity: 0.4; } }
 .save-label { display: none; } /* the dot alone conveys saved/saving/offline */
-.save-state { gap: 0; padding: 0 4px; }
+/* generous hover target (iconbtn-sized) around the unchanged 9px dot */
+.save-state { gap: 0; padding: 0; min-width: 28px; min-height: 28px; justify-content: center; }
 .save-dot { width: 9px; height: 9px; }
 @media (max-width: 540px) {
   #btn-help { display: none; }
