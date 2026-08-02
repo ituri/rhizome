@@ -932,6 +932,7 @@ body.block-selecting, body.block-selecting .content { user-select: none; -webkit
 }
 #jump-input,
 #cmd-input,
+#link-input,
 .np-input {
   width: 100%;
   border: 0;
