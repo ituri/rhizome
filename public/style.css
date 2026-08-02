@@ -890,6 +890,12 @@ body.block-selecting, body.block-selecting .content { user-select: none; -webkit
 .set-group h3 { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-faint); margin: 0 0 8px; font-weight: 600; }
 .set-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 6px 0; }
 .set-label { font-size: 14px; color: var(--ink); }
+.set-text {
+  font: inherit; font-size: 13.5px; color: var(--ink);
+  background: var(--bg); border: 1px solid var(--line); border-radius: 8px;
+  padding: 5px 10px; width: 160px;
+}
+.set-text:focus { outline: none; border-color: var(--accent); }
 .set-row .seg { display: flex; gap: 3px; flex: none; }
 .set-row .seg button {
   flex: none;
