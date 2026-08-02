@@ -603,6 +603,10 @@ window.slashWillOpen = function slashWillOpen(ctx, offset) {
 };
 
 window.editorInputHook = function editorInputHook(ctx) {
+  // a live selection means the caret isn't a typing position (e.g. bracket-wrapping keeps
+  // the text selected) — token scans would misfire and suggest everything
+  const _sel = getSelection();
+  if (_sel.rangeCount && !_sel.getRangeAt(0).collapsed) { window.closeCaretPop(); return; }
   // open slash menu right after '/' lands in the DOM
   if (pendingSlash && pendingSlash.id === ctx.id && pendingSlash.field === ctx.field) {
     const start = pendingSlash.start;

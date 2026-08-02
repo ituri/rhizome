@@ -3765,12 +3765,25 @@ shellEl.addEventListener('beforeinput', e => {
     if (!sel.getRangeAt(0).collapsed && CLOSE[e.data]
         && ctx.el.contains(sel.anchorNode) && ctx.el.contains(sel.focusNode)) {
       e.preventDefault();
+      const rng = sel.getRangeAt(0);
+      // is this bracket COMPLETING a pair around the selection ([txt] → [[txt]])?
+      const chBefore = rng.startContainer.nodeType === 3 ? rng.startContainer.textContent[rng.startOffset - 1] : '';
+      const chAfter = rng.endContainer.nodeType === 3 ? rng.endContainer.textContent[rng.endOffset] : '';
+      const completesPair = chBefore === e.data && chAfter === CLOSE[e.data];
       const txt = sel.toString();
       document.execCommand('insertText', false, e.data + txt + CLOSE[e.data]);
-      sel.modify('move', 'backward', 'character');   // step inside the fresh close…
-      for (let i = 0; i < txt.length; i++) sel.modify('extend', 'backward', 'character');   // …and reselect
-      scheduleCommit(ctx.el);
-      window.editorInputHook?.(ctx);
+      if (completesPair) {
+        // pair done → park the caret at the text's end (inside the closes), so the
+        // [[/(( autocomplete opens FILTERED by the wrapped text, like normal typing
+        sel.modify('move', 'backward', 'character');
+        scheduleCommit(ctx.el);
+        window.editorInputHook?.(ctx);
+      } else {
+        // first bracket → keep the text selected so the next one nests around it
+        sel.modify('move', 'backward', 'character');
+        for (let i = 0; i < txt.length; i++) sel.modify('extend', 'backward', 'character');
+        scheduleCommit(ctx.el);
+      }
       return;
     }
     if (!sel.getRangeAt(0).collapsed) return;
