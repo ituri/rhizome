@@ -3244,10 +3244,108 @@ function openExportMenu(anchor) {
   });
 }
 
+/* ---------------- Q0. customizable topbar ----------------
+   Right-click an icon to move it into the ⋯ menu; click it there to bring it
+   back. Everything (search box included) reorders by drag & drop; the ⋯ menu
+   itself is pinned to the far right. Stored as settings.topbar {order, hidden}. */
+const TOPBAR_ITEMS = {
+  search: { el: '#searchbox', label: 'Search' },
+  home: { el: '#btn-home', label: 'Journal' },
+  calendar: { el: '#btn-calendar', label: 'Jump to a day' },
+  star: { el: '#btn-star', label: 'Star this page' },
+  sync: { el: '#save-state', label: 'Sync status' },
+  help: { el: '#btn-help', label: 'Keyboard shortcuts' },
+  theme: { el: '#btn-theme', label: 'Light/dark mode' },
+  rightbar: { el: '#btn-rightbar', label: 'Right sidebar' },
+};
+const TOPBAR_DEFAULT = Object.keys(TOPBAR_ITEMS);
+
+function topbarCfg() { return settings.topbar = settings.topbar || {}; }
+function topbarHidden() { return (topbarCfg().hidden || []).filter(k => TOPBAR_ITEMS[k] && k !== 'search'); }
+
+function applyTopbar() {
+  const bar = $('.topbar-right');
+  const hidden = new Set(topbarHidden());
+  const order = (topbarCfg().order || []).filter(k => TOPBAR_ITEMS[k]);
+  for (const k of TOPBAR_DEFAULT) if (!order.includes(k)) order.push(k);
+  for (const k of order) {
+    const el = $(TOPBAR_ITEMS[k].el);
+    el.style.display = hidden.has(k) ? 'none' : '';
+    bar.insertBefore(el, $('#btn-menu'));
+  }
+  bar.append($('#btn-menu'));   // the restore home must never move or vanish
+}
+
+function restoreTopbarIcon(key) {
+  const cfg = topbarCfg();
+  cfg.hidden = (cfg.hidden || []).filter(k => k !== key);
+  saveSettings();
+  applyTopbar();
+}
+
+if (!SHARE_TOKEN) {
+  const bar = $('.topbar-right');
+  let tbDragKey = null;
+  for (const [k, v] of Object.entries(TOPBAR_ITEMS)) {
+    const el = $(v.el);
+    el.dataset.tbKey = k;
+    // draggable only when the grab is not inside the search input (text selection)
+    el.addEventListener('pointerdown', e => { el.draggable = !e.target.closest('input'); });
+    el.addEventListener('dragstart', e => {
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', k);
+      el.classList.add('tb-dragging');
+      tbDragKey = k;
+    });
+    el.addEventListener('dragend', () => {
+      el.classList.remove('tb-dragging');
+      el.draggable = false;
+      tbDragKey = null;
+      topbarCfg().order = [...bar.children].map(c => c.dataset.tbKey).filter(Boolean);
+      saveSettings();
+    });
+  }
+  bar.addEventListener('dragover', e => {
+    if (!tbDragKey) return;
+    e.preventDefault();
+    const dragEl = $(TOPBAR_ITEMS[tbDragKey].el);
+    const next = [...bar.children].find(c =>
+      c !== dragEl && c.dataset.tbKey && c.style.display !== 'none'
+      && e.clientX < c.getBoundingClientRect().left + c.getBoundingClientRect().width / 2);
+    bar.insertBefore(dragEl, next || $('#btn-menu'));
+  });
+  bar.addEventListener('drop', e => { if (tbDragKey) e.preventDefault(); });
+  bar.addEventListener('contextmenu', e => {
+    const hit = Object.entries(TOPBAR_ITEMS).find(([, v]) => e.target.closest(v.el));
+    if (!hit) return;
+    e.preventDefault();
+    const [k, v] = hit;
+    if (k === 'search') { showToast('Search stays in the toolbar (it is the Ctrl+U target) — but you can drag it'); return; }
+    const cfg = topbarCfg();
+    cfg.hidden = [...new Set([...(cfg.hidden || []), k])];
+    saveSettings();
+    applyTopbar();
+    showToast(`${v.label} moved to the ⋯ menu`, { label: 'Undo', fn: () => restoreTopbarIcon(k) });
+  });
+}
+
 $('#btn-menu').addEventListener('click', e => {
   if (currentPopover) { closeAllPopovers(); return; }
   openPopover(e.currentTarget, pop => {
     pop.append(menuItem('Settings…', icon('settings'), () => showSettings()));
+    const tbHidden = topbarHidden();
+    if (tbHidden.length && !SHARE_TOKEN) {
+      pop.append(document.createElement('hr'));
+      const head = document.createElement('div');
+      head.className = 'pop-title';
+      head.textContent = 'Hidden toolbar icons — click to restore';
+      pop.append(head);
+      for (const k of tbHidden) {
+        const svg = $(TOPBAR_ITEMS[k].el).querySelector('svg');
+        const ic = k === 'sync' ? '<span class="save-dot"></span>' : svg ? svg.outerHTML : '·';
+        pop.append(menuItem(TOPBAR_ITEMS[k].label, ic, () => restoreTopbarIcon(k)));
+      }
+    }
     if (!SHARE_TOKEN) {
       pop.append(document.createElement('hr'));
       pop.append(menuItem('Quick capture', icon('edit'), () => window.showCapture(), { hint: 'Ctrl+Shift+Space' }));
@@ -3285,6 +3383,7 @@ $('#btn-menu').addEventListener('click', e => {
 
 async function init() {
   applyTheme();
+  applyTopbar();
   document.body.classList.toggle('sidebar-mobile', innerWidth < 900);
   if (SHARE_TOKEN) {
     $('#btn-sidebar').hidden = true;

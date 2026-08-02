@@ -245,6 +245,10 @@ html.no-anim.theme-flip *, html.no-anim.theme-flip *::before, html.no-anim.theme
   transition: none !important;
 }
 
+/* topbar customization: the dragged icon ghosts while it rides along */
+.topbar-right .tb-dragging { opacity: 0.35; }
+.popover .ic .save-dot { display: inline-block; }
+
 /* theme toggle: moon while light (click → dark), sun while dark */
 #btn-theme .ic-sun { display: none; }
 [data-theme="dark"] #btn-theme .ic-sun { display: initial; }
