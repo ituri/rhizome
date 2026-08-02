@@ -133,6 +133,22 @@ const srv = spawn('node', [path.join(__dirname, '..', 'server.js')], {
     assert(bad.isError, 'a non-ISO date is rejected');
   }
 
+  /* ---- argument validation: wrong calls fail loudly instead of silently no-matching ---- */
+  r = await callTool('search', {});
+  assert(r.isError && /missing required argument: query/.test(r.data), `search without query errors (${JSON.stringify(r.data)})`);
+  r = await callTool('search', { q: 'anything' });
+  assert(r.isError && /unknown argument: q/.test(r.data) && /valid: query/.test(r.data), 'a misspelled argument names the valid ones');
+
+  /* ---- duplicate-page guard: top-level create refuses an existing title ---- */
+  const pg1 = await callTool('create_node', { text: 'Unique Page' });
+  assert(!pg1.isError && pg1.data.id, 'a fresh top-level page is created');
+  const pg2 = await callTool('create_node', { text: 'unique page' });
+  assert(pg2.isError && String(pg2.data).includes(pg1.data.id), `a same-titled page (case-insensitive) is refused and names the existing id (${JSON.stringify(pg2.data)})`);
+  const pg3 = await callTool('create_node', { text: 'Unique Page', allow_duplicate: true });
+  assert(!pg3.isError && pg3.data.id && pg3.data.id !== pg1.data.id, 'allow_duplicate:true overrides the guard');
+  const kid = await callTool('create_node', { parent: pg1.data.id, text: 'Unique Page' });
+  assert(!kid.isError && kid.data.id, 'same text under a non-root parent is untouched by the guard');
+
   /* ---- token in the PATH (/mcp/<token>) — claude.ai connectors can't set headers ---- */
   const pr = await fetch(base + '/mcp/' + AGENT, {
     method: 'POST',

@@ -898,7 +898,7 @@ function apiSearch(doc, q, limit) {
       walk(c, [...path, plain || 'Untitled']);
     }
   };
-  walk('root', []);
+  walk(doc.root || 'root', []);
   return out.slice(0, limit || 50);
 }
 
@@ -1079,7 +1079,7 @@ const MCP_TOOLS = [
   { name: 'get_node', description: 'Read a single node by id. With tree=true, returns the whole subtree (optionally limited by depth).',
     inputSchema: { type: 'object', properties: { id: { type: 'string' }, tree: { type: 'boolean', description: 'include descendants' }, depth: { type: 'integer', description: 'subtree depth limit when tree=true' } }, required: ['id'] } },
   { name: 'create_node', description: 'Create a node under a parent (default root). Text is inline HTML-ish markup; [[Page]] links and #tags work. Returns the new node.',
-    inputSchema: { type: 'object', properties: { parent: { type: 'string', description: "parent node id (default 'root')" }, text: { type: 'string' }, note: { type: 'string' }, done: { type: 'boolean' }, format: { type: 'string', description: 'bullet | todo | h1 | h2 | h3 | quote | codeblock | number | board' }, index: { type: 'integer', description: 'position among siblings (default end)' } }, required: ['text'] } },
+    inputSchema: { type: 'object', properties: { parent: { type: 'string', description: "parent node id (default 'root')" }, text: { type: 'string' }, note: { type: 'string' }, done: { type: 'boolean' }, format: { type: 'string', description: 'bullet | todo | h1 | h2 | h3 | quote | codeblock | number | board' }, index: { type: 'integer', description: 'position among siblings (default end)' }, allow_duplicate: { type: 'boolean', description: 'top-level only: create the page even when one with the same title exists' } }, required: ['text'] } },
   { name: 'update_node', description: 'Edit a node in place: change its text, note, done state, format or collapsed flag. Only the fields you pass are changed.',
     inputSchema: { type: 'object', properties: { id: { type: 'string' }, text: { type: 'string' }, note: { type: 'string' }, done: { type: 'boolean' }, format: { type: 'string' }, collapsed: { type: 'boolean' } }, required: ['id'] } },
   { name: 'move_node', description: 'Move a node (and its subtree) under a new parent, optionally at a given index.',
@@ -1177,6 +1177,13 @@ async function mcpCallTool(id, params, g, scope) {
   const ok = obj => mcpResult(id, { content: [{ type: 'text', text: typeof obj === 'string' ? obj : JSON.stringify(obj, null, 2) }] });
   const fail = message => mcpResult(id, { content: [{ type: 'text', text: 'Error: ' + message }], isError: true });
   if (MCP_WRITE_TOOLS.has(name) && scope !== 'write') return fail('this API key is read-only; create a write-scoped key to use ' + name);
+  // a missing required argument must fail loudly — treating it as empty once turned a
+  // duplicate-page check into a silent no-match (search without `query` returned [])
+  const tool = MCP_TOOLS.find(t => t.name === name);
+  const unknown = Object.keys(args).filter(k => tool && !(k in tool.inputSchema.properties));
+  if (unknown.length) return fail(`unknown argument${unknown.length > 1 ? 's' : ''}: ${unknown.join(', ')} — valid: ${Object.keys(tool.inputSchema.properties).join(', ')}`);
+  const missing = (tool?.inputSchema.required || []).filter(k => args[k] == null);
+  if (missing.length) return fail(`missing required argument${missing.length > 1 ? 's' : ''}: ${missing.join(', ')}`);
   try {
     switch (name) {
       case 'search': {
@@ -1209,6 +1216,13 @@ async function mcpCallTool(id, params, g, scope) {
         const now = Date.now();
         const node = { id: uid(), text: sanitizeServerHtml(String(args.text || '')), note: args.note != null ? String(args.note) : null, done: !!args.done, collapsed: false, children: [], c: now, m: now };
         if (args.format) node.format = String(args.format);
+        // top-level nodes are pages: refuse a second page with the same title unless
+        // explicitly forced, so agents can't accidentally shadow an existing page
+        if ((parent === (doc.root || 'root')) && !args.allow_duplicate) {
+          const title = serverPlain(node.text).trim().toLowerCase();
+          const dup = title && (doc.nodes[parent].children || []).find(cid => serverPlain(doc.nodes[cid]?.text || '').trim().toLowerCase() === title);
+          if (dup) return fail(`a page with this title already exists: ${dup} — add to it, or pass allow_duplicate:true to create a second page anyway`);
+        }
         doc.nodes[node.id] = node;
         nodeInsert(doc, parent, args.index, node.id);
         commitDoc(g, doc, 'mcp');
