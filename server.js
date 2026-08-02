@@ -1127,9 +1127,11 @@ async function mcpDispatch(m, g, scope, req) {
           title: 'Rhizome',
           websiteUrl: mcpOrigin,
           // connector UIs (claude.ai) prefer declared icons over favicon guessing
+          // no `sizes`: the field's type differs between spec revisions (string vs array) —
+          // a strict client that fails to parse it would drop the whole declaration
           icons: [
-            { src: mcpOrigin + '/icon-192.png', mimeType: 'image/png', sizes: ['192x192'] },
-            { src: mcpOrigin + '/icon-512.png', mimeType: 'image/png', sizes: ['512x512'] },
+            { src: mcpOrigin + '/icon-192.png', mimeType: 'image/png' },
+            { src: mcpOrigin + '/icon-512.png', mimeType: 'image/png' },
           ],
         },
         instructions: 'Rhizome is a page-based outliner. Call list_pages to discover pages, search to find nodes, get_node (tree=true) to read a subtree, then the write tools to edit. Journal days live under the calendar, NOT in list_pages — call the journal tool (today by default) to read a day; always read the full subtree before concluding a day is empty. Node ids are opaque strings; the tree lives in each node\'s children array.',
