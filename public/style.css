@@ -2906,3 +2906,60 @@ body.rightbar-open .rightbar {
   border: 1px solid var(--line-soft, var(--line)); border-radius: 5px;
   padding: 1px 6px; white-space: nowrap; letter-spacing: 0.02em;
 }
+
+/* ================= Skin: Roam (built-in Blueprint palette) =================
+   The full Roam lookalike as a Settings → Appearance → Skin choice — the same
+   palette swap Phil's injected rhizome/css page pioneered, shipped so it works
+   on every graph and device. [data-skin="roam"] (0,2,0 with the :not/[data-theme]
+   qualifiers) outranks both the :root defaults and the accent/theme attributes. */
+[data-skin="roam"]:not([data-theme="dark"]) {
+  --bg: #ffffff;
+  --bg-raised: #ffffff;
+  --ink: #182026;             /* Blueprint text (dark-gray1) */
+  --ink-soft: #394b59;        /* dark-gray5 */
+  --ink-faint: #8a9ba8;       /* gray3 */
+  --line: #e1e8ed;            /* light-gray3 */
+  --line-soft: #ebf1f5;       /* light-gray4 */
+  --accent: #106ba3;          /* blue2 — page links, tags, buttons */
+  --accent-soft: rgba(16, 107, 163, 0.12);
+  --accent-softer: rgba(16, 107, 163, 0.07);
+  --mention: #5c7080;
+  --mention-soft: rgba(92, 112, 128, 0.12);
+  --done: #a7b6c2;
+  --halo: rgba(167, 182, 194, 0.5);
+  --mark: #fbe38b;
+  --sidebar-bg: #fafbfc;
+}
+[data-skin="roam"][data-theme="dark"] {
+  --bg: #282c34;              /* Roam dark canvas */
+  --bg-raised: #30404d;       /* Blueprint dark popover */
+  --ink: #d8e1e8;
+  --ink-soft: #a7b6c2;
+  --ink-faint: #738694;
+  --line: #394b59;
+  --line-soft: #323e4c;
+  --accent: #61a5d1;          /* Roam's dark-mode link blue */
+  --accent-soft: rgba(97, 165, 209, 0.16);
+  --accent-softer: rgba(97, 165, 209, 0.09);
+  --mention: #a7b6c2;
+  --mention-soft: rgba(167, 182, 194, 0.15);
+  --done: #5c7080;
+  --halo: rgba(138, 155, 168, 0.4);
+  --mark: #8a6d2a;
+  --sidebar-bg: #21252b;
+}
+[data-skin="roam"] {
+  --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --serif: var(--sans);       /* Roam has no serif */
+}
+[data-skin="roam"] .content a { text-decoration: none; }
+[data-skin="roam"] .content a:hover { text-decoration: underline; }
+[data-skin="roam"] .tag { font-weight: 500; }
+[data-skin="roam"]:not([data-theme="dark"]) .bullet .dot { background: #a7b6c2; }
+[data-skin="roam"][data-theme="dark"] .bullet .dot { background: #5c7080; }
+[data-skin="roam"]:not([data-theme="dark"]) a.block-ref { background: #f0f3f5; border-radius: 4px; padding: 0 3px; }
+[data-skin="roam"][data-theme="dark"] a.block-ref { background: rgba(255, 255, 255, 0.08); border-radius: 4px; padding: 0 3px; }
+[data-skin="roam"] .item.fmt-h1 > .row > .content,
+[data-skin="roam"] .item.fmt-h2 > .row > .content,
+[data-skin="roam"] .item.fmt-h3 > .row > .content { font-weight: 700; }
+[data-skin="roam"] .zoom-title { font-weight: 800; letter-spacing: -0.01em; }

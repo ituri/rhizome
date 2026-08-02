@@ -4899,6 +4899,8 @@ function applyTheme() {
   const mode = settings.theme === 'auto' ? (darkMQ.matches ? 'dark' : 'light') : settings.theme;
   const html = document.documentElement;
   html.dataset.theme = mode;
+  if (settings.skin && settings.skin !== 'default') html.dataset.skin = settings.skin;
+  else delete html.dataset.skin;
   if (settings.accent && settings.accent !== 'terracotta') html.dataset.accent = settings.accent;
   else delete html.dataset.accent;
   if (settings.font && settings.font !== 'default') html.dataset.font = settings.font;

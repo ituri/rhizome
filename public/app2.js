@@ -3073,10 +3073,12 @@ function showSettings(initialTab) {
 
   addTab('Appearance', () => {
     let g = group('Theme & colour');
+    choice(g, 'Skin', [['Rhizome', 'default'], ['Roam', 'roam']],
+      () => settings.skin || 'default', v => { settings.skin = v; applyTheme(); });
     choice(g, 'Theme', [['Light', 'light'], ['Auto', 'auto'], ['Dark', 'dark']],
       () => settings.theme, v => { settings.theme = v; applyTheme(); });
     choice(g, 'Accent', [['Clay', 'terracotta'], ['Sage', 'sage'], ['Indigo', 'indigo'], ['Ink', 'ink']],
-      () => settings.accent, v => { settings.accent = v; applyTheme(); });
+      () => settings.accent, v => { settings.accent = v; applyTheme(); }); // inert under the Roam skin (accent is pinned to Roam blue)
     choice(g, 'Font', [['Sans', 'default'], ['Serif', 'serif'], ['System', 'system'], ['Mono', 'mono']],
       () => settings.font, v => { settings.font = v; applyTheme(); });
     g = group('Layout');
