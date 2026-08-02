@@ -366,8 +366,13 @@ window.buildSotaMini = function buildSotaMini(n) {
     entry.map = L.map(el, {
       zoomControl: false, attributionControl: false, dragging: false, scrollWheelZoom: false,
       doubleClickZoom: false, boxZoom: false, keyboard: false, tap: false, touchZoom: false,
-    }).setView([c.lat, c.lon], 13);   // a summit wants more context than a street address
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(entry.map);
+    }).setView([c.lat, c.lon], 11);   // wide terrain context, like the sotl.as summit view
+    // topo styles like sotl.as uses: Norway gets the same Kartverket tiles sotl.as itself
+    // renders there; everywhere else OpenTopoMap is the closest keyless topo look
+    (ref.startsWith('LA/')
+      ? L.tileLayer('https://cache.kartverket.no/v1/wmts/1.0.0/topo/default/webmercator/{z}/{y}/{x}.png', { maxZoom: 18 })
+      : L.tileLayer('https://tile.opentopomap.org/{z}/{x}/{y}.png', { maxZoom: 17 })
+    ).addTo(entry.map);
     L.circleMarker([c.lat, c.lon], { radius: 6, weight: 2, color: '#bf562f', fillColor: '#bf562f', fillOpacity: 0.85 }).addTo(entry.map);
     setTimeout(() => entry.map.invalidateSize(), 60);
   }).catch(() => { el.remove(); sotaMiniCache.delete(n.id); });
