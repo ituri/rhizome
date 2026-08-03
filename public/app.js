@@ -1749,7 +1749,45 @@ let treeFtsThreshold = 4000;   // above this the in-tree search bar uses the SQL
 let searchSeq = 0;             // guards against a stale FTS response clobbering a newer query
 
 function computeSearch() {
-  if (!searchActive()) { state.matchSet = null; state.openSet = null; state.matchCount = 0; state.query = null; state.ftsCandidates = null; return; }
+  if (!searchActive()) { state.matchSet = null; state.openSet = null; state.matchCount = 0; state.query = null; state.ftsCandidates = null; state.semantic = null; return; }
+
+  // "~frage" → meaning-based search: the server ranks by embedding similarity (all local),
+  // and we render the returned ids in that order through the normal results view
+  if (!SHARE_TOKEN && state.search.trim().startsWith('~')) {
+    const q = state.search.trim().slice(1).trim();
+    state.query = null;
+    if (q.length < 2) { state.matchSet = null; state.openSet = null; state.matchCount = 0; return; }
+    const cache = state.semantic;
+    if (!cache || cache.q !== q) {
+      const seq = ++searchSeq;
+      state.semantic = { q, ids: null, pending: true, error: null };
+      fetch(apiBase + '/semantic?q=' + encodeURIComponent(q) + '&limit=40')
+        .then(r => r.ok ? r.json() : r.json().then(e => Promise.reject(new Error(e.error || r.status))))
+        .then(({ results }) => {
+          if (seq !== searchSeq) return;
+          state.semantic = { q, ids: (results || []).map(x => x.id), pending: false, error: null };
+          renderPage();
+        })
+        .catch(err => {
+          if (seq !== searchSeq) return;
+          state.semantic = { q, ids: [], pending: false, error: err.message };
+          renderPage();
+        });
+      return;   // keep the previous view until the answer lands
+    }
+    if (cache.pending) return;
+    const matches = new Set((cache.ids || []).filter(id => doc.nodes[id]));   // score order preserved
+    const open = new Set();
+    for (const id of matches) {
+      let p = parentOf(id);
+      while (p && p !== HOME && !open.has(p)) { open.add(p); p = parentOf(p); }
+    }
+    state.matchSet = matches;
+    state.openSet = open;
+    state.matchCount = matches.size;
+    return;
+  }
+  state.semantic = null;
   state.query = parseQuery(state.search);
   const segs = state.query.segments.filter(s => s.length);
   if (!segs.length) { state.matchSet = null; state.openSet = null; state.matchCount = 0; state.query = null; return; }

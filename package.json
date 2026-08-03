@@ -45,6 +45,7 @@
     "test:blockreveal": "node tests/test-block-reveal.js",
     "test:table": "node tests/test-table.js",
     "test:thumbs": "node tests/test-thumbs.js",
+    "test:semantic": "node tests/test-semantic.js",
     "test:dailytemplate": "node tests/test-daily-template.js",
     "test:namespace": "node tests/test-namespace.js",
     "test:fonts": "node tests/test-fonts.js",

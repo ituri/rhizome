@@ -49,6 +49,16 @@ CREATE TABLE IF NOT EXISTS versions (
   doc      TEXT NOT NULL              -- JSON { root, nodes } of the page subtree at that time
 );
 CREATE INDEX IF NOT EXISTS versions_page ON versions(page_id, id DESC);
+
+-- semantic search index: one L2-normalised embedding per node (cosine = dot product).
+-- the hash is of the embedded text, so re-indexing skips unchanged nodes.
+CREATE TABLE IF NOT EXISTS embeddings (
+  node_id TEXT PRIMARY KEY,
+  hash    TEXT NOT NULL,
+  dim     INTEGER NOT NULL,
+  vec     BLOB NOT NULL,               -- Float32Array, little-endian
+  ts      INTEGER NOT NULL
+);
 `;
 
 class Store {
@@ -89,6 +99,29 @@ class Store {
   historyLatestDoc(pageId) { const r = this.db.prepare('SELECT doc FROM versions WHERE page_id=? ORDER BY id DESC LIMIT 1').get(pageId); return r ? r.doc : null; }
   historyList(pageId) { return this.db.prepare('SELECT id, ts, device FROM versions WHERE page_id=? ORDER BY id DESC LIMIT 100').all(pageId); }
   historyGet(pageId, id) { const r = this.db.prepare('SELECT doc FROM versions WHERE page_id=? AND id=?').get(pageId, id); return r ? r.doc : null; }
+
+  // ---- semantic index ----
+  embHashes() {
+    const out = new Map();
+    for (const r of this.db.prepare('SELECT node_id, hash FROM embeddings').all()) out.set(r.node_id, r.hash);
+    return out;
+  }
+  embPut(nodeId, hash, vec) {   // vec: Float32Array (already normalised)
+    this.db.prepare('INSERT INTO embeddings(node_id,hash,dim,vec,ts) VALUES(?,?,?,?,?) ON CONFLICT(node_id) DO UPDATE SET hash=excluded.hash, dim=excluded.dim, vec=excluded.vec, ts=excluded.ts')
+      .run(nodeId, hash, vec.length, Buffer.from(vec.buffer, vec.byteOffset, vec.byteLength), Date.now());
+  }
+  embDelete(ids) {
+    const st = this.db.prepare('DELETE FROM embeddings WHERE node_id=?');
+    for (const id of ids) st.run(id);
+  }
+  embCount() { return this.db.prepare('SELECT COUNT(*) c FROM embeddings').get().c; }
+  // every stored vector, for the brute-force cosine scan (fine well past 100k nodes)
+  embAll() {
+    return this.db.prepare('SELECT node_id, dim, vec FROM embeddings').all().map(r => ({
+      id: r.node_id,
+      vec: new Float32Array(r.vec.buffer, r.vec.byteOffset, r.dim),
+    }));
+  }
 
   get version() { return parseInt(this.meta('version') || '0', 10); }
 

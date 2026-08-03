@@ -409,6 +409,7 @@ function commitDoc(g, doc, origin) {
   persist(g);
   broadcast(g, { version: g.store.version, origin });
   g.historyAll = true; armHistory(g);
+  armEmbedIndex(g);
   return g.store.version;
 }
 
@@ -427,6 +428,7 @@ function commitOps(g, ops, origin) {
   broadcast(g, { version: g.store.version, ops, origin });
   for (const op of ops) if (op.node) g.historyNodes.add(op.node); // cheap; pages resolved on snapshot
   armHistory(g);
+  armEmbedIndex(g);
   return g.store.version;
 }
 
@@ -1166,6 +1168,117 @@ async function fetchRemoteFile(rawUrl) {
     };
   }
   throw new Error('too many redirects');
+}
+
+/* ---------------- semantic search: local embeddings + a brute-force cosine scan ----------------
+   Everything stays on this host: RHIZOME_EMBEDDINGS_URL points at a llama.cpp server (the
+   `embedder` container) — no third party ever sees note text. Vectors are L2-normalised on
+   write, so cosine similarity is a plain dot product. Indexing is incremental: a node is only
+   re-embedded when the hash of its embedded text changes. */
+const EMBED_URL = (process.env.RHIZOME_EMBEDDINGS_URL || '').replace(/\/+$/, '');
+const EMBED_DOC_PREFIX = process.env.RHIZOME_EMBED_DOC_PREFIX || '';
+const EMBED_QUERY_PREFIX = process.env.RHIZOME_EMBED_QUERY_PREFIX || '';
+const EMBED_BATCH = parseInt(process.env.RHIZOME_EMBED_BATCH || '16', 10);
+const EMBED_MIN_CHARS = 8;          // one-word bullets carry no meaning worth indexing
+const EMBED_MAX_CHARS = 1600;       // ~512 tokens, the embedder's context
+const SEMANTIC_MIN_SCORE = parseFloat(process.env.RHIZOME_SEMANTIC_MIN_SCORE || '0.3');
+const SEMANTIC_REL_SCORE = parseFloat(process.env.RHIZOME_SEMANTIC_REL_SCORE || '0.75');
+const semanticEnabled = () => !!EMBED_URL;
+
+async function embedTexts(texts, { query = false } = {}) {
+  if (!EMBED_URL) throw new Error('semantic search is not configured (RHIZOME_EMBEDDINGS_URL)');
+  const prefix = query ? EMBED_QUERY_PREFIX : EMBED_DOC_PREFIX;
+  const r = await fetch(EMBED_URL + '/v1/embeddings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ input: texts.map(t => prefix + t.slice(0, EMBED_MAX_CHARS)) }),
+    signal: AbortSignal.timeout(120000),
+  });
+  if (!r.ok) throw new Error('embedder HTTP ' + r.status);
+  const j = await r.json();
+  const rows = (j.data || []).sort((a, b) => (a.index || 0) - (b.index || 0));
+  if (rows.length !== texts.length) throw new Error('embedder returned ' + rows.length + ' of ' + texts.length);
+  return rows.map(d => {
+    const v = Float32Array.from(d.embedding);
+    let n = 0;
+    for (const x of v) n += x * x;
+    n = Math.sqrt(n) || 1;
+    for (let i = 0; i < v.length; i++) v[i] /= n;
+    return v;
+  });
+}
+
+// the text we embed for a node: its own plain text plus its note (headings/short bullets get
+// their parent as context, so "Q8_0" under "Embedding-Modelle" isn't a meaningless island)
+function embedTextFor(doc, id) {
+  const n = doc.nodes[id];
+  if (!n || n.mirror || n.cal) return '';
+  const own = (serverPlain(n.text) + (n.note ? '\n' + n.note : '')).trim();
+  if (own.length < EMBED_MIN_CHARS) return '';
+  const parent = nodeParent(doc, id);
+  const ctx = parent && parent !== doc.root ? serverPlain(doc.nodes[parent]?.text || '').trim() : '';
+  return ctx ? `${ctx} — ${own}` : own;
+}
+
+const embedQueue = new Map();   // graphId → { timer, running }
+function armEmbedIndex(g) {
+  if (!semanticEnabled()) return;
+  const s = embedQueue.get(g.id) || {};
+  if (s.timer || s.running) return;
+  s.timer = setTimeout(() => { s.timer = null; runEmbedIndex(g).catch(e => console.error('embed index:', e.message)); }, 4000);
+  embedQueue.set(g.id, s);
+}
+
+async function runEmbedIndex(g) {
+  const s = embedQueue.get(g.id) || {};
+  if (s.running) return;
+  s.running = true; embedQueue.set(g.id, s);
+  try {
+    const doc = ensureDoc(g);
+    const have = g.db.embHashes();
+    const want = new Map();   // id → { text, hash }
+    for (const id of Object.keys(doc.nodes)) {
+      const text = embedTextFor(doc, id);
+      if (!text) continue;
+      want.set(id, { text, hash: crypto.createHash('sha1').update(text).digest('hex').slice(0, 16) });
+    }
+    const stale = [...have.keys()].filter(id => !want.has(id));
+    if (stale.length) g.db.embDelete(stale);
+    const todo = [...want.entries()].filter(([id, w]) => have.get(id) !== w.hash);
+    for (let i = 0; i < todo.length; i += EMBED_BATCH) {
+      const slice = todo.slice(i, i + EMBED_BATCH);
+      const vecs = await embedTexts(slice.map(([, w]) => w.text));
+      g.db.tx(() => { slice.forEach(([id, w], k) => g.db.embPut(id, w.hash, vecs[k])); });
+      await new Promise(r => setTimeout(r, 50));   // stay friendly to the 2-core host
+    }
+    if (todo.length || stale.length) console.log(`[embed] ${g.id}: +${todo.length} ~${stale.length} (${g.db.embCount()} indexed)`);
+  } finally {
+    s.running = false; embedQueue.set(g.id, s);
+    // changes that landed while we were indexing → one more pass
+    if (s.dirty) { s.dirty = false; armEmbedIndex(g); }
+  }
+}
+
+async function semanticSearch(g, q, limit) {
+  const [qv] = await embedTexts([q], { query: true });
+  const rows = g.db.embAll();
+  const doc = ensureDoc(g);
+  const scored = [];
+  for (const r of rows) {
+    if (r.vec.length !== qv.length || !doc.nodes[r.id]) continue;
+    let dot = 0;
+    for (let i = 0; i < qv.length; i++) dot += qv[i] * r.vec[i];
+    scored.push({ id: r.id, score: dot });
+  }
+  scored.sort((a, b) => b.score - a.score);
+  // cosine always ranks *something* first, so cut weak hits: an absolute floor plus a
+  // relative one (a result far below the best match is noise, not an answer)
+  const top = scored.length ? scored[0].score : 0;
+  const floor = Math.max(SEMANTIC_MIN_SCORE, top * SEMANTIC_REL_SCORE);
+  return scored.filter(x => x.score >= floor).slice(0, limit).map(x => ({
+    ...nodeView(doc, x.id),
+    score: Math.round(x.score * 1000) / 1000,
+  }));
 }
 
 function mcpResult(id, result) { return { jsonrpc: '2.0', id, result }; }
@@ -2439,6 +2552,25 @@ const server = http.createServer(async (req, res) => {
         if (seg === 'search' && method === 'GET') {
           const q = new URL(url, 'http://x').searchParams.get('q') || '';
           return send(res, 200, { ids: g.db.search(q, 500) });
+        }
+        // meaning-based search over the local embedding index (see semanticSearch)
+        if (seg === 'semantic' && method === 'GET') {
+          if (!semanticEnabled()) return send(res, 501, { error: 'semantic search is not configured on this server' });
+          const sp = new URL(url, 'http://x').searchParams;
+          const q = (sp.get('q') || '').trim();
+          if (!q) return send(res, 200, { results: [], indexed: g.db.embCount() });
+          const lim = Math.min(Math.max(parseInt(sp.get('limit') || '25', 10), 1), 100);
+          try {
+            return send(res, 200, { results: await semanticSearch(g, q, lim), indexed: g.db.embCount() });
+          } catch (e) {
+            return send(res, 502, { error: 'semantic search failed: ' + e.message });
+          }
+        }
+        // force a full (re)index pass — normally armed automatically after edits
+        if (seg === 'semantic' && method === 'POST') {
+          if (!semanticEnabled()) return send(res, 501, { error: 'semantic search is not configured on this server' });
+          runEmbedIndex(g).catch(e => console.error('embed index:', e.message));
+          return send(res, 202, { ok: true, indexed: g.db.embCount() });
         }
         if (seg === 'doc' && (method === 'PUT' || method === 'POST')) {
           const body = await readJson(req);

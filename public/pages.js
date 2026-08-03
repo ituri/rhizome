@@ -1831,6 +1831,16 @@ window.renderSearchResults = function renderSearchResults(frag) {
   const view = document.createElement('div');
   view.className = 'search-results';
 
+  // semantic mode ("~…"): say so, and surface a not-configured/offline error instead of "nothing matches"
+  if (state.semantic) {
+    const note = document.createElement('div');
+    note.className = 'search-mentions-head';
+    note.textContent = state.semantic.error
+      ? 'Semantic search unavailable: ' + state.semantic.error
+      : state.semantic.pending ? 'Searching by meaning…' : 'By meaning — closest first';
+    view.append(note);
+  }
+
   // real pages first, highlighted, with a type chip — they're the primary hit
   if (pages.length) {
     const sec = document.createElement('div');

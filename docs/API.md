@@ -59,6 +59,8 @@ to its bound graph only, at its scope (`read` → GET, `write` → all). Session
 | POST | `/api/g/:g/ops` | `{ops:[…], device}` | `{version, applied}`. Delta sync — the preferred save path. Idempotent by `op.id`. |
 | GET | `/api/g/:g/events` | — | **SSE** stream. Message: `{version, ops?, origin}`; ignore your own `origin` echo, else replay `ops` or refetch. Heartbeat `:hb` every 25s. |
 | GET | `/api/g/:g/search?q=` | — | `{ids:[…]}` — FTS5-backed, up to 500. |
+| GET | `/api/g/:g/semantic?q=&limit=` | — | `{results:[{id, plain, …, score}], indexed}` — meaning-based search over the local embedding index, ranked by cosine similarity (weak hits are cut by a score floor). **501** if `RHIZOME_EMBEDDINGS_URL` is unset. |
+| POST | `/api/g/:g/semantic` | — | `{ok, indexed}` — force a full re-index pass (normally armed automatically ~4s after edits). |
 | GET/POST/DELETE | `/api/g/:g/shares[/:token]` | `{nodeId, mode}` | share a subtree by secret link (see below). |
 | POST | `/api/g/:g/capture` | `{text}` or raw | `{ok, captured}` — capture into this graph. |
 | GET | `/api/g/:g/history/:pageId` | — | `{versions:[{id, ts, device}]}` — page version snapshots, newest first. |
@@ -70,6 +72,15 @@ edit-session per page, newest 60 kept). Each carries the editing device's name �
 as `deviceName` in the `ops`/`doc` bodies (a page also counts a journal day as its own page).
 
 Access is denied with **403** for a non-member (or a key bound to another graph), **401** when unauthenticated.
+
+**Semantic search** is optional and fully local: set `RHIZOME_EMBEDDINGS_URL` to an
+OpenAI-compatible `/v1/embeddings` endpoint (the bundled `embedder` container runs
+llama.cpp with Qwen3-Embedding-0.6B on CPU) — note text never leaves the host. Vectors are
+L2-normalised and stored per node in the graph's SQLite (`embeddings` table), keyed by a hash
+of the embedded text, so re-indexing only touches changed nodes. Tunables:
+`RHIZOME_EMBED_DOC_PREFIX` / `RHIZOME_EMBED_QUERY_PREFIX` (model-specific prompt prefixes),
+`RHIZOME_EMBED_BATCH`, `RHIZOME_SEMANTIC_MIN_SCORE`, `RHIZOME_SEMANTIC_REL_SCORE`.
+In the web UI a query starting with `~` runs in this mode.
 
 **Data model:** one flat node map. `doc.nodes[id] = {id, text, note, done, collapsed, children:[ids], format?, mirror?, geo?, c, m, …}`; the tree is the `children` id-arrays; `doc.root` is the root id. Pages are children of root; the calendar subtree (`cal:'day'` nodes with `cd:'YYYY-MM-DD'`) holds daily notes. A location page may carry `geo:"raw"` — the user tagged it coordinates-only, so clients must not reverse-geocode/retitle it.
 
