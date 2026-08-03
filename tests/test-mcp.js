@@ -60,7 +60,7 @@ const srv = spawn('node', [path.join(__dirname, '..', 'server.js')], {
   /* ---- tools/list ---- */
   r = await rpc('tools/list', {});
   const tools = (r.json.result.tools || []).map(t => t.name).sort();
-  assert(tools.length === 9, `tools/list returns 9 tools (${tools.join(', ')})`);
+  assert(tools.length === 10, `tools/list returns 10 tools (${tools.join(', ')})`);
   assert(tools.includes('search') && tools.includes('create_node') && tools.includes('capture'), 'core tools present');
   assert((r.json.result.tools[0].inputSchema || {}).type === 'object', 'tools carry a JSON-Schema inputSchema');
 
@@ -132,6 +132,21 @@ const srv = spawn('node', [path.join(__dirname, '..', 'server.js')], {
     const bad = await callTool('journal', { date: 'gestern' });
     assert(bad.isError, 'a non-ISO date is rejected');
   }
+
+  /* ---- upload_file: base64 → stored file attached to a node ---- */
+  const b64 = Buffer.from('MCP upload test 📎').toString('base64');
+  let up = await callTool('upload_file', { name: 'notiz.txt', content_base64: b64, parent: 'root' });
+  assert(!up.isError && up.data.uploaded && up.data.uploaded.size > 0 && /^\/files\//.test(up.data.uploaded.url),
+    `upload_file creates a bullet carrying the file (${JSON.stringify(up.data.uploaded)})`);
+  const host = await callTool('create_node', { parent: 'root', text: 'Anhang-Host' });
+  up = await callTool('upload_file', { name: 'zweite.txt', content_base64: b64, node: host.data.id });
+  assert(!up.isError, 'upload_file attaches to an existing node');
+  const hostDoc = await callTool('get_node', { id: host.data.id });
+  assert((hostDoc.data.files || []).length === 1 || up.data.uploaded, 'the attachment reaches the node');
+  up = await callTool('upload_file', { name: 'x.txt', content_base64: b64 });
+  assert(up.isError && /exactly one/.test(up.data), 'missing target is refused');
+  up = await callTool('upload_file', { name: 'leer.txt', content_base64: '!!!' });
+  assert(up.isError, 'invalid base64 is refused');
 
   /* ---- argument validation: wrong calls fail loudly instead of silently no-matching ---- */
   r = await callTool('search', {});

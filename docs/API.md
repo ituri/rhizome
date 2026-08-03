@@ -150,11 +150,12 @@ Streamable-HTTP transport, implemented natively (no SDK — the core server stay
 | `list_pages` | read | — | top-level pages (children of root) |
 | `get_node` | read | `{id, tree?, depth?}` | one node, or its subtree with `tree:true` |
 | `journal` | read | `{date?, depth?}` | a journal day's full subtree (today by default) — "what did I write today" |
-| `create_node` | write | `{parent?, text, note?, done?, format?, index?}` | create a node (text is inline HTML-ish; `[[Page]]`/`#tag` work) |
+| `create_node` | write | `{parent?, text, note?, done?, format?, index?, allow_duplicate?}` | create a node (text is inline HTML-ish; `[[Page]]`/`#tag` work); a top-level create refuses an existing page title unless `allow_duplicate:true` |
 | `update_node` | write | `{id, text?, note?, done?, format?, collapsed?}` | edit in place (only the fields you pass) |
 | `move_node` | write | `{id, parent, index?}` | reparent a node + its subtree |
 | `delete_node` | write | `{id}` | delete a node + subtree → `{deleted}` |
 | `capture` | write | `{text}` | quick-capture into today's journal Inbox |
+| `upload_file` | write | `{name, content_base64, node? \| parent?, text?, type?}` | store a file (max 32 MB decoded) and attach it — to an existing `node`, or as a new child bullet under `parent` (files are only readable while attached) |
 
 Tool failures (unknown node, read-only key, move into own subtree) come back as a normal
 `tools/call` result with `isError:true` and a text message, not a transport error.

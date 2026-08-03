@@ -1079,7 +1079,7 @@ async function handleV1(req, res, url, g, scope) {
 
 const MCP_PROTOCOL = '2025-06-18';
 const MCP_SERVER = { name: 'rhizome', version: require('./package.json').version };
-const MCP_WRITE_TOOLS = new Set(['create_node', 'update_node', 'move_node', 'delete_node', 'capture']);
+const MCP_WRITE_TOOLS = new Set(['create_node', 'update_node', 'move_node', 'delete_node', 'capture', 'upload_file']);
 
 const MCP_TOOLS = [
   { name: 'search', description: 'Full-text search the graph. Returns matching nodes with their id, plain text, breadcrumb path and done state.',
@@ -1100,6 +1100,15 @@ const MCP_TOOLS = [
     inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } },
   { name: 'capture', description: "Quick-capture text into today's journal under an Inbox bullet (indentation nests). Handy for jotting without picking a location.",
     inputSchema: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] } },
+  { name: 'upload_file', description: 'Upload a file (base64) as a node attachment — files are only readable while attached, so pass exactly one of `node` (attach to an existing node) or `parent` (create a new child bullet carrying the file). Returns the node with its files.',
+    inputSchema: { type: 'object', properties: {
+      name: { type: 'string', description: 'file name including extension' },
+      content_base64: { type: 'string', description: 'the file content, base64-encoded (max 32 MB decoded)' },
+      node: { type: 'string', description: 'attach to this existing node' },
+      parent: { type: 'string', description: 'create a new child bullet under this node' },
+      text: { type: 'string', description: 'text for the new bullet (with `parent`; defaults to the file name)' },
+      type: { type: 'string', description: 'MIME type (default: guessed from the extension)' },
+    }, required: ['name', 'content_base64'] } },
 ];
 
 function mcpResult(id, result) { return { jsonrpc: '2.0', id, result }; }
@@ -1273,6 +1282,41 @@ async function mcpCallTool(id, params, g, scope, req, url) {
         const count = nodeDelete(doc, nid);
         commitDoc(g, doc, 'mcp');
         return ok({ deleted: count });
+      }
+      case 'upload_file': {
+        const safe = path.basename(String(args.name)).replace(/[^\w.\- ()]/g, '_').slice(0, 120) || 'file';
+        let data;
+        try { data = Buffer.from(String(args.content_base64), 'base64'); } catch { data = Buffer.alloc(0); }
+        if (!data.length) return fail('empty or invalid base64 content');
+        if (data.length > MAX_UPLOAD) return fail(`file too large (${data.length} bytes, max ${MAX_UPLOAD})`);
+        const attachTo = args.node ? String(args.node) : null;
+        const under = args.parent ? String(args.parent) : null;
+        if (!attachTo === !under) return fail('pass exactly one of `node` (attach to it) or `parent` (new child bullet)');
+        const anchor = attachTo || under;
+        if (!doc.nodes[anchor]) return fail('unknown node: ' + anchor);
+        const stored = `${crypto.randomBytes(12).toString('hex')}-${safe}`;
+        await fsp.writeFile(path.join(FILES_DIR, stored), cryptobox.encrypt(data));
+        const entry = {
+          url: `/files/${encodeURIComponent(stored)}`,
+          name: safe,
+          type: args.type ? String(args.type) : (MIME[path.extname(safe).toLowerCase()] || 'application/octet-stream'),
+          size: data.length,
+        };
+        const now = Date.now();
+        let outId;
+        if (attachTo) {
+          const n = doc.nodes[contentIdInDoc(doc, attachTo)];   // content writes hit the owner (mirror-safe)
+          n.files = [...(n.files || []), entry];
+          n.m = now;
+          outId = attachTo;
+        } else {
+          const node = { id: uid(), text: sanitizeServerHtml(String(args.text || safe)), note: null, done: false, collapsed: false, children: [], c: now, m: now, files: [entry] };
+          doc.nodes[node.id] = node;
+          nodeInsert(doc, under, undefined, node.id);
+          outId = node.id;
+        }
+        commitDoc(g, doc, 'mcp');
+        return ok({ ...nodeView(doc, outId), uploaded: entry });
       }
       case 'capture': {
         const text = String(args.text || '');
