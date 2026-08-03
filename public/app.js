@@ -3429,6 +3429,20 @@ function onKeydown(e) {
       const first = editables()[0];
       if (first) setCaretOffset(first, 'end');
     }
+    if (e.key === 'Enter' && e.shiftKey && searchEl.value.trim() && !state.readOnly) {
+      // Shift+Enter creates (or opens) a page named like the query — like the jump dialog
+      e.preventDefault();
+      const name = searchEl.value.trim();
+      window.closeSearchPanel?.();
+      commitActiveText();
+      snapshot();
+      const pid = window.getOrCreatePage(name);
+      markDirty();
+      setSearch('');
+      searchEl.blur();
+      zoomTo(pid);
+      return;
+    }
     if (e.key === 'Enter') {
       e.preventDefault();
       if (searchEl.value.trim()) { searchEl.blur(); }

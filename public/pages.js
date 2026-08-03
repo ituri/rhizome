@@ -1810,6 +1810,24 @@ window.renderSearchResults = function renderSearchResults(frag) {
   const pages = matched.filter(isPageHit);
   const mentions = matched.filter(id => !isPageHit(id));
 
+  // plain queries also surface pages by TITLE SUBSTRING and by ALIAS — the FTS candidate
+  // pass tokenizes words, so "HA" would neither reach "HomeAssistant" nor its Aliases:: HA
+  const rawQ = (state.search || '').trim().toLowerCase();
+  if (rawQ && rawQ.length >= 2 && !/[:"]/.test(rawQ)) {
+    const have = new Set(pages);
+    let extras = 0;
+    for (const pid of pagesOf()) {
+      if (extras >= 6) break;
+      if (have.has(pid) || !window.pageHasContent(pid)) continue;
+      if (plainOf(N(pid).text).trim().toLowerCase().includes(rawQ)) { pages.push(pid); have.add(pid); extras++; }
+    }
+    for (const [alias, pid] of pageAliasMap()) {
+      if (extras >= 8) break;
+      if (have.has(pid)) continue;
+      if (alias === rawQ || alias.startsWith(rawQ)) { pages.push(pid); have.add(pid); extras++; }
+    }
+  }
+
   const view = document.createElement('div');
   view.className = 'search-results';
 
