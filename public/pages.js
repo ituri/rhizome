@@ -167,14 +167,26 @@ function parseCoords(s) {
   return { lat, lon };
 }
 
+// the whole string is ONE bare coordinate pair (not just numbers somewhere inside it)
+const BARE_COORD_RE = /^-?\d{1,3}\.\d+\s*,\s*-?\d{1,3}\.\d+$/;
+function bareCoords(s) {
+  return BARE_COORD_RE.test((s || '').trim()) ? parseCoords(s) : null;
+}
+
 // a page's coordinate — in preference order (roam-atlas conventions first):
-// a "Coordinates:: lat, lon" attribute, the legacy bare-coords first bullet, the title
+// a "Coordinates:: lat, lon" attribute, a "Location::" whose value IS a bare coordinate
+// pair (Location:: is polymorphic — text geocodes, coordinates are used directly),
+// the legacy bare-coords first bullet, the title
 function pageCoords(id) {
   if (!N(id)) return null;
-  const attr = window.attrsOf(id).get('coordinates');
-  if (attr) { const c = parseCoords(attr.value); if (c) return c; }
+  const attrs = window.attrsOf(id);
+  const ca = attrs.get('coordinates');
+  if (ca) { const c = parseCoords(ca.value); if (c) return c; }
+  const la = attrs.get('location');
+  if (la) { const c = bareCoords(la.value); if (c) return c; }
+  // legacy fallbacks are anchored too: a bullet/title that IS coordinates, nothing looser
   const first = kidsOf(id)[0];
-  return (first && parseCoords(plainOf(N(first).text))) || parseCoords(plainOf(N(id).text));
+  return (first && bareCoords(plainOf(N(first).text))) || bareCoords(plainOf(N(id).text));
 }
 
 let leafletLoading;
