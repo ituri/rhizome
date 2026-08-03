@@ -1184,7 +1184,7 @@ const EMBED_DOC_PREFIX = process.env.RHIZOME_EMBED_DOC_PREFIX || '';
 const EMBED_QUERY_PREFIX = process.env.RHIZOME_EMBED_QUERY_PREFIX || '';
 const EMBED_BATCH = parseInt(process.env.RHIZOME_EMBED_BATCH || '16', 10);
 const EMBED_MIN_CHARS = 8;          // one-word bullets carry no meaning worth indexing
-const EMBED_MAX_CHARS = 1600;       // ~512 tokens, the embedder's context
+const EMBED_MAX_CHARS = parseInt(process.env.RHIZOME_EMBED_MAX_CHARS || '1000', 10);   // safely inside the embedder's context
 const SEMANTIC_MIN_SCORE = parseFloat(process.env.RHIZOME_SEMANTIC_MIN_SCORE || '0.3');
 const SEMANTIC_REL_SCORE = parseFloat(process.env.RHIZOME_SEMANTIC_REL_SCORE || '0.75');
 const semanticEnabled = () => !!EMBED_URL;
@@ -1249,13 +1249,29 @@ async function runEmbedIndex(g) {
     const stale = [...have.keys()].filter(id => !want.has(id));
     if (stale.length) g.db.embDelete(stale);
     const todo = [...want.entries()].filter(([id, w]) => have.get(id) !== w.hash);
+    let done = 0, skipped = 0;
     for (let i = 0; i < todo.length; i += EMBED_BATCH) {
       const slice = todo.slice(i, i + EMBED_BATCH);
-      const vecs = await embedTexts(slice.map(([, w]) => w.text));
-      g.db.tx(() => { slice.forEach(([id, w], k) => g.db.embPut(id, w.hash, vecs[k])); });
+      try {
+        const vecs = await embedTexts(slice.map(([, w]) => w.text));
+        g.db.tx(() => { slice.forEach(([id, w], k) => g.db.embPut(id, w.hash, vecs[k])); });
+        done += slice.length;
+      } catch {
+        // one oversized/odd text fails the whole batch — retry the items alone so a single
+        // bad node can never stall the index (it just stays unindexed until it changes)
+        for (const [id, w] of slice) {
+          try {
+            const [v] = await embedTexts([w.text]);
+            g.db.embPut(id, w.hash, v);
+            done++;
+          } catch { skipped++; }
+        }
+      }
       await new Promise(r => setTimeout(r, 50));   // stay friendly to the 2-core host
     }
-    if (todo.length || stale.length) console.log(`[embed] ${g.id}: +${todo.length} ~${stale.length} (${g.db.embCount()} indexed)`);
+    if (done || stale.length || skipped) {
+      console.log(`[embed] ${g.id}: +${done} ~${stale.length}${skipped ? ' skipped ' + skipped : ''} (${g.db.embCount()} indexed)`);
+    }
   } finally {
     s.running = false; embedQueue.set(g.id, s);
     // changes that landed while we were indexing → one more pass
