@@ -894,6 +894,9 @@ let crumbCurrent = null;   // the page we're on now — it joins the trail when 
 function updateCrumbs() {
   const el = document.getElementById('visit-crumbs');
   if (!el) return;
+  // settings: the trail can be switched off, and its length tuned
+  el.style.display = settings.crumbs === false ? 'none' : '';
+  if (settings.crumbs === false) { el.innerHTML = ''; return; }
   const cur = state.zoom !== ROOT ? recencyPageId(state.zoom) : null;
   if (cur !== crumbCurrent) {
     // the page we're leaving becomes the newest crumb
@@ -905,7 +908,7 @@ function updateCrumbs() {
     }
     crumbCurrent = cur;
   }
-  const items = crumbTrail.filter(id => id !== cur && N(id)).slice(-5);
+  const items = crumbTrail.filter(id => id !== cur && N(id)).slice(-(parseInt(settings.crumbCount, 10) || 5));
   el.innerHTML = '';
   items.forEach((id, i) => {
     if (i) {

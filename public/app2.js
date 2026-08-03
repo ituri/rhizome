@@ -3118,6 +3118,9 @@ function showSettings(initialTab) {
     bool(g, 'Abbreviate namespaces', () => settings.nsAbbrev === true, v => { settings.nsAbbrev = v; applyTheme(); renderPage(); window.renderSidebar?.(); });
     bool(g, 'Smooth animations', () => settings.animations !== false, v => { settings.animations = v; applyTheme(); });
     bool(g, 'Live hover preview', () => settings.hoverPreview !== false, v => { settings.hoverPreview = v; if (!v) window.__closeHoverPreview?.(); });
+    bool(g, 'Breadcrumb trail', () => settings.crumbs !== false, v => { settings.crumbs = v; window.updateCrumbs?.(); });
+    choice(g, 'Breadcrumb count', [['3', 3], ['5', 5], ['8', 8]],
+      () => parseInt(settings.crumbCount, 10) || 5, v => { settings.crumbCount = v; window.updateCrumbs?.(); });
     g = group('Custom CSS');
     const cssHint = document.createElement('div');
     cssHint.className = 'set-hint';
