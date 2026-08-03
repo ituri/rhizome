@@ -173,18 +173,28 @@ function bareCoords(s) {
   return BARE_COORD_RE.test((s || '').trim()) ? parseCoords(s) : null;
 }
 
-// a page's coordinate — in preference order (roam-atlas conventions first):
-// a "Coordinates:: lat, lon" attribute, a "Location::" whose value IS a bare coordinate
-// pair (Location:: is polymorphic — text geocodes, coordinates are used directly),
-// the legacy bare-coords first bullet, the title
+// a page's coordinates from its ATTRIBUTES only: any Location:: value that IS a bare
+// coordinate pair (Location:: is polymorphic — text geocodes, coordinates are the cache),
+// with legacy Coordinates:: still read (but no longer written)
+function pageAttrCoords(id) {
+  const attrs = window.attrsOf(id);
+  for (const key of ['location', 'coordinates']) {
+    const a = attrs.get(key);
+    if (!a) continue;
+    for (const v of a.values) {
+      const c = key === 'coordinates' ? parseCoords(v.value) : bareCoords(v.value);
+      if (c) return c;
+    }
+  }
+  return null;
+}
+
+// a page's coordinate — attributes first, then the anchored legacy fallbacks
+// (a first bullet / title that IS a bare coordinate pair, nothing looser)
 function pageCoords(id) {
   if (!N(id)) return null;
-  const attrs = window.attrsOf(id);
-  const ca = attrs.get('coordinates');
-  if (ca) { const c = parseCoords(ca.value); if (c) return c; }
-  const la = attrs.get('location');
-  if (la) { const c = bareCoords(la.value); if (c) return c; }
-  // legacy fallbacks are anchored too: a bullet/title that IS coordinates, nothing looser
+  const ac = pageAttrCoords(id);
+  if (ac) return ac;
   const first = kidsOf(id)[0];
   return (first && bareCoords(plainOf(N(first).text))) || bareCoords(plainOf(N(id).text));
 }
@@ -254,24 +264,25 @@ window.renderGeo = function renderGeo() {
   if (coords && N(state.zoom).geo !== 'raw' && parseCoords(plainOf(N(state.zoom).text)) && !geocoding.has(state.zoom)) {
     geocodeAndRetitle(state.zoom, coords);
   }
-  // roam-atlas flow: a page with a Location:: attribute but no coordinates yet is
-  // forward-geocoded once — the resolved Coordinates:: attribute then IS the cache
+  // roam-atlas flow: a page whose Location:: is an address (text) and has no coordinates
+  // yet is forward-geocoded once — a second "Location:: lat, lon" line then IS the cache
   if (!coords && state.zoom !== ROOT && !state.readOnly && !geocoding.has(state.zoom)) {
     const loc = window.attrsOf(state.zoom).get('location');
-    if (loc) forwardGeocodePage(state.zoom, loc.value);
+    const q = loc && loc.values.map(v => v.value).find(v => !bareCoords(v));
+    if (q) forwardGeocodePage(state.zoom, q);
   }
 };
 
 // resolve a Location:: address to coordinates (server /api/geocode?q=…) and cache them in
-// the graph as a Coordinates:: attribute — one geocoder query per place, ever
+// the graph as a second Location:: attribute line — one geocoder query per place, ever
 async function forwardGeocodePage(pageId, q) {
   geocoding.add(pageId);
   try {
     const r = await fetch('/api/geocode?q=' + encodeURIComponent(q));
     const hit = r.ok ? (await r.json()).result : null;
-    if (!hit || !N(pageId) || window.attrsOf(pageId).get('coordinates')) return;
+    if (!hit || !N(pageId) || pageAttrCoords(pageId)) return;
     snapshot();
-    insertAt(pageId, kidsOf(pageId).length, makeNode(escHtml(`Coordinates:: ${hit.lat}, ${hit.lon}`)));
+    insertAt(pageId, kidsOf(pageId).length, makeNode(escHtml(`Location:: ${hit.lat}, ${hit.lon}`)));
     markDirty();
     renderPage();
   } finally {
@@ -293,11 +304,11 @@ async function geocodeAndRetitle(pageId, coords) {
     const existing = findPageByTitle(address);
     if (existing && existing !== pageId) { mergeLocationPage(pageId, existing, address); return; }
     snapshot();
-    // keep the raw coords in the page — as a Coordinates:: attribute (roam-atlas
-    // convention); legacy bare-coords first bullets stay readable but aren't written anymore
+    // keep the raw coords in the page — as a Location:: attribute (the ONE geo attribute;
+    // legacy bare-coords first bullets and Coordinates:: stay readable but aren't written)
     const first = kidsOf(pageId)[0];
-    if (!window.attrsOf(pageId).get('coordinates') && !(first && parseCoords(plainOf(N(first).text)))) {
-      insertAt(pageId, 0, makeNode(escHtml(`Coordinates:: ${coords.lat}, ${coords.lon}`)));
+    if (!pageAttrCoords(pageId) && !(first && bareCoords(plainOf(N(first).text)))) {
+      insertAt(pageId, 0, makeNode(escHtml(`Location:: ${coords.lat}, ${coords.lon}`)));
     }
     recOld(pageId);
     N(pageId).text = escHtml(address);
@@ -1420,13 +1431,19 @@ window.parseAttribute = function parseAttribute(node) {
 };
 
 // A node's attributes, Roam-style: every direct child of the form "Key:: value" becomes an
-// entry (first writer wins per key, case-insensitive). The node's own text counts too, so a
-// bullet "Location:: Kokelv" IS its own attribute. Returns Map lowerKey → { key, value, node }.
+// entry (case-insensitive). The node's own text counts too, so a bullet "Location:: Kokelv"
+// IS its own attribute. A key may appear several times (e.g. Location:: address + the cached
+// Location:: coordinates) — `value`/`node` are the first occurrence, `values` holds them all.
+// Returns Map lowerKey → { key, value, node, values: [{ value, node }, …] }.
 window.attrsOf = function attrsOf(id) {
   const out = new Map();
   const take = nid => {
     const a = N(nid) && window.parseAttribute(nid);
-    if (a && a.value && !out.has(a.key.toLowerCase())) out.set(a.key.toLowerCase(), { ...a, node: nid });
+    if (!a || !a.value) return;
+    const k = a.key.toLowerCase();
+    const e = out.get(k);
+    if (e) e.values.push({ value: a.value, node: nid });
+    else out.set(k, { ...a, node: nid, values: [{ value: a.value, node: nid }] });
   };
   take(id);
   for (const c of kidsOf(id)) take(c);

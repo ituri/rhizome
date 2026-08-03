@@ -1621,7 +1621,7 @@ function nodeMeetsCond(n, cond, hay, html) {
       const key = (eq >= 0 ? cond.value.slice(0, eq) : cond.value).trim().toLowerCase();
       const needle = eq >= 0 ? cond.value.slice(eq + 1).trim().toLowerCase() : '';
       const a = key && window.attrsOf?.(n.id)?.get(key);
-      hit = !!a && (!needle || a.value.toLowerCase().includes(needle));
+      hit = !!a && (!needle || (a.values || [a]).some(v => v.value.toLowerCase().includes(needle)));
       break;
     }
     case 'changed':
