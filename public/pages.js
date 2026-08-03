@@ -884,6 +884,45 @@ function recencyPageId(id) {
   return top && !isCalRoot(top) ? top : null;
 }
 
+/* ---------------- breadcrumbs: a trail of recently visited pages ---------------- */
+
+// Ids only (titles resolve live at render, so renames stay correct). Session-scoped.
+let crumbTrail = [];
+try { crumbTrail = JSON.parse(sessionStorage.getItem('rz-crumbs') || '[]').filter(x => typeof x === 'string'); } catch { /* fresh */ }
+let crumbCurrent = null;   // the page we're on now — it joins the trail when we leave it
+
+function updateCrumbs() {
+  const el = document.getElementById('crumbs');
+  if (!el) return;
+  const cur = state.zoom !== ROOT ? recencyPageId(state.zoom) : null;
+  if (cur !== crumbCurrent) {
+    // the page we're leaving becomes the newest crumb
+    if (crumbCurrent && N(crumbCurrent)) {
+      crumbTrail = crumbTrail.filter(id => id !== crumbCurrent);
+      crumbTrail.push(crumbCurrent);
+      crumbTrail = crumbTrail.slice(-12);
+      try { sessionStorage.setItem('rz-crumbs', JSON.stringify(crumbTrail)); } catch { /* full */ }
+    }
+    crumbCurrent = cur;
+  }
+  const items = crumbTrail.filter(id => id !== cur && N(id)).slice(-5);
+  el.innerHTML = '';
+  items.forEach((id, i) => {
+    if (i) {
+      const sep = document.createElement('span');
+      sep.className = 'crumb-sep';
+      sep.textContent = '›';
+      el.append(sep);
+    }
+    const a = document.createElement('a');
+    a.className = 'crumb';
+    a.href = '#/n/' + id;
+    a.textContent = plainOf(N(id).text).trim() || 'Untitled';
+    el.append(a);
+  });
+}
+window.updateCrumbs = updateCrumbs;
+
 // pageId -> most recent edit time anywhere in its subtree (uses each node's `m`)
 function pageRecency() {
   const rec = Object.create(null);
@@ -934,6 +973,7 @@ window.togglePin = togglePin;
 // replaces the upstream outline-tree sidebar (app2.js keeps its version unused)
 window.renderSidebar = function renderSidebar() {
   if (SHARE_TOKEN || !doc) return;
+  updateCrumbs();   // runs on every render — navigation always passes through here
   window.renderGraphSwitcher?.();
 
   $('#side-daily')?.classList.toggle('current', state.zoom === ROOT && state.view === 'daily');
