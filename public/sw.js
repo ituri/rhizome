@@ -3,7 +3,7 @@
    on return); the network refreshes the cache in the background. */
 'use strict';
 
-const CACHE = 'rhizome-shell-v76';
+const CACHE = 'rhizome-shell-v77';
 const SHELL = ['/', '/index.html', '/style.css', '/app.js', '/app2.js', '/pages.js', '/graph.js', '/preview.js', '/palette.js', '/serialize-worker.js',
   '/fonts/fonts.css', // self-hosted @font-face rules; the woff2 files cache at runtime on first render
   '/manifest.webmanifest', '/icon.svg', '/icon-192.png', '/icon-512.png', '/apple-touch-icon.png'];

@@ -897,10 +897,12 @@ function updateCrumbs() {
   // settings: the trail can be switched off, and its length tuned
   el.style.display = settings.crumbs === false ? 'none' : '';
   if (settings.crumbs === false) { el.innerHTML = ''; return; }
-  const cur = state.zoom !== ROOT ? recencyPageId(state.zoom) : null;
+  // the Daily-Notes view is not a page but should leave a trail entry too ('@daily')
+  const cur = state.zoom !== ROOT ? recencyPageId(state.zoom)
+    : state.view === 'daily' ? '@daily' : null;
   if (cur !== crumbCurrent) {
     // the page we're leaving becomes the newest crumb
-    if (crumbCurrent && N(crumbCurrent)) {
+    if (crumbCurrent && (crumbCurrent === '@daily' || N(crumbCurrent))) {
       crumbTrail = crumbTrail.filter(id => id !== crumbCurrent);
       crumbTrail.push(crumbCurrent);
       crumbTrail = crumbTrail.slice(-12);
@@ -908,7 +910,8 @@ function updateCrumbs() {
     }
     crumbCurrent = cur;
   }
-  const items = crumbTrail.filter(id => id !== cur && N(id)).slice(-(parseInt(settings.crumbCount, 10) || 5));
+  const items = crumbTrail.filter(id => id !== cur && (id === '@daily' || N(id)))
+    .slice(-(parseInt(settings.crumbCount, 10) || 5));
   el.innerHTML = '';
   items.forEach((id, i) => {
     if (i) {
@@ -919,8 +922,8 @@ function updateCrumbs() {
     }
     const a = document.createElement('a');
     a.className = 'visit-crumb';
-    a.href = '#/n/' + id;
-    a.textContent = plainOf(N(id).text).trim() || 'Untitled';
+    a.href = id === '@daily' ? '#/' : '#/n/' + id;
+    a.textContent = id === '@daily' ? 'Daily Notes' : (plainOf(N(id).text).trim() || 'Untitled');
     el.append(a);
   });
 }
