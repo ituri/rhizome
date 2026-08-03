@@ -1958,9 +1958,23 @@ window.renderBacklinks = function renderBacklinks() {
   renderUnlinkedSection(target);
 };
 
+// the page's alias names (Aliases:: a, b, c — child attribute), min 2 chars each
+function pageAliases(target) {
+  const out = [];
+  const a = window.attrsOf(target).get('aliases');
+  if (!a) return out;
+  for (const v of a.values) {
+    for (const raw of v.value.split(',')) {
+      const s = raw.replace(/^\[\[|\]\]$/g, '').trim();
+      if (s.length >= 2) out.push(s);
+    }
+  }
+  return out;
+}
+
 function renderUnlinkedSection(target) {
   const title = plainOf(N(target).text).trim();
-  if (title.length < 3) return; // too short to mean anything in a text scan
+  if (title.length < 3 && !pageAliases(target).length) return; // too short to mean anything in a text scan
   const box = document.createElement('div');
   box.className = 'unlinked-box';
   const head = document.createElement('h3');
@@ -1979,9 +1993,14 @@ function renderUnlinkedSection(target) {
   backlinksEl.append(box);
 }
 
-// the O(doc) plain-text scan only runs when the section is expanded
+// the O(doc) plain-text scan only runs when the section is expanded. Besides the page
+// title (substring, as before), every Aliases:: name counts as a mention too — matched
+// on WORD BOUNDARIES so a short alias like "HA" doesn't fire inside "Haben".
+const reEsc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const boundaryRe = s => new RegExp(`(^|[^\\p{L}\\p{N}])(${reEsc(s)})($|[^\\p{L}\\p{N}])`, 'iu');
 function fillUnlinked(body, target, title) {
   const needle = title.toLowerCase();
+  const aliasRes = pageAliases(target).map(a => ({ alias: a, re: boundaryRe(a) }));
   const rows = [];
   for (const id of Object.keys(doc.nodes)) {
     if (rows.length >= 50) break;
@@ -1990,8 +2009,14 @@ function fillUnlinked(body, target, title) {
     if (n.mirror || n.cal) continue; // calendar titles ("July 14th, 2026") are noise, not mentions
     if ((n.text || '').includes('#/n/' + target)) continue; // already linked
     const plain = plainOf(n.text || '');
-    if (!plain.toLowerCase().includes(needle)) continue;
-    rows.push({ id, plain: plain.trim() });
+    let via = null;
+    if (title.length >= 3 && plain.toLowerCase().includes(needle)) via = { needle: title, boundary: false };
+    else {
+      const hit = aliasRes.find(x => x.re.test(plain));
+      if (hit) via = { needle: hit.alias, boundary: true };
+    }
+    if (!via) continue;
+    rows.push({ id, plain: plain.trim(), via });
   }
   body.innerHTML = '';
   if (!rows.length) {
@@ -2008,36 +2033,51 @@ function fillUnlinked(body, target, title) {
     span.className = 'unlinked-text';
     span.textContent = r.plain.slice(0, 120);
     span.addEventListener('click', () => zoomTo(r.id));
+    if (r.via.boundary) {
+      const chip = document.createElement('span');
+      chip.className = 'chip';
+      chip.textContent = r.via.needle;   // which alias matched
+      row.append(span, chip);
+    } else {
+      row.append(span);
+    }
     const btn = document.createElement('button');
     btn.className = 'unlinked-link-btn';
     btn.textContent = 'Link';
     btn.addEventListener('click', () => {
-      if (!linkifyMatch(r.id, target, title)) showToast('Could not link this mention automatically');
+      if (!linkifyMatch(r.id, target, r.via.needle, r.via.boundary)) showToast('Could not link this mention automatically');
     });
-    row.append(span, btn);
+    row.append(btn);
     body.append(row);
   }
 }
 
-// wrap the first plain-text occurrence of the page title in an internal link
-function linkifyMatch(nodeId, pageId, title) {
+// wrap the first plain-text occurrence of the page title (or an alias — matched on word
+// boundaries) in an internal link; the visible label keeps the original casing
+function linkifyMatch(nodeId, pageId, needle, boundary = false) {
   const n = N(nodeId);
   if (!n || state.readOnly) return false;
   const tpl = document.createElement('template');
   tpl.innerHTML = n.text || '';
-  const needle = title.toLowerCase();
+  const lower = needle.toLowerCase();
+  const bre = boundary ? boundaryRe(needle) : null;
   const walker = document.createTreeWalker(tpl.content, NodeFilter.SHOW_TEXT);
   let hit = null;
   while (walker.nextNode()) {
     const t = walker.currentNode;
     if (t.parentElement?.closest('a')) continue; // never nest inside an existing link
-    const idx = t.nodeValue.toLowerCase().indexOf(needle);
-    if (idx >= 0) { hit = { t, idx }; break; }
+    if (boundary) {
+      const m = bre.exec(t.nodeValue);
+      if (m) { hit = { t, idx: m.index + m[1].length }; break; }
+    } else {
+      const idx = t.nodeValue.toLowerCase().indexOf(lower);
+      if (idx >= 0) { hit = { t, idx }; break; }
+    }
   }
   if (!hit) return false; // e.g. the mention spans inline markup — leave it to the user
   snapshot();
   const rest = hit.t.splitText(hit.idx);
-  rest.splitText(title.length);
+  rest.splitText(needle.length);
   const a = document.createElement('a');
   a.setAttribute('href', '#/n/' + pageId);
   a.setAttribute('rel', 'noopener');
