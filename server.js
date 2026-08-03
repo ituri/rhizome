@@ -1185,7 +1185,9 @@ const EMBED_QUERY_PREFIX = process.env.RHIZOME_EMBED_QUERY_PREFIX || '';
 const EMBED_BATCH = parseInt(process.env.RHIZOME_EMBED_BATCH || '16', 10);
 const EMBED_MIN_CHARS = 8;          // one-word bullets carry no meaning worth indexing
 const EMBED_MAX_CHARS = parseInt(process.env.RHIZOME_EMBED_MAX_CHARS || '1000', 10);   // safely inside the embedder's context
-const SEMANTIC_MIN_SCORE = parseFloat(process.env.RHIZOME_SEMANTIC_MIN_SCORE || '0.3');
+// calibrated against the live graph with Qwen3-Embedding-0.6B: real answers land at
+// 0.50-0.57, unrelated noise at 0.30-0.34 — so 0.4 separates them cleanly
+const SEMANTIC_MIN_SCORE = parseFloat(process.env.RHIZOME_SEMANTIC_MIN_SCORE || '0.4');
 const SEMANTIC_REL_SCORE = parseFloat(process.env.RHIZOME_SEMANTIC_REL_SCORE || '0.75');
 const semanticEnabled = () => !!EMBED_URL;
 
