@@ -35,6 +35,7 @@
 'use strict';
 
 const http = require('http');
+const dns = require('node:dns');
 const fs = require('fs');
 const fsp = fs.promises;
 const os = require('os');
@@ -1100,16 +1101,72 @@ const MCP_TOOLS = [
     inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } },
   { name: 'capture', description: "Quick-capture text into today's journal under an Inbox bullet (indentation nests). Handy for jotting without picking a location.",
     inputSchema: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] } },
-  { name: 'upload_file', description: 'Upload a file (base64) as a node attachment — files are only readable while attached, so pass exactly one of `node` (attach to an existing node) or `parent` (create a new child bullet carrying the file). Returns the node with its files.',
+  { name: 'upload_file', description: 'Store a file as a node attachment. Content comes from `content_base64` OR `url` (the server fetches https URLs itself — use this for anything beyond a few KB instead of pushing base64 through your context). Files are only readable while attached, so pass exactly one of `node` (attach to an existing node) or `parent` (create a new child bullet carrying the file). Returns the node with its files.',
     inputSchema: { type: 'object', properties: {
-      name: { type: 'string', description: 'file name including extension' },
+      name: { type: 'string', description: 'file name including extension (with `url`: defaults to the URL basename)' },
       content_base64: { type: 'string', description: 'the file content, base64-encoded (max 32 MB decoded)' },
+      url: { type: 'string', description: 'https URL to fetch the file from server-side (max 32 MB)' },
       node: { type: 'string', description: 'attach to this existing node' },
       parent: { type: 'string', description: 'create a new child bullet under this node' },
       text: { type: 'string', description: 'text for the new bullet (with `parent`; defaults to the file name)' },
-      type: { type: 'string', description: 'MIME type (default: guessed from the extension)' },
-    }, required: ['name', 'content_base64'] } },
+      type: { type: 'string', description: 'MIME type (default: from the response / guessed from the extension)' },
+    }, required: [] } },
 ];
+
+// Server-side fetch for upload_file's `url` mode — an MCP client can't push megabytes of
+// base64 through its context window, so the server pulls the file itself. Hardened against
+// SSRF: https only, every redirect hop re-validated, hostnames must not resolve to private
+// address space, 32 MB cap enforced while streaming. RHIZOME_FETCH_ALLOW_PRIVATE=1 lifts
+// the network guards for tests.
+const FETCH_ALLOW_PRIVATE = process.env.RHIZOME_FETCH_ALLOW_PRIVATE === '1';
+function isPrivateIp(ip) {
+  const low = ip.toLowerCase();
+  if (low.includes(':')) {
+    if (low.startsWith('::ffff:')) return isPrivateIp(low.slice(7));
+    return low === '::1' || low === '::' || low.startsWith('fc') || low.startsWith('fd') || low.startsWith('fe80');
+  }
+  const p = low.split('.').map(Number);
+  return p[0] === 127 || p[0] === 10 || p[0] === 0
+    || (p[0] === 172 && p[1] >= 16 && p[1] <= 31)
+    || (p[0] === 192 && p[1] === 168)
+    || (p[0] === 169 && p[1] === 254);
+}
+async function fetchRemoteFile(rawUrl) {
+  let u;
+  try { u = new URL(rawUrl); } catch { throw new Error('invalid url'); }
+  for (let hop = 0; hop < 5; hop++) {
+    if (u.protocol !== 'https:' && !FETCH_ALLOW_PRIVATE) throw new Error('only https:// URLs are fetched');
+    if (!FETCH_ALLOW_PRIVATE) {
+      const addrs = await dns.promises.lookup(u.hostname, { all: true }).catch(() => []);
+      if (!addrs.length || addrs.some(a => isPrivateIp(a.address))) throw new Error('host is not publicly resolvable');
+    }
+    const r = await fetch(u, {
+      redirect: 'manual',
+      signal: AbortSignal.timeout(30000),
+      headers: { 'User-Agent': 'Rhizome/1.0 (self-hosted notes app)' },
+    });
+    if (r.status >= 300 && r.status < 400 && r.headers.get('location')) {
+      u = new URL(r.headers.get('location'), u);   // re-validated on the next hop
+      continue;
+    }
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const declared = parseInt(r.headers.get('content-length') || '0', 10);
+    if (declared > MAX_UPLOAD) throw new Error(`file too large (${declared} bytes, max ${MAX_UPLOAD})`);
+    const chunks = [];
+    let size = 0;
+    for await (const c of r.body) {
+      size += c.length;
+      if (size > MAX_UPLOAD) throw new Error(`file too large (> ${MAX_UPLOAD} bytes)`);
+      chunks.push(Buffer.from(c));
+    }
+    return {
+      data: Buffer.concat(chunks),
+      name: path.basename(decodeURIComponent(u.pathname)) || 'file',
+      type: (r.headers.get('content-type') || '').split(';')[0].trim(),
+    };
+  }
+  throw new Error('too many redirects');
+}
 
 function mcpResult(id, result) { return { jsonrpc: '2.0', id, result }; }
 function mcpErr(id, code, message) { return { jsonrpc: '2.0', id: id ?? null, error: { code, message } }; }
@@ -1284,22 +1341,33 @@ async function mcpCallTool(id, params, g, scope, req, url) {
         return ok({ deleted: count });
       }
       case 'upload_file': {
-        const safe = path.basename(String(args.name)).replace(/[^\w.\- ()]/g, '_').slice(0, 120) || 'file';
-        let data;
-        try { data = Buffer.from(String(args.content_base64), 'base64'); } catch { data = Buffer.alloc(0); }
-        if (!data.length) return fail('empty or invalid base64 content');
-        if (data.length > MAX_UPLOAD) return fail(`file too large (${data.length} bytes, max ${MAX_UPLOAD})`);
+        if (!args.content_base64 === !args.url) return fail('pass exactly one of `content_base64` or `url`');
         const attachTo = args.node ? String(args.node) : null;
         const under = args.parent ? String(args.parent) : null;
         if (!attachTo === !under) return fail('pass exactly one of `node` (attach to it) or `parent` (new child bullet)');
         const anchor = attachTo || under;
         if (!doc.nodes[anchor]) return fail('unknown node: ' + anchor);
+        let data, fetchedName = '', fetchedType = '';
+        if (args.url) {
+          try {
+            const remote = await fetchRemoteFile(String(args.url));
+            data = remote.data; fetchedName = remote.name; fetchedType = remote.type;
+          } catch (err) {
+            return fail('fetch failed: ' + err.message);
+          }
+        } else {
+          try { data = Buffer.from(String(args.content_base64), 'base64'); } catch { data = Buffer.alloc(0); }
+        }
+        if (!data.length) return fail('empty or invalid file content');
+        if (data.length > MAX_UPLOAD) return fail(`file too large (${data.length} bytes, max ${MAX_UPLOAD})`);
+        const safe = path.basename(String(args.name || fetchedName || 'file')).replace(/[^\w.\- ()]/g, '_').slice(0, 120) || 'file';
         const stored = `${crypto.randomBytes(12).toString('hex')}-${safe}`;
         await fsp.writeFile(path.join(FILES_DIR, stored), cryptobox.encrypt(data));
         const entry = {
           url: `/files/${encodeURIComponent(stored)}`,
           name: safe,
-          type: args.type ? String(args.type) : (MIME[path.extname(safe).toLowerCase()] || 'application/octet-stream'),
+          type: args.type ? String(args.type)
+            : (MIME[path.extname(safe).toLowerCase()] || fetchedType || 'application/octet-stream'),
           size: data.length,
         };
         const now = Date.now();

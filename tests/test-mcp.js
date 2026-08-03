@@ -32,7 +32,8 @@ const cookieFrom = sc => { const m = (sc || '').match(/rz_session=([^;]+)/); ret
 
 const srv = spawn('node', [path.join(__dirname, '..', 'server.js')], {
   env: { ...process.env, DATA_DIR: DATA, PORT: String(PORT), HOST: '127.0.0.1',
-    RHIZOME_AGENT_TOKEN: AGENT, RHIZOME_ADMIN_PASSWORD: 'adminpw', RHIZOME_INVITE_CODE: 'letmein' },
+    RHIZOME_AGENT_TOKEN: AGENT, RHIZOME_ADMIN_PASSWORD: 'adminpw', RHIZOME_INVITE_CODE: 'letmein',
+    RHIZOME_FETCH_ALLOW_PRIVATE: '1' },   // upload_file url-mode tests fetch from a local mock
   stdio: ['ignore', 'ignore', 'inherit'],
 });
 
@@ -145,8 +146,28 @@ const srv = spawn('node', [path.join(__dirname, '..', 'server.js')], {
   assert((hostDoc.data.files || []).length === 1 || up.data.uploaded, 'the attachment reaches the node');
   up = await callTool('upload_file', { name: 'x.txt', content_base64: b64 });
   assert(up.isError && /exactly one/.test(up.data), 'missing target is refused');
-  up = await callTool('upload_file', { name: 'leer.txt', content_base64: '!!!' });
+  up = await callTool('upload_file', { name: 'leer.txt', content_base64: '!!!', parent: 'root' });
   assert(up.isError, 'invalid base64 is refused');
+
+  /* ---- upload_file via url: the server fetches the file itself ---- */
+  const pdfBytes = Buffer.concat([Buffer.from('%PDF-1.4 fake report '), Buffer.alloc(4096, 7)]);
+  const fileSrv = require('http').createServer((rq, rs) => {
+    if (rq.url === '/dl/report.pdf') { rs.setHeader('Content-Type', 'application/pdf'); rs.end(pdfBytes); }
+    else if (rq.url === '/redirect') { rs.writeHead(302, { Location: '/dl/report.pdf' }); rs.end(); }
+    else { rs.statusCode = 404; rs.end(); }
+  });
+  await new Promise(r => fileSrv.listen(3224, r));
+  up = await callTool('upload_file', { url: 'http://127.0.0.1:3224/dl/report.pdf', parent: 'root', text: 'EFHW-Messbericht' });
+  assert(!up.isError && up.data.uploaded.size === pdfBytes.length && up.data.uploaded.name === 'report.pdf'
+    && up.data.uploaded.type === 'application/pdf' && up.data.plain === 'EFHW-Messbericht',
+    `url mode fetches server-side, derives name/type (${JSON.stringify(up.data.uploaded)})`);
+  up = await callTool('upload_file', { url: 'http://127.0.0.1:3224/redirect', parent: 'root' });
+  assert(!up.isError && up.data.uploaded.size === pdfBytes.length, 'redirects are followed (re-validated per hop)');
+  up = await callTool('upload_file', { url: 'http://127.0.0.1:3224/nope', parent: 'root' });
+  assert(up.isError && /404/.test(up.data), 'remote 404 comes back as a tool error');
+  up = await callTool('upload_file', { name: 'x', content_base64: b64, url: 'http://127.0.0.1:3224/dl/report.pdf', parent: 'root' });
+  assert(up.isError && /exactly one of `content_base64` or `url`/.test(up.data), 'both sources at once are refused');
+  fileSrv.close();
 
   /* ---- argument validation: wrong calls fail loudly instead of silently no-matching ---- */
   r = await callTool('search', {});

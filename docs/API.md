@@ -155,7 +155,7 @@ Streamable-HTTP transport, implemented natively (no SDK — the core server stay
 | `move_node` | write | `{id, parent, index?}` | reparent a node + its subtree |
 | `delete_node` | write | `{id}` | delete a node + subtree → `{deleted}` |
 | `capture` | write | `{text}` | quick-capture into today's journal Inbox |
-| `upload_file` | write | `{name, content_base64, node? \| parent?, text?, type?}` | store a file (max 32 MB decoded) and attach it — to an existing `node`, or as a new child bullet under `parent` (files are only readable while attached) |
+| `upload_file` | write | `{content_base64 \| url, name?, node? \| parent?, text?, type?}` | store a file (max 32 MB) and attach it — to an existing `node`, or as a new child bullet under `parent` (files are only readable while attached). With `url` the server fetches an https URL itself (SSRF-guarded: public hosts only, redirects re-validated) — use it for anything beyond a few KB |
 
 Tool failures (unknown node, read-only key, move into own subtree) come back as a normal
 `tools/call` result with `isError:true` and a text message, not a transport error.
