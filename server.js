@@ -270,7 +270,11 @@ function loadGraph(id) {
 }
 function getGraph(id) {
   let g = graphCache.get(id);
-  if (!g) { g = loadGraph(id); graphCache.set(id, g); }
+  if (!g) {
+    g = loadGraph(id);
+    graphCache.set(id, g);
+    armEmbedIndex(g);   // catch up the semantic index on first touch after a restart
+  }
   return g;
 }
 
