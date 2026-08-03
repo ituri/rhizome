@@ -4225,6 +4225,9 @@ pageEl.addEventListener('pointerdown', e => {
   if (e.button !== 0) return;
   const a = e.target.closest?.('a[href]');
   if (a && !a.classList.contains('bullet') && !a.classList.contains('att-chip')) e.preventDefault();
+  // attribute keys (a <span>, not an anchor) reveal to "Key::" on focus the same way —
+  // keep the span alive so the click can open the attribute's references
+  if (e.target.closest?.('.attr-key')) e.preventDefault();
 }, true);
 
 // iOS Safari doesn't fire `click` on links/tags inside a contenteditable — it just places the caret.
