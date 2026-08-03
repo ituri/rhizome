@@ -1542,6 +1542,26 @@ async function reverseGeocode(lat, lon) {
   return address;
 }
 
+// Forward-geocode a free-text address to coordinates (Nominatim /search). Cached like the
+// reverse path — a place resolves once, then its Coordinates:: attribute is the cache.
+async function forwardGeocode(q) {
+  const key = 'q:' + q.toLowerCase();
+  if (geocodeCache.has(key)) return geocodeCache.get(key);
+  const u = new URL(GEOCODER_URL.replace(/\/reverse\b/, '/search'));
+  u.searchParams.set('q', q);
+  u.searchParams.set('format', 'jsonv2');
+  u.searchParams.set('limit', '1');
+  const r = await fetch(u, { headers: { 'User-Agent': 'Rhizome/1.0 (self-hosted notes app)', Accept: 'application/json' } });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const j = await r.json();
+  const hit = Array.isArray(j) && j[0];
+  const out = hit && isFinite(+hit.lat) && isFinite(+hit.lon)
+    ? { lat: +(+hit.lat).toFixed(5), lon: +(+hit.lon).toFixed(5), display: hit.display_name || '' }
+    : null;
+  if (out) geocodeCache.set(key, out);
+  return out;
+}
+
 const AI_SYSTEM = 'You are an assistant inside an outliner app. Answer the user\'s request about the given ' +
   'outline excerpt directly and substantively. Always write in the same language as the request (e.g. a ' +
   'German request gets a German answer). Format the answer as outline items: one point per line, with two ' +
@@ -2421,6 +2441,16 @@ const server = http.createServer(async (req, res) => {
       if (url.startsWith('/api/geocode') && req.method === 'GET') {
         if (!currentUser(req) && accounts.userCount() > 0) return send(res, 401, { error: 'unauthorized' });
         const p = new URLSearchParams(url.split('?')[1] || '');
+        // ?q=<address> → forward geocode (for Location:: attributes); ?lat&lon → reverse
+        const q = (p.get('q') || '').trim();
+        if (q) {
+          if (q.length > 200) return send(res, 400, { error: 'query too long' });
+          try {
+            return send(res, 200, { result: await forwardGeocode(q) });
+          } catch (err) {
+            return send(res, 502, { error: 'geocode failed: ' + err.message });
+          }
+        }
         const lat = parseFloat(p.get('lat')), lon = parseFloat(p.get('lon'));
         if (!isFinite(lat) || !isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) {
           return send(res, 400, { error: 'bad coordinates' });

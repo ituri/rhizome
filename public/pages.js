@@ -167,9 +167,12 @@ function parseCoords(s) {
   return { lat, lon };
 }
 
-// a page's coordinate: from its first bullet if present, else its own title
+// a page's coordinate — in preference order (roam-atlas conventions first):
+// a "Coordinates:: lat, lon" attribute, the legacy bare-coords first bullet, the title
 function pageCoords(id) {
   if (!N(id)) return null;
+  const attr = window.attrsOf(id).get('coordinates');
+  if (attr) { const c = parseCoords(attr.value); if (c) return c; }
   const first = kidsOf(id)[0];
   return (first && parseCoords(plainOf(N(first).text))) || parseCoords(plainOf(N(id).text));
 }
@@ -239,7 +242,30 @@ window.renderGeo = function renderGeo() {
   if (coords && N(state.zoom).geo !== 'raw' && parseCoords(plainOf(N(state.zoom).text)) && !geocoding.has(state.zoom)) {
     geocodeAndRetitle(state.zoom, coords);
   }
+  // roam-atlas flow: a page with a Location:: attribute but no coordinates yet is
+  // forward-geocoded once — the resolved Coordinates:: attribute then IS the cache
+  if (!coords && state.zoom !== ROOT && !state.readOnly && !geocoding.has(state.zoom)) {
+    const loc = window.attrsOf(state.zoom).get('location');
+    if (loc) forwardGeocodePage(state.zoom, loc.value);
+  }
 };
+
+// resolve a Location:: address to coordinates (server /api/geocode?q=…) and cache them in
+// the graph as a Coordinates:: attribute — one geocoder query per place, ever
+async function forwardGeocodePage(pageId, q) {
+  geocoding.add(pageId);
+  try {
+    const r = await fetch('/api/geocode?q=' + encodeURIComponent(q));
+    const hit = r.ok ? (await r.json()).result : null;
+    if (!hit || !N(pageId) || window.attrsOf(pageId).get('coordinates')) return;
+    snapshot();
+    insertAt(pageId, kidsOf(pageId).length, makeNode(escHtml(`Coordinates:: ${hit.lat}, ${hit.lon}`)));
+    markDirty();
+    renderPage();
+  } finally {
+    geocoding.delete(pageId);
+  }
+}
 
 async function geocodeAndRetitle(pageId, coords) {
   if (state.readOnly || N(pageId)?.geo === 'raw') return;   // coordinates-only page → never retitle
@@ -255,9 +281,11 @@ async function geocodeAndRetitle(pageId, coords) {
     const existing = findPageByTitle(address);
     if (existing && existing !== pageId) { mergeLocationPage(pageId, existing, address); return; }
     snapshot();
+    // keep the raw coords in the page — as a Coordinates:: attribute (roam-atlas
+    // convention); legacy bare-coords first bullets stay readable but aren't written anymore
     const first = kidsOf(pageId)[0];
-    if (!(first && parseCoords(plainOf(N(first).text)))) {
-      insertAt(pageId, 0, makeNode(escHtml(`${coords.lat}, ${coords.lon}`)));  // keep the raw coords in a bullet
+    if (!window.attrsOf(pageId).get('coordinates') && !(first && parseCoords(plainOf(N(first).text)))) {
+      insertAt(pageId, 0, makeNode(escHtml(`Coordinates:: ${coords.lat}, ${coords.lon}`)));
     }
     recOld(pageId);
     N(pageId).text = escHtml(address);
@@ -1379,6 +1407,20 @@ window.parseAttribute = function parseAttribute(node) {
   return m ? { key: m[1].trim(), value: m[2].trim() } : null;
 };
 
+// A node's attributes, Roam-style: every direct child of the form "Key:: value" becomes an
+// entry (first writer wins per key, case-insensitive). The node's own text counts too, so a
+// bullet "Location:: Kokelv" IS its own attribute. Returns Map lowerKey → { key, value, node }.
+window.attrsOf = function attrsOf(id) {
+  const out = new Map();
+  const take = nid => {
+    const a = N(nid) && window.parseAttribute(nid);
+    if (a && a.value && !out.has(a.key.toLowerCase())) out.set(a.key.toLowerCase(), { ...a, node: nid });
+  };
+  take(id);
+  for (const c of kidsOf(id)) take(c);
+  return out;
+};
+
 /* ---------------- Live queries: {{query: {and:…}{or:…}{not:…}{between:…}}} ---------------- */
 
 // parse a query block into an AST. Page refs come from anchors (#/n/id) or literal
@@ -1389,7 +1431,7 @@ window.parseLiveQuery = function parseLiveQuery(raw) {
   // {view:…}{group:…}{sort:…} are rendering hints, not match clauses — pull them out before parsing.
   const body = qm[1].replace(/\{(?:view|group|sort)\s*:[^}]*\}/gi, ' ');
   const tokens = [];
-  const FIELD = 'is|has|text|highlight|changed|created|in|on|link|namespace|date-before|date-after|day-of-week|date';
+  const FIELD = 'is|has|text|highlight|attr|changed|created|in|on|link|namespace|date-before|date-after|day-of-week|date';
   const re = new RegExp(
     '\\{(and|or|not|between)\\s*:' +                                  // 1: boolean group
     '|\\{(' + FIELD + ')\\s*:\\s*([^}]*)\\}' +                        // 2: field op, 3: value

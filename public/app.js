@@ -1613,6 +1613,16 @@ function nodeMeetsCond(n, cond, hay, html) {
         ? /class="[^"]*hl-/.test(html)
         : html.includes(`hl-${cond.value}`);
       break;
+    case 'attr': {
+      // {attr:Key} → the block (or a direct child) carries a "Key:: …" attribute;
+      // {attr:Key=needle} additionally requires the value to contain the needle
+      const eq = cond.value.indexOf('=');
+      const key = (eq >= 0 ? cond.value.slice(0, eq) : cond.value).trim().toLowerCase();
+      const needle = eq >= 0 ? cond.value.slice(eq + 1).trim().toLowerCase() : '';
+      const a = key && window.attrsOf?.(n.id)?.get(key);
+      hit = !!a && (!needle || a.value.toLowerCase().includes(needle));
+      break;
+    }
     case 'changed':
     case 'created': {
       const ts = cond.kind === 'created' ? (n.c || n.m || 0) : (n.m || 0);
