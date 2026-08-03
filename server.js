@@ -702,6 +702,35 @@ async function geocoderHealth() {
   return geoHealthCache;
 }
 
+// semantic search health: is an embedder configured, does it answer, how much is indexed
+let semHealthCache = { at: 0, ok: null, detail: '' };
+async function semanticHealth() {
+  if (!semanticEnabled()) return { ok: false, detail: 'not configured', indexed: 0, model: '' };
+  let indexed = 0;
+  try {
+    for (const gid of accounts.allGraphIds()) {
+      const g = graphCache.get(gid);
+      if (g) indexed += g.db.embCount();          // only graphs already loaded — no cold-open cost
+    }
+  } catch { /* leave at 0 */ }
+  if (semHealthCache.ok !== null && Date.now() - semHealthCache.at < 60_000) {
+    return { ...semHealthCache, indexed };
+  }
+  let ok = false, detail = 'unreachable', model = '';
+  try {
+    const r = await fetch(EMBED_URL + '/v1/models', { signal: AbortSignal.timeout(2500) });
+    ok = r.ok;
+    if (ok) {
+      const j = await r.json().catch(() => null);
+      model = (j && j.data && j.data[0] && (j.data[0].id || '')) || '';
+      model = String(model).split('/').pop().replace(/\.gguf$/i, '');
+      detail = 'reachable';
+    } else detail = 'HTTP ' + r.status;
+  } catch (e) { detail = e.name === 'TimeoutError' ? 'timeout' : 'unreachable'; }
+  semHealthCache = { at: Date.now(), ok, detail, model };
+  return { ...semHealthCache, indexed };
+}
+
 async function serverStatus() {
   const mem = process.memoryUsage();
   const cpus = os.cpus();
@@ -742,6 +771,14 @@ async function serverStatus() {
   const geo = await geocoderHealth();
   health.push({ name: 'Geocoder', ok: geo.ok, detail: geo.detail });
   health.push({ name: 'Ask AI', ok: AI_ENABLED, detail: AI_ENABLED ? `${AI_MODELS.join(', ')} via ${AI_API === 'anthropic' ? 'Anthropic' : AI_BASE_URL}` : 'not configured' });
+  const sem = await semanticHealth();
+  health.push({
+    name: 'Semantic search',
+    ok: sem.ok,
+    detail: sem.ok
+      ? `${sem.indexed} vectors indexed${sem.model ? ' · ' + sem.model : ''} · local`
+      : sem.detail,
+  });
 
   return {
     version: require('./package.json').version,
@@ -755,6 +792,7 @@ async function serverStatus() {
     memory: { rss: mem.rss, heapUsed: mem.heapUsed, heapTotal: mem.heapTotal, systemTotal: os.totalmem(), systemFree: os.freemem() },
     disk,
     storage: { dataBytes: dirSize(DATA_DIR), graphs, backups },
+    semantic: { enabled: semanticEnabled(), ok: sem.ok, indexed: sem.indexed, model: sem.model, detail: sem.detail, url: EMBED_URL },
     health,
   };
 }

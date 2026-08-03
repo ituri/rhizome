@@ -88,6 +88,91 @@ Two variables are specific to the update check (both optional):
 
 ---
 
+## Optional: semantic search (runs entirely on your machine)
+
+Normal search matches words. Semantic search matches *meaning* — "how do I back up my
+data" finds a note that only ever says "Verschlüsselung bei kompromittiertem Server".
+It is off unless you point Rhizome at an embedding endpoint.
+
+Rhizome deliberately does **not** call a hosted AI API for this: your notes are the last
+thing you want to ship to a third party. Instead you run a small embedding model next to
+the app — a ~640 MB CPU container, no GPU, fine on a 2-core VPS.
+
+### 1. Add the embedder to your Compose file
+
+```yaml
+services:
+  rhizome:
+    # …your existing service…
+    environment:
+      DATA_DIR: /data
+      RHIZOME_EMBEDDINGS_URL: http://embedder:8080
+      # Qwen3-Embedding wants an instruction prefix on the QUERY side only:
+      RHIZOME_EMBED_QUERY_PREFIX: "Instruct: Given a search query, retrieve relevant notes\nQuery: "
+
+  embedder:
+    image: ghcr.io/ggml-org/llama.cpp:server
+    container_name: rhizome-embedder
+    restart: unless-stopped
+    command: >
+      --hf-repo Qwen/Qwen3-Embedding-0.6B-GGUF
+      --hf-file Qwen3-Embedding-0.6B-Q8_0.gguf
+      --embedding -c 4096 -ub 1024
+      --host 0.0.0.0 --port 8080 --threads 2
+    volumes:
+      - embedder-models:/root/.cache     # keeps the model across restarts
+    mem_limit: 2g
+    # NO ports: — llama.cpp has no auth; reachable only inside the Compose network
+
+volumes:
+  rhizome-data:
+  embedder-models:
+```
+
+```sh
+docker compose up -d
+```
+
+The first start downloads the model (~640 MB) — watch `docker compose logs -f embedder`
+until it says `model loaded`. Indexing then starts by itself: Rhizome embeds every node
+with enough text (~4s after each change, and once when a graph is first opened after a
+restart) and stores the vectors in that graph's SQLite. Only changed nodes are re-embedded.
+
+### 2. Use it
+
+In the web UI, prefix a query with `~`:
+
+```
+~wo übernachten wir in norwegen
+```
+
+Admin → Server status shows a **Semantic search** row (`ready · N vectors · <model> ·
+local, no data leaves this host`), so you can see the index growing.
+
+### Tuning
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `RHIZOME_EMBEDDINGS_URL` | — | OpenAI-shaped `/v1/embeddings` endpoint. **Unset = feature off.** |
+| `RHIZOME_EMBED_QUERY_PREFIX` | — | Prompt prefix for queries (model-specific; see above for Qwen3). |
+| `RHIZOME_EMBED_DOC_PREFIX` | — | Prompt prefix for documents (e5-style models want `passage: `). |
+| `RHIZOME_EMBED_BATCH` | `16` | Texts per embedding request. |
+| `RHIZOME_EMBED_MAX_CHARS` | `1000` | Truncation per node — must stay inside the model's context. |
+| `RHIZOME_SEMANTIC_MIN_SCORE` | `0.4` | Absolute cosine floor. Cosine always ranks *something* first; this is what makes an unanswerable query return nothing instead of noise. |
+| `RHIZOME_SEMANTIC_REL_SCORE` | `0.75` | Relative floor — drop hits far below the best one. |
+
+**If results look random,** check the score floor first: run
+`GET /api/g/<graph>/semantic?q=<question>` and look at the scores. With
+Qwen3-Embedding-0.6B, real answers land around 0.50–0.57 and noise around 0.30–0.34, so
+`0.4` separates them. A different model has a different scale — recalibrate rather than
+guess.
+
+Other models work as long as they speak the OpenAI embeddings API (Ollama, TEI, a hosted
+provider). Note that swapping models invalidates the index: delete the `embeddings` table
+in each `graphs/<id>/outline.db`, or just let it re-embed by touching the notes.
+
+---
+
 ## Where your data lives
 
 Everything is under `DATA_DIR` (`/data` in Docker): per-graph SQLite databases under

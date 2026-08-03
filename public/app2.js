@@ -1830,6 +1830,12 @@ function renderAdminPanel(ov) {
       ['Disk', s.disk ? bar(diskPct, `${fmtBytes(s.disk.used)} / ${fmtBytes(s.disk.total)} · ${fmtBytes(s.disk.free)} free`) : '—'],
       ['Storage', `${fmtBytes(s.storage.dataBytes)} <span class="stat-sub">· ${s.storage.graphs} graphs · ${s.storage.backups.count} backups (${fmtBytes(s.storage.backups.bytes)})</span>`],
     ];
+    if (s.semantic) {
+      const sem = s.semantic;
+      rows.push(['Semantic search', !sem.enabled
+        ? '<span class="stat-sub">not configured</span>'
+        : `${sem.ok ? 'ready' : 'embedder ' + escHtml(sem.detail)} <span class="stat-sub">· ${sem.indexed} vectors${sem.model ? ' · ' + escHtml(sem.model) : ''} · local, no data leaves this host</span>`]);
+    }
     box.innerHTML = `<h4 class="admin-h4">Server status <button class="key-copy stat-refresh">refresh</button></h4>
       <table class="stat-table">${rows.map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join('')}</table>
       <div class="stat-health">${s.health.map(h => `<span class="stat-dot ${h.ok ? 'stat-up' : 'stat-down'}" title="${escHtml(h.detail)}">${h.ok ? '●' : '○'} ${escHtml(h.name)}<span class="stat-detail"> · ${escHtml(h.detail)}</span></span>`).join('')}</div>`;

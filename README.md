@@ -48,6 +48,7 @@ docker compose up -d
 | 🧱 **Rich blocks** | Headings, quotes, code blocks, dividers, to-do checkboxes, numbered lists and kanban boards — via markdown shortcuts (`# `, `> `, `[] `, `1. `, `---`, ```` ``` ````) or the `/` menu; bold/italic/underline/strikethrough, 8 text colors + 8 highlights |
 | 🏷️ **Tags & dates** | `#tags` and `@mentions` with autocomplete — click to filter; natural-language dates (type `next friday` or `in 3 days`, press **Tab**), date ranges, overdue/today styling; a month-grid calendar and a `Calendar › Year › Month › Day` journal with a Today button |
 | 🔍 **Search that understands you** | `"exact phrases"`, `-exclusion`, `OR`, `is:complete`, `has:note`, `changed:7d`, nested `ancestor > term` queries and more; `Ctrl+K` jumps anywhere; star your favorite pages and searches |
+| 🧠 **Semantic search, self-hosted** | Prefix a query with `~` to search by *meaning* instead of keywords — powered by an embedding model you run yourself next to the app (no cloud API, no note text leaves your server) |
 | 🪞 **Reuse & review** | `[[wiki links]]` (and page **aliases** via `Aliases::`) with linked + unlinked references on every page; mirrors you can edit from any instance; templates; comments; presentation slides |
 | 🔗 **Roam-style references** | Inline **block references** `(( ))` that show a block's live text (editing the line reveals its `((id))` source); **attributes** `Key:: Value` you can click and query; live **queries** `{{query: {and:…}{or:…}{not:…}{between:…}}}`; multi-word tags `#[[…]]`; a **right sidebar** (shift-click) to view pages side-by-side |
 | 📎 **Files & media** | Attach files or paste images straight onto items; YouTube / Shorts / Loom embeds and tracking-free X link-cards |
@@ -94,6 +95,7 @@ Rhizome runs with zero configuration. When you want more, everything is an envir
 | `ANTHROPIC_API_KEY` | *(unset)* | Enables the in-app ✨ Ask AI assistant |
 | `RHIZOME_AI_MODEL` | `claude-opus-4-8` | Claude model used by Ask AI |
 | `RHIZOME_GEOCODER_URL` | public Nominatim | Reverse-geocoder for location pages (coords → address). Point it at a self-hosted Nominatim/Photon for full privacy |
+| `RHIZOME_EMBEDDINGS_URL` | *(unset)* | Enables semantic search (`~query`). Point it at a local embedding server — see [INSTALL.md](INSTALL.md#optional-semantic-search-runs-entirely-on-your-machine) for a ready-made Compose block; your notes never leave the host |
 
 > The legacy `TENDRIL_*` names (`TENDRIL_PASSWORD`, `TENDRIL_AGENT_TOKEN`, `TENDRIL_TOTP_SECRET`, `TENDRIL_AI_MODEL`) are still honored as fallbacks.
 
