@@ -245,16 +245,17 @@ html.no-anim.theme-flip *, html.no-anim.theme-flip *::before, html.no-anim.theme
   transition: none !important;
 }
 
-/* breadcrumbs: a quiet trail of recently visited pages next to the wordmark */
-.crumbs { display: flex; align-items: center; gap: 2px; margin-left: 12px; min-width: 0; overflow: hidden; }
-.crumb {
+/* visit breadcrumbs: a quiet trail of recently visited pages next to the wordmark
+   (distinct from #crumbs, the zoom-path breadcrumbs inside a page) */
+.visit-crumbs { display: flex; align-items: center; gap: 2px; margin-left: 12px; min-width: 0; overflow: hidden; }
+.visit-crumb {
   color: var(--ink-faint); font-size: 12.5px; text-decoration: none;
   white-space: nowrap; max-width: 150px; overflow: hidden; text-overflow: ellipsis;
   padding: 3px 6px; border-radius: 6px; flex: none;
 }
-.crumb:hover { color: var(--accent); background: var(--accent-softer); }
-.crumb-sep { color: var(--ink-faint); opacity: 0.5; font-size: 11px; flex: none; }
-@media (max-width: 980px) { .crumbs { display: none; } }
+.visit-crumb:hover { color: var(--accent); background: var(--accent-softer); }
+.visit-crumb-sep { color: var(--ink-faint); opacity: 0.5; font-size: 11px; flex: none; }
+@media (max-width: 980px) { .visit-crumbs { display: none; } }
 
 /* topbar customization: the dragged icon ghosts while it rides along */
 .topbar-right .tb-dragging { opacity: 0.35; }

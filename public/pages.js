@@ -892,7 +892,7 @@ try { crumbTrail = JSON.parse(sessionStorage.getItem('rz-crumbs') || '[]').filte
 let crumbCurrent = null;   // the page we're on now — it joins the trail when we leave it
 
 function updateCrumbs() {
-  const el = document.getElementById('crumbs');
+  const el = document.getElementById('visit-crumbs');
   if (!el) return;
   const cur = state.zoom !== ROOT ? recencyPageId(state.zoom) : null;
   if (cur !== crumbCurrent) {
@@ -910,12 +910,12 @@ function updateCrumbs() {
   items.forEach((id, i) => {
     if (i) {
       const sep = document.createElement('span');
-      sep.className = 'crumb-sep';
+      sep.className = 'visit-crumb-sep';
       sep.textContent = '›';
       el.append(sep);
     }
     const a = document.createElement('a');
-    a.className = 'crumb';
+    a.className = 'visit-crumb';
     a.href = '#/n/' + id;
     a.textContent = plainOf(N(id).text).trim() || 'Untitled';
     el.append(a);
