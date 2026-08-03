@@ -360,7 +360,8 @@ function decorate(html, opts = {}) {
         key.className = 'attr-key';
         key.setAttribute('data-attr', m[1]);
         key.textContent = m[1];
-        first.replaceWith(key, document.createTextNode(first.nodeValue.slice(m[1].length)));
+        // Roam renders "Key:: value" as a bold clickable key with ONE colon — consume the second
+        first.replaceWith(key, document.createTextNode(first.nodeValue.slice(m[1].length + 1)));
       }
     }
   }
@@ -5085,6 +5086,11 @@ const EDIT_MARK = { B: '**', STRONG: '**', I: '*', EM: '*', U: '__', S: '~~', ST
 const BLOCK_EDIT_MARK = { h1: '# ', h2: '## ', h3: '### ', quote: '> ' };
 
 function toEditSource(el, fmt) {
+  // attribute keys render as "Key:" (decorate consumes the second colon) — restore the raw
+  // "Key::" source, or a commit after editing would store a single colon and kill the attribute
+  for (const k of el.querySelectorAll('span.attr-key')) {
+    k.replaceWith(document.createTextNode(k.textContent + ':'));
+  }
   // default-colour highlights → ==…== (other colours keep their span: == carries no colour,
   // so converting them would lose it on the round-trip)
   let hl;

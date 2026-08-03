@@ -2828,9 +2828,10 @@ a.block-ref::before, a.block-ref::after { content: none !important; }
   vertical-align: baseline;
 }
 
-/* attribute keys: a leading "Key:: value" renders the key as an accent chip */
-.attr-key { color: var(--accent); font-weight: 600; cursor: pointer; }
-.attr-key:hover { text-decoration: underline; }
+/* attribute keys, Roam-style: "Key:: value" renders as a bold clickable key with one colon
+   (decorate consumes the second) — normal ink at rest, link affordance on hover */
+.attr-key { font-weight: 700; cursor: pointer; }
+.attr-key:hover { color: var(--accent); text-decoration: underline; }
 
 /* right sidebar: shift-click opens pages/blocks side-by-side (read-only) */
 .rightbar {
