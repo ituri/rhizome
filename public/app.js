@@ -2493,11 +2493,29 @@ function refreshItemShell(id) {
 
 /* ---------------- 12. structural operations ---------------- */
 
+/* A new bullet directly under a "#Log" bullet gets an HH:mm stamp, so a running log
+   timestamps itself (Settings → Editing → "Timestamp #Log entries"). Only for genuinely
+   empty new bullets — a split that carries text along keeps what the user typed. */
+const LOG_TAG_RE = /(^|[\s(])#log(\b|$)/i;
+function isLogBullet(id) {
+  const n = id && N(id);
+  return !!n && LOG_TAG_RE.test(plainOf(n.text || ''));
+}
+function logStampFor(parentId) {
+  if (settings.logTimestamp === false || !isLogBullet(parentId)) return '';
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')} `;
+}
+
 function opNewAt(parent, index, text = '', focusOffset = 0) {
   if (state.readOnly) return null;
   parent = contentIdOf(parent); // new children of a mirror belong to the shared subtree
   commitActiveText();
   snapshot();
+  if (!text) {
+    const stamp = logStampFor(parent);
+    if (stamp) { text = escHtml(stamp); focusOffset = stamp.length; }
+  }
   const id = makeNode(text);
   insertAt(parent, index, id);
   renderPage();
@@ -2574,7 +2592,12 @@ function opSplit(ctx) {
   // that travelled into the after-half (caret before it) carries its format along
   const inherit = (n.format === 'todo' || n.format === 'number') ? { format: n.format } : {};
   if (afterFmt) inherit.format = afterFmt;
-  const nid = makeNode(afterText, inherit);
+  // where the new half lands decides its parent — and thus whether it gets a #Log stamp
+  const target = ctx.field === 'title' ? id
+    : (kidsOf(n.id).length && isExpandedInView(id)) ? n.id
+      : parentOf(id);
+  const stamp = afterText ? '' : logStampFor(target);   // only stamp an empty new line
+  const nid = makeNode(stamp ? escHtml(stamp) : afterText, inherit);
   if (ctx.field === 'title') {
     insertAt(id, 0, nid);
   } else if (kidsOf(n.id).length && isExpandedInView(id)) {
@@ -2584,7 +2607,7 @@ function opSplit(ctx) {
   }
   renderPage();
   elById.get(nid)?.classList.add('entering');
-  focusItem(nid, 'text', 0, host);
+  focusItem(nid, 'text', stamp ? stamp.length : 0, host);
   markDirty();
 }
 
@@ -5088,7 +5111,7 @@ function saveSettings() {
 }
 
 // preferences shared across devices for the signed-in account (web ⇄ iOS)
-const SHARED_PREF_KEYS = ['captureTimestamp', 'captureParent'];
+const SHARED_PREF_KEYS = ['captureTimestamp', 'captureParent', 'logTimestamp'];
 
 // on load, the server's stored value wins for shared keys (so a change on iOS shows up here)
 // adopt the server's Ask AI model list and settle on a current model (persisted, validated)

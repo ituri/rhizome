@@ -3152,6 +3152,7 @@ function showSettings(initialTab) {
     bool(g, 'Convert markdown on paste', () => settings.markdownPaste !== false, v => { settings.markdownPaste = v; });
     g = group('Behaviour');
     bool(g, 'Timestamp quick capture', () => settings.captureTimestamp !== false, v => { settings.captureTimestamp = v; window.pushSharedPref('captureTimestamp'); });
+    bool(g, 'Timestamp #Log entries', () => settings.logTimestamp !== false, v => { settings.logTimestamp = v; window.pushSharedPref('logTimestamp'); });
     textRow(g, 'Capture target bullet', () => settings.captureParent || '', v => {
       settings.captureParent = v.trim();
       window.pushSharedPref('captureParent');   // account-wide: server captures (share sheet, r, MCP) honor it too
