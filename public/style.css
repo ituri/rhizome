@@ -2676,6 +2676,9 @@ html.ns-abbrev .ns-ref .ns-prefix { display: none; }
 .search-page { display: flex; align-items: center; gap: 10px; padding: 9px 12px; margin-bottom: 5px; border-radius: 9px; background: var(--accent-soft); color: var(--ink); text-decoration: none; font-weight: 600; font-size: 15px; }
 .search-page:hover { background: var(--accent-softer); }
 .search-page .sp-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* a page that exists only as a link target: findable, but not dressed up as a real hit
+   (a.page-empty already dims it — this drops the accent highlight too) */
+.search-page.page-empty { background: var(--accent-softer); font-weight: 500; }
 .search-mentions-head { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-faint); font-weight: 600; margin: 10px 0 6px; }
 .chip { flex: none; font-size: 10.5px; font-weight: 500; padding: 2px 8px; border-radius: 999px; color: var(--ink-faint); background: color-mix(in oklab, var(--ink-faint) 13%, transparent); }
 .chip.accent { color: var(--accent); background: var(--bg-raised); }

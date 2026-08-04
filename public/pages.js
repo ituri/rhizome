@@ -1879,12 +1879,17 @@ window.renderSearchResults = function renderSearchResults(frag) {
     const sec = document.createElement('div');
     sec.className = 'search-pages';
     for (const id of pages) {
+      // A page with no bullet and no note exists only as a link target: All Pages and the
+      // sidebar hide it, and links to it render dimmed. Search is the one place it stays
+      // findable — an orphaned one would be unreachable otherwise — so it is marked instead
+      // of hidden, in the same language the dimmed links use.
+      const empty = N(id).cal !== 'day' && !window.pageHasContent(id);
       const a = document.createElement('a');
-      a.className = 'search-page';
+      a.className = empty ? 'search-page page-empty' : 'search-page';
       a.href = '#/n/' + id;
       const title = plainOf(N(id).text).trim() || 'Untitled';
       a.innerHTML = `<span class="sp-title">${escHtml(title)}</span>` +
-        `<span class="chip accent">${N(id).cal === 'day' ? 'Journal' : 'Page'}</span>`;
+        `<span class="chip${empty ? '' : ' accent'}">${empty ? 'Empty' : N(id).cal === 'day' ? 'Journal' : 'Page'}</span>`;
       sec.append(a);
     }
     view.append(sec);
