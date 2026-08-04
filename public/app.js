@@ -515,6 +515,7 @@ function moveNode(id, parent, index) {
     const oldIdx = kidsOf(parent).indexOf(id);
     if (oldIdx < index) index--;
   }
+  window.dropStampOnMove?.(id, oldParent, parent);   // only level 1 under #Log stays stamped
   detach(id);
   insertAt(parent, index, id);
   touch(id);
@@ -2506,6 +2507,19 @@ function logStampFor(parentId) {
   const d = new Date();
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')} `;
 }
+
+// Only the FIRST level under #Log carries a timestamp. A line becomes a sub-bullet by being
+// created as a sibling (stamped) and then indented — so a stamped node that lands under a
+// parent which is NOT a #Log bullet loses the stamp again, whichever level it came from.
+const LEADING_STAMP_RE = /^(\d{2}:\d{2})(\s|&nbsp;)+/;
+window.dropStampOnMove = function dropStampOnMove(id, oldParent, newParent) {
+  if (settings.logTimestamp === false || isLogBullet(newParent)) return;
+  const n = N(contentIdOf(id));
+  if (!n || !LEADING_STAMP_RE.test(plainOf(n.text || ''))) return;
+  recOld(n.id);
+  n.text = (n.text || '').replace(LEADING_STAMP_RE, '');
+  touch(n.id);
+};
 
 function opNewAt(parent, index, text = '', focusOffset = 0) {
   if (state.readOnly) return null;
