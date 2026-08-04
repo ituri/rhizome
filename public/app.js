@@ -829,6 +829,9 @@ function focusItem(id, field = 'text', offset = 'end', host = null) {
   if (el && el.isContentEditable) setCaretOffset(el, offset);
 }
 
+// set when a move just prepended a #Log timestamp — restoreFocus then goes to end-of-line
+let justStampedNode = null;
+
 function captureFocus() {
   const ctx = editableCtx(document.activeElement);
   if (!ctx) return null;
@@ -837,7 +840,9 @@ function captureFocus() {
 
 function restoreFocus(f) {
   if (!f || !doc.nodes[f.id]) return;
-  focusItem(f.id, f.field, f.offset, f.host);
+  const stamped = justStampedNode === f.id;
+  justStampedNode = null;
+  focusItem(f.id, f.field, stamped ? 'end' : f.offset, f.host);
 }
 
 /* ---------------- 7. undo / redo ---------------- */
@@ -2524,6 +2529,10 @@ window.dropStampOnMove = function dropStampOnMove(id, oldParent, newParent) {
     ? escHtml(logStampFor(newParent)) + (n.text || '')
     : (n.text || '').replace(LEADING_STAMP_RE, '');
   touch(n.id);
+  // the caret offset was captured BEFORE the stamp was prepended, so restoring it verbatim
+  // would drop the caret right behind the time. Park it at the end of the line instead —
+  // that's where you keep writing a log entry.
+  justStampedNode = wants ? n.id : null;
 };
 
 function opNewAt(parent, index, text = '', focusOffset = 0) {
