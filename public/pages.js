@@ -30,18 +30,14 @@ window.pageHasContent = function pageHasContent(id) {
 
 /* ---------- empty + unlinked pages: debris left behind by an edited-away link ---------- */
 
-// every page id linked from anywhere in the doc (block text or note)
-function linkedPageIds() {
-  const out = new Set();
-  const re = /#\/n\/([A-Za-z0-9_-]+)/g;
-  for (const n of Object.values(doc.nodes)) {
-    const hay = (n.text || '') + (n.note || '');
-    if (!hay.includes('#/n/')) continue;
-    re.lastIndex = 0;
-    let m;
-    while ((m = re.exec(hay))) out.add(m[1]);
-  }
-  return out;
+// Is anything at all pointing at these pages? Deliberately `collectLinkedRefs`, the very
+// function behind the Linked References panel, rather than a hand-rolled scan for `#/n/<id>`:
+// a page is just as much referenced by a bare `#Log` tag or by a `Coordinates:: …` attribute
+// block, neither of which stores an href. "Referenced" has to mean the same thing here as it
+// does on screen, or the collection eats pages the backlinks panel lists as in use.
+function referencedPages(ids) {
+  const refs = collectLinkedRefs(new Set(ids));
+  return new Set(ids.filter(id => (refs.get(id) || []).length));
 }
 
 // Pages that must survive a sweep whatever their state: pinned/starred, the one you are
@@ -65,20 +61,21 @@ window.pageIsEmptyOrphan = function pageIsEmptyOrphan(id) {
   if (!n || n.cal || parentOf(id) !== ROOT) return false;
   if (window.pageHasContent(id)) return false;
   if (keepAlive().has(id) || Date.now() - (n.c || 0) < FRESH_MS) return false;
-  return !linkedPageIds().has(id);
+  return !referencedPages([id]).size;
 };
 
-// The same, for every page at once (one pass instead of one per page).
+// The same, for every page at once (one reference pass instead of one per page).
 window.emptyOrphanPages = function emptyOrphanPages() {
   if (!doc || !doc.nodes[ROOT]) return [];
   const keep = keepAlive();
-  const linked = linkedPageIds();
   const now = Date.now();
-  return pagesOf().filter(id => {
+  const candidates = pagesOf().filter(id => {
     const n = N(id);
-    return n && !n.cal && !window.pageHasContent(id) && !linked.has(id)
-      && !keep.has(id) && now - (n.c || 0) >= FRESH_MS;
+    return n && !n.cal && !window.pageHasContent(id) && !keep.has(id) && now - (n.c || 0) >= FRESH_MS;
   });
+  if (!candidates.length) return [];
+  const referenced = referencedPages(candidates);
+  return candidates.filter(id => !referenced.has(id));
 };
 
 // Offer to clear the backlog — the on-unlink path only catches what happens from now on.

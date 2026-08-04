@@ -29,8 +29,14 @@ const cookieFrom = sc => { const m = (sc || '').match(/rz_session=([^;]+)/); ret
     w1: { id: 'w1', text: 'Inhalt', children: [], c: old },
     twice: { id: 'twice', text: 'Leer, zweimal verlinkt', children: [], c: old },
   } };
-  doc.nodes.host.children.push('b4');
+  doc.nodes.host.children.push('b4', 'b5', 'b6');
   doc.nodes.b4 = { id: 'b4', text: link('twice'), children: [], c: old };   // the second link
+  // a page can be referenced WITHOUT an href: a bare #tag by title, or a Key:: attribute block
+  doc.nodes.b5 = { id: 'b5', text: 'heute nichts besonderes #Log', children: [], c: old };
+  doc.nodes.b6 = { id: 'b6', text: 'Coordinates:: 70.60709, 24.48584', children: [], c: old };
+  doc.nodes.root.children.push('Log', 'Coordinates');
+  doc.nodes.Log = { id: 'Log', text: 'Log', children: [], c: old };
+  doc.nodes.Coordinates = { id: 'Coordinates', text: 'Coordinates', children: [], c: old };
   await fetch(`${base}/api/g/${gid}/doc`, { method: 'PUT', headers: { 'Content-Type': 'application/json', Cookie: ck }, body: JSON.stringify({ doc }) });
 
   const b = await puppeteer.launch({ executablePath: '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
@@ -43,6 +49,10 @@ const cookieFrom = sc => { const m = (sc || '').match(/rz_session=([^;]+)/); ret
 
   ok(await alive('orphan'), 'Ausgangslage: die leere Seite existiert noch');
   ok((await candidates()).length === 0, 'solange verlinkt, ist sie kein Sammel-Kandidat');
+  // referenced without an href — the reason #Log showed up in the first sweep list
+  const cand0 = await candidates();
+  ok(!cand0.includes('Log'), 'eine per #tag referenzierte Seite ist kein Kandidat');
+  ok(!cand0.includes('Coordinates'), 'eine per Key::-Attribut referenzierte Seite ist kein Kandidat');
 
   // wipe the only link to `orphan`, then leave the block
   await p.evaluate(() => {
@@ -98,6 +108,19 @@ const cookieFrom = sc => { const m = (sc || '').match(/rz_session=([^;]+)/); ret
   await p.evaluate(() => document.activeElement && document.activeElement.blur());
   await sleep(1200);
   ok(await alive('kept'), 'die gerade geöffnete Seite wird nie eingesammelt');
+  ok(await alive('Log'), 'die #tag-Seite hat alles überlebt');
+  ok(await alive('Coordinates'), 'die Attribut-Seite hat alles überlebt');
+
+  // and once the last tag goes, the page becomes collectable like any other
+  await p.goto(base + '/#/n/host', { waitUntil: 'domcontentloaded' }); await sleep(1200);
+  await p.evaluate(() => {
+    const el = document.querySelector('.item[data-id="b5"] .content');
+    el.focus(); el.textContent = 'heute nichts besonderes'; el.dispatchEvent(new InputEvent('input', { bubbles: true }));
+  });
+  await sleep(300);
+  await p.evaluate(() => document.activeElement.blur());
+  await sleep(1200);
+  ok((await candidates()).includes('Log'), 'ohne den letzten #Log-Tag wird die Seite zum Kandidaten');
 
   console.log('PAGE ERRORS:', errs.length ? errs : 'keine'); if (errs.length) fail++;
   console.log(fail ? `\n${fail} FEHL` : '\nLeere, unverlinkte Seiten werden eingesammelt — und nur die');
