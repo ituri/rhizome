@@ -1756,6 +1756,37 @@ window.buildQueryResults = function buildQueryResults(n) {
   return box;
 };
 
+// Roam-style trail above a reference row: the referencing block's ancestors BELOW the page it is
+// grouped under (that page is already the group heading). Without it two blocks that read the
+// same on one page — "August 4th, 2026" under both Web and App — look like one duplicated row.
+// `withPage` prepends the page itself, for ungrouped rows that carry no heading of their own.
+function refCrumbsEl(id, groupId, withPage = false) {
+  const gid = groupId || refGroupOf(id);
+  const chain = ancestorsOf(id);
+  const at = chain.indexOf(gid);
+  if (at < 0) return null;                      // the row IS the page → nothing to trace
+  const parts = chain.slice(at + 1);
+  if (withPage) parts.unshift(gid);
+  if (!parts.length) return null;               // a direct child of the page needs no trail
+  const el = document.createElement('div');
+  el.className = 'ref-crumbs';
+  parts.forEach((pid, i) => {
+    if (i) {
+      const sep = document.createElement('span');
+      sep.className = 'ref-crumb-sep';
+      sep.textContent = '›';
+      el.append(sep);
+    }
+    const a = document.createElement('a');
+    a.className = 'ref-crumb';
+    a.href = '#/n/' + pid;
+    const t = crumbLabel(pid);
+    a.textContent = t.length > 48 ? t.slice(0, 47) + '…' : t;
+    el.append(a);
+  });
+  return el;
+}
+
 // grouped DOM for one target's rows; null when nothing survives the self-filter
 function buildRefGroups(target, rows) {
   const groups = new Map();
@@ -1780,6 +1811,8 @@ function buildRefGroups(target, rows) {
     title.textContent = plainOf(N(gid)?.text || '').trim() || 'Untitled';
     gEl.append(title);
     for (const r of gRows) {
+      const crumbs = refCrumbsEl(r.id, gid);
+      if (crumbs) gEl.append(crumbs);
       const row = document.createElement('div');
       row.className = 'ref-row';
       if (r.html != null) {
@@ -2055,6 +2088,9 @@ function fillUnlinked(body, target, title) {
     return;
   }
   for (const r of rows) {
+    // ungrouped rows → the trail carries the page name itself
+    const crumbs = refCrumbsEl(r.id, null, true);
+    if (crumbs) body.append(crumbs);
     const row = document.createElement('div');
     row.className = 'ref-row unlinked-row';
     const span = document.createElement('span');
