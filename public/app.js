@@ -257,7 +257,9 @@ function serializeChildren(node) {
     } else if (child.nodeType === Node.ELEMENT_NODE) {
       const tag = INLINE[child.tagName];
       if (child.tagName === 'BR') {
-        out += ' ';
+        // a bullet may span several lines (Shift+Enter). Chrome breaks the line with a real "\n"
+        // in the pre-wrap box; browsers (and pasted HTML) that use a <br> mean the same thing.
+        out += '\n';
       } else if (child.tagName === 'A') {
         const href = safeHref(child.getAttribute('href'));
         const inner = serializeChildren(child);
@@ -1420,6 +1422,11 @@ function commitPending(redecorateOk = false) {
     // the link "complete" at every keystroke, so a debounced commit would getOrCreatePage() one page
     // per prefix (SO, SOTA, SOTA-, …). Finalise links only once editing leaves the line (blur).
     const stillEditing = document.activeElement === el;
+    // A line break at the very end of the box leaves the browser's caret placeholder behind it
+    // ("…\n\n" in the DOM for one Shift+Enter). While the caret is still here that placeholder
+    // must stay — trimming it mid-edit would make the redecorate rewrite the line under the
+    // caret — but once editing leaves, store only what the user actually wrote.
+    if (!stillEditing) html = html.replace(/\n\n$/, '\n');
     if (ctx.field === 'text' && node.format !== 'codeblock') html = resolveEditSource(html, !stillEditing);
     // Block markers are VIEW-ONLY: a leading "# / ## / ### / > " never reaches node.text
     // (the redecorate below restores it from the live DOM). The FORMAT only follows the
@@ -3556,6 +3563,18 @@ function onKeydown(e) {
   const fmt = isTitle || isNote ? null : fmtOf(id);
 
   if (!['ArrowUp', 'ArrowDown'].includes(e.key)) navGoalX = null;
+
+  /* ----- Home ----- */
+  // Home goes to the start of the BULLET, not the start of the visual line: a wrapped or
+  // multi-line bullet is one unit of text here, so its beginning is offset 0. (Reading, so
+  // it stays available in read-only mode — hence before the guard below.)
+  if (e.key === 'Home' && !mod && !e.altKey) {
+    e.preventDefault();
+    if (e.shiftKey) selectPlainRange(el, 0, selFocusOffsetIn(el) ?? 0);
+    else setCaretOffset(el, 0);
+    return;
+  }
+
   if (state.readOnly) return;
 
   /* ----- formatting ----- */
@@ -3632,10 +3651,15 @@ function onKeydown(e) {
     opSplit(ctx);
     return;
   }
+  // Shift+Enter breaks the line INSIDE the bullet (the content box is white-space: pre-wrap,
+  // so the browser inserts a real "\n" that serializes, stores and re-renders as-is). Adding a
+  // note used to live here; it's still on the context menu, the slash menu and the palette.
   if (e.key === 'Enter' && e.shiftKey && !mod) {
     e.preventDefault();
     if (isNote) { focusItem(id, field === 'zoom-note' ? 'title' : 'text', 'end'); return; }
-    opAddNote(ctx);
+    if (isTitle) return;   // page titles stay single-line
+    document.execCommand('insertLineBreak');
+    scheduleCommit(el);
     return;
   }
   if (e.key === 'Enter' && mod && !e.shiftKey) {
@@ -3968,6 +3992,22 @@ shellEl.addEventListener('focusout', e => {
     ? (((ctx.el.textContent || '').match(/^(#{1,3}|>) /) || [])[1] || null)
     : null;
   window.clearDateSuggest?.();
+  // A commit that ran with the caret still inside kept the browser's trailing line-break
+  // placeholder ("…\n\n" for one Shift+Enter at the end). Drop it now that the caret is gone —
+  // and ONLY it: re-serializing the element wholesale would resurrect stale text, because a
+  // programmatic re-render (opSplit and friends) fires focusout too, on a DOM that has already
+  // moved on.
+  if (!pendingCommit && ctx.field === 'text' && ctx.el.isConnected) {
+    const cn = N(contentIdOf(ctx.id));
+    if (cn && /\n\n$/.test(cn.text || '') && /\n\n$/.test(ctx.el.textContent || '')) {
+      recOld(cn.id);
+      cn.text = cn.text.replace(/\n\n$/, '\n');
+      touch(cn.id);
+      markDirty();
+      if (!undoTxn) uncommittedNodeEdit = true;
+      syncMirrorRows(cn.id);
+    }
+  }
   commitActiveText();
   // rhizome: a page can't be renamed onto an existing page/day title — revert if it collides.
   // Only when this visit actually changed the title: two pages may already share a name (created
@@ -4868,7 +4908,8 @@ jumpOverlay.addEventListener('mousedown', e => { if (e.target === jumpOverlay) h
 const HELP = [
   ['Editing', [
     ['New item / split at caret', 'Enter'],
-    ['Add / edit note', 'Shift+Enter'],
+    ['New line inside the item', 'Shift+Enter'],
+    ['Jump to start of the item', 'Home'],
     ['Complete', 'Ctrl+Enter'],
     ['Indent / outdent', 'Tab / Shift+Tab'],
     ['Move item up / down', 'Alt+Shift+↑ ↓'],
@@ -5346,7 +5387,7 @@ function welcomeDoc() {
   add(basics, 'Click a bullet — or press <b>Alt+→</b> — to zoom into it. <b>Alt+←</b> zooms back out');
   add(basics, 'Type <b>[[</b> to link to a page — or create it on the spot. <b>Ctrl+K</b> finds or creates pages by name');
   add(basics, 'Every page shows its <b>Linked References</b> below — and unlinked mentions you can link with one click');
-  add(basics, 'Press <b>Shift+Enter</b> to attach a note to an item', { note: 'Notes look like this. They can run as long as you like.' });
+  add(basics, 'Press <b>Shift+Enter</b> for a new line inside the same item — one bullet, several lines', { note: 'Notes look like this. They can run as long as you like — right-click an item to add one.' });
   add(basics, 'Press <b>Ctrl+Enter</b> to complete something', { done: true });
   const power = add(w, 'Power moves', { collapsed: true });
   add(power, 'Tag things with #tags and @people, then click a tag to filter');

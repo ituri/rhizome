@@ -364,7 +364,7 @@ function slashCommands(ctx) {
       cmds.push({ label: 'Template: ' + tpl.label, icon: icon('template'), fn: () => insertTemplate(tpl.id, ctx) });
     }
     cmds.push(
-      { label: 'Add note', icon: '≡', hint: 'Shift+Enter', fn: () => opAddNote(ctx) },
+      { label: 'Add note', icon: '≡', fn: () => opAddNote(ctx) },
       { label: 'Complete', icon: '✓', hint: 'Ctrl+Enter', fn: () => opToggleDone(id) },
       { label: 'Duplicate', icon: icon('copy'), hint: 'Ctrl+D', fn: () => opDuplicate(id) },
       { label: 'Attach file', icon: icon('attachment'), fn: () => attachTo(id) },
@@ -2885,7 +2885,7 @@ window.showItemMenu = function showItemMenu(anchor, id) {
     if (!state.readOnly) {
       pop.append(
         menuItem(n.done ? 'Mark incomplete' : 'Complete', '✓', () => opToggleDone(id), { hint: 'Ctrl+Enter' }),
-        menuItem(n.note != null ? 'Edit note' : 'Add note', '≡', () => opAddNote({ id, field: 'text' }), { hint: 'Shift+Enter' }),
+        menuItem(n.note != null ? 'Edit note' : 'Add note', '≡', () => opAddNote({ id, field: 'text' })),
       );
       // an image bullet hides its text behind the picture and a tap there opens the lightbox,
       // so the menu carries the way back to the caret (on touch there is no Alt-click)

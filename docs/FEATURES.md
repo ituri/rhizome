@@ -17,7 +17,8 @@ Status as of 2026-07-13. ✅ implemented (covered by the e2e suites in [`tests/`
 | | Breadcrumbs, editable page titles, browser back/forward | ✅ | URL per node |
 | | Caret memory across zoom/search | ✅ | Returning to a view restores the exact caret |
 | | Expand/collapse (`Ctrl+↑↓`), expand/collapse all | ✅ | Animated |
-| | Notes (`Shift+Enter`), one-line clamp until focused | ✅ | |
+| | Multi-line items (`Shift+Enter`), `Home` → start of item | ✅ | Rhizome: Shift+Enter breaks the line instead of adding a note |
+| | Notes (context menu / `/note`), one-line clamp until focused | ✅ | |
 | | Complete (`Ctrl+Enter`), show/hide completed (`Ctrl+O`) | ✅ | |
 | | Drag & drop with depth control, touch long-press | ✅ | Board-aware |
 | | Split/merge at caret (Enter/Backspace/Delete at edges) | ✅ | Children reparent correctly |
