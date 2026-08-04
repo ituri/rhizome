@@ -112,6 +112,26 @@ const J = async (p, opts) => { const r = await fetch(base + p, opts); return { s
   r = await J('/api/g/default/semantic?q=Amateurfunk&limit=5');
   ok(!r.body.results.some(x => x.id === 'n4'), 'a deleted node leaves the index');
 
+  // clients need to know whether meaning-search exists at all — the iOS Search tab hides its
+  // "Meaning" mode when it doesn't, instead of offering a mode that can only answer 501
+  const me = await J('/api/me');
+  ok(me.body.semantic === true, `/api/me advertises semantic search when an embedder is set (${me.body.semantic})`);
+  const auth = await J('/api/auth');
+  ok(auth.body.semantic === true, `/api/auth advertises it too, before sign-in (${auth.body.semantic})`);
+
+  // and reports it honestly on a server without one
+  const DATA2 = fs.mkdtempSync(path.join(os.tmpdir(), 'rz-nosem-'));
+  const bare = spawn('node', [path.join(__dirname, '..', 'server.js')], {
+    env: { ...process.env, DATA_DIR: DATA2, PORT: '3243', HOST: '127.0.0.1', RHIZOME_EMBEDDINGS_URL: '' },
+    stdio: ['ignore', 'ignore', 'inherit'],
+  });
+  for (let i = 0; i < 50; i++) { try { await fetch('http://localhost:3243/api/me'); break; } catch { await sleep(200); } }
+  const bareMe = await (await fetch('http://localhost:3243/api/me')).json();
+  ok(bareMe.semantic === false, `a server without an embedder says so (${bareMe.semantic})`);
+  const bareHit = await fetch('http://localhost:3243/api/g/default/semantic?q=test');
+  ok(bareHit.status === 501, `and still answers 501 on the endpoint itself (${bareHit.status})`);
+  bare.kill();
+
   console.log(fl ? `\n${fl} SEMANTIC TESTS FAILING` : '\nSEMANTIC TESTS PASSED');
   srv.kill(); embSrv.close();
   process.exit(fl ? 1 : 0);

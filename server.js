@@ -2083,6 +2083,7 @@ const server = http.createServer(async (req, res) => {
           ok: isAuthed(req),
           ai: AI_ENABLED,
           aiModels: AI_ENABLED ? AI_MODELS : [],
+          semantic: semanticEnabled(),
         });
       }
       if (url === '/api/me' && req.method === 'GET') {
@@ -2095,6 +2096,9 @@ const server = http.createServer(async (req, res) => {
           inviteRequired: !!currentInviteCode(),
           ai: AI_ENABLED,
           aiModels: AI_ENABLED ? AI_MODELS : [],
+          // a client can only hide its meaning-search UI if it knows there is no embedder;
+          // the full picture (indexed vectors, model) stays admin-only in /api/admin/status
+          semantic: semanticEnabled(),
         });
       }
       // usage stats + the storage quota that applies to the signed-in user (for the Statistics view)
