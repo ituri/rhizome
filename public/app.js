@@ -2995,6 +2995,47 @@ function opDelete(id, { toast = true } = {}) {
   }
 }
 
+// Move a batch of pages to the trash as ONE undoable step — used by the empty-page cleanup
+// (pages.js), which may take several at a time and should not cost several undos.
+window.trashPages = function trashPages(ids, { toast = true } = {}) {
+  if (state.readOnly || !ids.length) return;
+  commitActiveText();
+  snapshot();
+  recTrash();
+  const label = plainOf(N(ids[0]).text).trim() || 'page';
+  for (const id of ids) {
+    if (!doc.nodes[id]) continue;
+    const nodes = {};
+    const stack = [id];
+    while (stack.length) {
+      const x = stack.pop();
+      nodes[x] = structuredClone(N(x));
+      stack.push(...kidsOf(x));
+    }
+    trashList().unshift({ ts: Date.now(), parent: parentOf(id), index: kidsOf(parentOf(id)).indexOf(id), root: id, nodes });
+    deleteSubtree(id);
+  }
+  if (trashList().length > 200) doc.trash = trashList().slice(0, 200);
+  if (!doc.nodes[state.zoom]) state.zoom = HOME;
+  renderPage();
+  markDirty();
+  if (toast) {
+    showToast(ids.length === 1
+      ? `Removed the empty page “${label.slice(0, 40)}” — nothing links to it`
+      : `Removed ${ids.length} empty pages nothing links to`,
+    { label: 'Undo', fn: undo });
+  }
+};
+
+// every `#/n/<id>` in a single block's stored html
+function linkIdsIn(html) {
+  const out = new Set();
+  const re = /#\/n\/([A-Za-z0-9_-]+)/g;
+  let m;
+  while ((m = re.exec(html || ''))) out.add(m[1]);
+  return out;
+}
+
 function opDuplicate(id) {
   if (state.readOnly) return;
   commitActiveText();
@@ -4058,7 +4099,16 @@ shellEl.addEventListener('focusout', e => {
     }
     const display = displayHtml(N(cid));
     if (ctx.el.innerHTML !== display) ctx.el.innerHTML = display;
+    // A link you edited away may have been the only thing keeping its page alive. Checked
+    // here, on the way out, not per keystroke: mid-edit the link is briefly gone with every
+    // backspace, and collecting the page then would delete it under a half-typed word.
+    if (linksBeforeEdit && linksBeforeEdit.size) {
+      const after = linkIdsIn(N(cid).text);
+      const dropped = [...linksBeforeEdit].filter(id => !after.has(id) && window.pageIsEmptyOrphan?.(id));
+      if (dropped.length) window.trashPages(dropped);
+    }
   }
+  linksBeforeEdit = null;
   if ((ctx.field === 'note' || ctx.field === 'zoom-note') && doc.nodes[ctx.id]) {
     const n = N(contentIdOf(ctx.id)); // a mirror's note lives on the target
     if (n.note === '' && document.activeElement !== ctx.el) {
@@ -5222,6 +5272,7 @@ const isCoarse = matchMedia('(pointer: coarse)').matches;
 let lastItemId = null;
 
 let titleBeforeEdit = null; // the page title as it was when editing began (to revert a colliding rename)
+let linksBeforeEdit = null; // the page links this block carried when editing began (to collect what it orphans)
 // while a line is edited its block refs show their raw ((id)) source (Roam-style),
 // so they can be selected, edited or removed; on blur they render back to live text
 // reveal-on-focus: turn a bullet's rendered inline HTML into its editable MARKDOWN SOURCE, in
@@ -5341,6 +5392,9 @@ pageEl.addEventListener('focusin', e => {
     // demote when that is true (stale/empty elements from re-renders must never demote)
     if (BLOCK_EDIT_MARK[fmtOf(ctx.id)]) ctx.el.dataset.blockMark = '1';
   }
+  // what this block linked when you arrived — compared on the way out, so a link you edit
+  // away can take its empty, unreferenced page with it
+  linksBeforeEdit = ctx && ctx.field === 'text' ? linkIdsIn(N(contentIdOf(ctx.id)).text) : null;
   if (ctx && ctx.field !== 'title' && ctx.field !== 'zoom-note') lastItemId = ctx.id;
   if (ctx && ctx.field === 'title') titleBeforeEdit = N(contentIdOf(ctx.id))?.text ?? null;
   if (isCoarse && ctx && !state.readOnly) mobilebarEl.hidden = false;
@@ -5579,4 +5633,14 @@ async function loadDoc() {
     doc.trash = doc.trash.filter(t => t.ts > cutoff);
     if (doc.trash.length !== before) markDirty();
   }
+  // Debris from before the on-unlink collection existed (or from a block deleted whole).
+  // Offered, never swept silently — and as a toast rather than a dialog, so declining it
+  // doesn't mean answering a modal on every single load.
+  setTimeout(() => {
+    const stale = window.emptyOrphanPages?.() || [];
+    if (stale.length) {
+      showToast(`${stale.length} empty page${stale.length === 1 ? '' : 's'} nothing links to`,
+        { label: 'Clean up', fn: () => window.sweepEmptyPages() });
+    }
+  }, 2500);
 }

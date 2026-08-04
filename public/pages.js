@@ -28,6 +28,68 @@ window.pageHasContent = function pageHasContent(id) {
   return !!(kidsOf(cid).length || N(cid)?.note);
 };
 
+/* ---------- empty + unlinked pages: debris left behind by an edited-away link ---------- */
+
+// every page id linked from anywhere in the doc (block text or note)
+function linkedPageIds() {
+  const out = new Set();
+  const re = /#\/n\/([A-Za-z0-9_-]+)/g;
+  for (const n of Object.values(doc.nodes)) {
+    const hay = (n.text || '') + (n.note || '');
+    if (!hay.includes('#/n/')) continue;
+    re.lastIndex = 0;
+    let m;
+    while ((m = re.exec(hay))) out.add(m[1]);
+  }
+  return out;
+}
+
+// Pages that must survive a sweep whatever their state: pinned/starred, the one you are
+// looking at, whatever sits in the right sidebar, and anything created in the last minutes
+// (Ctrl+K makes a page and takes you there — it has no link and no content YET).
+function keepAlive() {
+  const meta = doc.meta || {};
+  const keep = new Set([...(meta.pins || []), ...(meta.stars || []), state.zoom]);
+  for (const id of state.rightbar || []) keep.add(id);
+  return keep;
+}
+const FRESH_MS = 5 * 60 * 1000;
+
+// A page that is empty AND unlinked is debris. Typing `[[Foo]]` has to materialise a node
+// (a link needs an id); when the link that made it is later edited away, what remains has no
+// content to lose and no link to break. Empty-but-linked pages stay — their links still need a
+// target — and unlinked-but-written pages stay too: a link is not what makes a page real, the
+// sidebar, All Pages and search all reach them.
+window.pageIsEmptyOrphan = function pageIsEmptyOrphan(id) {
+  const n = doc && doc.nodes[id];
+  if (!n || n.cal || parentOf(id) !== ROOT) return false;
+  if (window.pageHasContent(id)) return false;
+  if (keepAlive().has(id) || Date.now() - (n.c || 0) < FRESH_MS) return false;
+  return !linkedPageIds().has(id);
+};
+
+// The same, for every page at once (one pass instead of one per page).
+window.emptyOrphanPages = function emptyOrphanPages() {
+  if (!doc || !doc.nodes[ROOT]) return [];
+  const keep = keepAlive();
+  const linked = linkedPageIds();
+  const now = Date.now();
+  return pagesOf().filter(id => {
+    const n = N(id);
+    return n && !n.cal && !window.pageHasContent(id) && !linked.has(id)
+      && !keep.has(id) && now - (n.c || 0) >= FRESH_MS;
+  });
+};
+
+// Offer to clear the backlog — the on-unlink path only catches what happens from now on.
+window.sweepEmptyPages = function sweepEmptyPages() {
+  const ids = window.emptyOrphanPages();
+  if (!ids.length) { showToast('No empty pages to clean up'); return; }
+  const names = ids.map(id => '· ' + (plainOf(N(id).text).trim() || 'Untitled').slice(0, 60)).join('\n');
+  if (!confirm(`${ids.length} page${ids.length === 1 ? '' : 's'} with no content that nothing links to:\n\n${names}\n\nMove to the trash?`)) return;
+  window.trashPages(ids);
+};
+
 // alias (lowercased) -> pageId, gathered from each page's `Aliases:: a, b, c` child block
 function pageAliasMap() {
   const map = new Map();
