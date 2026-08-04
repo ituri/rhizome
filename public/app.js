@@ -2508,16 +2508,21 @@ function logStampFor(parentId) {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')} `;
 }
 
-// Only the FIRST level under #Log carries a timestamp. A line becomes a sub-bullet by being
-// created as a sibling (stamped) and then indented — so a stamped node that lands under a
-// parent which is NOT a #Log bullet loses the stamp again, whichever level it came from.
+// The rule is simply: level 1 under #Log carries a timestamp, deeper levels don't. Moving a
+// line between levels therefore has to work both ways — indenting away from #Log drops the
+// stamp, outdenting back up to #Log adds one (with the current time).
 const LEADING_STAMP_RE = /^(\d{2}:\d{2})(\s|&nbsp;)+/;
 window.dropStampOnMove = function dropStampOnMove(id, oldParent, newParent) {
-  if (settings.logTimestamp === false || isLogBullet(newParent)) return;
+  if (settings.logTimestamp === false || newParent === oldParent) return;
   const n = N(contentIdOf(id));
-  if (!n || !LEADING_STAMP_RE.test(plainOf(n.text || ''))) return;
+  if (!n) return;
+  const has = LEADING_STAMP_RE.test(plainOf(n.text || ''));
+  const wants = isLogBullet(newParent);
+  if (has === wants) return;
   recOld(n.id);
-  n.text = (n.text || '').replace(LEADING_STAMP_RE, '');
+  n.text = wants
+    ? escHtml(logStampFor(newParent)) + (n.text || '')
+    : (n.text || '').replace(LEADING_STAMP_RE, '');
   touch(n.id);
 };
 
