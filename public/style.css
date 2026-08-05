@@ -2839,6 +2839,18 @@ a.tag::before, a.tag::after { content: none !important; } /* no [[ ]] brackets o
 .content a.block-ref[href^="#/n/"]:hover, .note a.block-ref[href^="#/n/"]:hover, .zoom-note a.block-ref[href^="#/n/"]:hover, .ref-row a.block-ref[href^="#/n/"]:hover {
   text-decoration-color: var(--ink);
 }
+/* A long transclusion stays compact WITHOUT lying about its content: the full text is in the
+   DOM (selectable, copyable, searchable) and the browser clamps what it draws, with a real
+   ellipsis. `-webkit-inline-box` is the inline-level box that -webkit-line-clamp accepts, so
+   the reference still starts on the line of the text before it. */
+.content a.block-ref[href^="#/n/"], .ref-row a.block-ref[href^="#/n/"] {
+  display: -webkit-inline-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  max-width: 100%;
+  vertical-align: bottom;
+}
 a.block-ref::before, a.block-ref::after { content: none !important; }
 .content a.block-ref[href^="#/n/"]:hover::after, .note a.block-ref[href^="#/n/"]:hover::after, .zoom-note a.block-ref[href^="#/n/"]:hover::after, .ref-row a.block-ref[href^="#/n/"]:hover::after {
   content: "⤴" !important;

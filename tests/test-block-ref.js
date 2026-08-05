@@ -13,6 +13,8 @@ const cookieFrom = sc => { const m = (sc || '').match(/rz_session=([^;]+)/); ret
 // 166 characters — the length that first showed the bug (cut landed after "wurde der n")
 const LONG = 'Habe eine Adresse in iOS hinzugefügt per Button aus der Toolbar. Dann umbenannt. '
   + 'Dort wo sie ursprünglich per Link verlinkt war, wurde der neue Name nicht übernommen.';
+// several times longer than the clamp, to check the visual cut
+const HUGE = Array.from({ length: 9 }, (_, i) => `Satz ${i + 1} eines sehr langen Zielblocks, der über viele Zeilen läuft.`).join(' ');
 
 (async () => {
   for (let i = 0; i < 50; i++) { try { const r = await fetch(base + '/api/me'); if (r.status) break; } catch {} await sleep(200); }
@@ -21,10 +23,15 @@ const LONG = 'Habe eine Adresse in iOS hinzugefügt per Button aus der Toolbar. 
 
   const doc = { root: 'root', nodes: {
     root: { id: 'root', text: '', children: ['src', 'page'] },
-    src: { id: 'src', text: 'Quelle', children: ['target'] },
+    src: { id: 'src', text: 'Quelle', children: ['target', 'huge', 'tiny'] },
     target: { id: 'target', text: LONG, children: [] },
-    page: { id: 'page', text: 'Seite', children: ['ref'] },
+    huge: { id: 'huge', text: HUGE, children: [] },
+    plain: { id: 'plain', text: 'Ganz normaler Bullet', children: [] },
+    tiny: { id: 'tiny', text: 'Kurz.', children: [] },
+    small: { id: 'small', text: 'Vorher <a href="#/n/tiny" class="block-ref"></a> nachher.', children: [] },
+    page: { id: 'page', text: 'Seite', children: ['ref', 'big', 'plain', 'small'] },
     ref: { id: 'ref', text: 'Problem entdeckt: <a href="#/n/target" class="block-ref"></a>', children: [] },
+    big: { id: 'big', text: 'Lang: <a href="#/n/huge" class="block-ref"></a> — Nachsatz.', children: [] },
   } };
   await fetch(`${base}/api/g/${gid}/doc`, { method: 'PUT', headers: { 'Content-Type': 'application/json', Cookie: ck }, body: JSON.stringify({ doc }) });
 
@@ -52,6 +59,34 @@ const LONG = 'Habe eine Adresse in iOS hinzugefügt per Button aus der Toolbar. 
 
   const stored = (await (await fetch(`${base}/api/g/${gid}/doc`, { headers: { Cookie: ck } })).json()).doc.nodes.ref.text;
   ok(/class="block-ref"><\/a>/.test(stored), `gespeichert bleibt der Ref leer, der Text lebt am Ziel (${stored})`);
+
+  // a target longer than the clamp: cut VISUALLY (three lines + a real ellipsis), never in the DOM
+  const big = await p.evaluate((HUGE) => {
+    const ref = document.querySelector('.item[data-id="big"] .block-ref');
+    const content = document.querySelector('.item[data-id="big"] .content');
+    const lh = parseFloat(getComputedStyle(content).lineHeight);
+    return {
+      lines: Math.round(ref.getBoundingClientRect().height / lh),
+      clamped: ref.scrollHeight > ref.clientHeight + 1,
+      whole: ref.textContent === HUGE,
+      tail: (content.textContent || '').includes('Nachsatz'),
+      plainRow: document.querySelector('.item[data-id="plain"] .content').getBoundingClientRect().height,
+      smallRow: document.querySelector('.item[data-id="small"] .content').getBoundingClientRect().height,
+      smallOneLine: (() => {
+        const c = document.querySelector('.item[data-id="small"] .content');
+        const r = c.querySelector('.block-ref');
+        return Math.round(r.getBoundingClientRect().top - c.getBoundingClientRect().top);
+      })(),
+    };
+  }, HUGE);
+  ok(big.lines === 3, `ein überlanges Ziel wird auf 3 Zeilen geklammert (${big.lines})`);
+  ok(big.clamped, 'und zwar sichtbar gekürzt (Auslassungszeichen)');
+  ok(big.whole, 'im DOM steht trotzdem der ganze Text — markierbar, kopierbar, durchsuchbar');
+  ok(big.tail, 'Text nach der Referenz geht nicht verloren');
+  ok(big.smallRow === big.plainRow, `ein kurzer Ref bleibt einzeilig wie jeder andere Bullet (${big.smallRow} vs. ${big.plainRow})`);
+  // vertical-align: bottom hängt die Inline-Box an die Grundlinie, ihr Kastenrand darf also um
+  // wenige Pixel abweichen — dieselbe Zeile ist es, solange der Versatz unter einer Zeilenhöhe bleibt
+  ok(Math.abs(big.smallOneLine) < big.plainRow, `und steht in derselben Zeile wie der Text davor (Versatz ${big.smallOneLine}px)`);
 
   console.log('PAGE ERRORS:', errs.length ? errs : 'keine'); if (errs.length) fail++;
   console.log(fail ? `\n${fail} FEHL` : '\nBlockrefs zeigen den vollen Zieltext');
