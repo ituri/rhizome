@@ -377,7 +377,10 @@ function decorate(html, opts = {}) {
           const m = (child.getAttribute('href') || '').match(/#\/n\/([A-Za-z0-9]+)/);
           if (opts.editing) { child.replaceWith(document.createTextNode(m ? `((${m[1]}))` : '')); continue; }
           const t = m && doc.nodes[m[1]];
-          child.textContent = t ? (plainOf(t.text).trim().slice(0, 140) || 'Untitled') : '(deleted block)';
+          // the WHOLE target text: a block reference is a transclusion, and a silent cut at a
+          // fixed length (140 chars, mid-word, without even an ellipsis) makes it lie about
+          // what it references. Long blocks simply wrap, like any other inline text.
+          child.textContent = t ? (plainOf(t.text).trim() || 'Untitled') : '(deleted block)';
           child.setAttribute('contenteditable', 'false');
           continue;
         }
