@@ -77,6 +77,47 @@ const stamp = (ms, c, dev) => `${String(ms).padStart(13, '0')}:${String(c).padSt
   ok(Object.values(doc.nodes).filter(n => n.cal === 'root').length === 1, 'only one calendar root');
   ok(!doc.nodes.iosDay && !doc.nodes.iosMonth, 'the duplicate scaffold nodes are gone');
 
+  /* ---- 1b. the phone was offline for days: its whole queued outbox arrives at once,
+             against days the browser has meanwhile created (empty) on its own ---- */
+
+  const later = ['2026-08-10', '2026-08-11'];
+  // browser, still online, opens the daily view on both days → empty days with a starter bullet
+  doc = await getDoc();
+  const monthNow = Object.values(doc.nodes).find(n => n.cal === 'month' && n.cm === 7).id;
+  const webLate = JSON.parse(JSON.stringify(doc));
+  later.forEach((iso, i) => {
+    webLate.nodes['wd' + i] = { id: 'wd' + i, text: iso, note: null, done: false, collapsed: false, children: ['wb' + i], cal: 'day', cd: iso, c: now + i, m: now + i };
+    webLate.nodes['wb' + i] = { id: 'wb' + i, text: '', note: null, done: false, collapsed: false, children: [] };
+    webLate.nodes[monthNow].children.push('wd' + i);
+  });
+  await J(G + '/doc', { method: 'PUT', body: JSON.stringify({ doc: webLate, device: 'web' }) });
+
+  // phone comes back: FIFO outbox — its own day nodes plus the bullets written under them,
+  // and (the tricky part) a bullet that was still queued behind the merge
+  const phoneOps = [];
+  later.forEach((iso, i) => {
+    phoneOps.push({ kind: 'insert', node: 'pd' + i, hlc: stamp(1786400000000 + i, 1, 'phone123'), parent: monthNow, ord: 0, data: { text: iso, cal: 'day', cd: iso } });
+    phoneOps.push({ kind: 'insert', node: 'pb' + i, hlc: stamp(1786400000000 + i, 2, 'phone123'), parent: 'pd' + i, ord: 0, data: { text: 'offline note ' + i } });
+  });
+  await J(G + '/ops', { method: 'POST', body: JSON.stringify({ ops: phoneOps, device: 'phone' }) });
+  // a second batch, still parented to the phone's own (now merged-away) day node
+  await J(G + '/ops', {
+    method: 'POST',
+    body: JSON.stringify({ device: 'phone', ops: [{ kind: 'insert', node: 'pbLate', hlc: stamp(1786400000900, 3, 'phone123'), parent: 'pd0', ord: 1, data: { text: 'queued behind the merge' } }] }),
+  });
+
+  doc = await getDoc();
+  for (const iso of later) {
+    const d = Object.values(doc.nodes).filter(n => n.cal === 'day' && n.cd === iso);
+    ok(d.length === 1, `${iso}: one day, not two (found ${d.length})`);
+    const texts = (d[0].children || []).map(plainOf(doc));
+    ok(texts.some(t => /^offline note/.test(t)), `${iso}: the offline note survived`);
+    ok(!texts.some(t => !t.trim()), `${iso}: the browser's empty placeholder bullet was dropped`);
+  }
+  const lateParent = Object.values(doc.nodes).find(n => (n.children || []).includes('pbLate'));
+  ok(lateParent && lateParent.cal === 'day' && lateParent.cd === later[0],
+    'a bullet queued behind the merge lands in the surviving day, not at the document root');
+
   /* ---- 2. a stray duplicate that predates the fix is healed when the graph loads ---- */
 
   doc = await getDoc();
@@ -84,7 +125,8 @@ const stamp = (ms, c, dev) => `${String(ms).padStart(13, '0')}:${String(c).padSt
   const monthId = Object.values(doc.nodes).find(n => (n.children || []).includes(dayId)).id;
   doc.nodes.oldDup = { id: 'oldDup', text: 'August 9th, 2026', note: null, done: false, collapsed: false, children: ['oldKid'], cal: 'day', cd: ISO, c: 1, m: 1 };
   doc.nodes.oldKid = { id: 'oldKid', text: 'from the legacy duplicate', note: null, done: false, collapsed: false, children: [] };
-  doc.nodes[monthId].children.push('oldDup');
+  // deliberately NOT pushed into the month: this is the shape the July 14th, 2026 duplicate had
+  // — an older day hanging off nothing, next to the one the calendar actually shows
   // write it straight into the store, bypassing the healing write paths, so the graph on disk
   // looks like Phil's did before this fix
   const { Store } = require(path.join(__dirname, '..', 'db.js'));
@@ -107,6 +149,22 @@ const stamp = (ms, c, dev) => `${String(ms).padStart(13, '0')}:${String(c).padSt
   const healedKids = (healed[0].children || []).map(plainOf(doc));
   ok(healedKids.includes('from the legacy duplicate'), 'the old duplicate’s bullets moved to the survivor');
   ok(!healedKids.some(t => !t.trim()), 'the spare empty starter bullets are gone');
+  // the duplicate hung off nothing at all, so merging INTO it would have pulled the visible day
+  // out of the calendar — the survivor must still be reachable from the root
+  const reach = id => { const pm = {}; for (const k in doc.nodes) for (const c of doc.nodes[k].children || []) pm[c] = k; let cur = id; while (cur) { if (cur === doc.root) return true; cur = pm[cur]; } return false; };
+  ok(reach(healed[0].id), 'the surviving day is still reachable from the root');
+
+  /* ---- 3. a day that hangs off nothing is re-homed under its month ---- */
+
+  const strayIso = '2026-08-04';
+  doc.nodes.stray = { id: 'stray', text: 'August 4th, 2026', note: null, done: false, collapsed: false, children: ['strayKid'], cal: 'day', cd: strayIso };
+  doc.nodes.strayKid = { id: 'strayKid', text: 'written into a day nobody can reach', note: null, done: false, collapsed: false, children: [] };
+  const r3 = await J(G + '/doc', { method: 'PUT', body: JSON.stringify({ doc, device: 'web' }) });
+  ok(r3.status === 200, 'doc with a stray day accepted');
+  doc = await getDoc();
+  ok(doc.nodes.stray && reach('stray'), 'the stray day was re-homed into the calendar');
+  const strayParent = Object.values(doc.nodes).find(n => (n.children || []).includes('stray'));
+  ok(strayParent && strayParent.cal === 'month' && strayParent.cm === 7, 'it hangs under its own month');
 
   srv.kill();
   console.log(fail ? `\n${fail} DAY-DUP TESTS FAILING` : '\nDAY-DUP TESTS PASSED');

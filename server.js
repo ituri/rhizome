@@ -264,6 +264,8 @@ function loadGraph(id) {
   } catch { /* none */ }
   return {
     id, dir, backupDir, db, store, sse: new Set(), seenOps: new Set(), seenOrder: [], lastBackupAt,
+    // calendar nodes this process merged away → their survivor (see mergeDuplicateCalNodes)
+    calMerged: new Map(),
     // page history: nodes/pages changed since the last debounced snapshot, + the last device name
     historyNodes: new Set(), historyAll: false, historyTimer: null, historyDevice: '',
   };
@@ -274,7 +276,7 @@ function getGraph(id) {
     g = loadGraph(id);
     graphCache.set(id, g);
     // heal calendar duplicates that predate the write-path merge (see mergeDuplicateCalNodes)
-    if (g.store.doc && mergeDuplicateCalNodes(g.store.doc)) commitDoc(g, g.store.doc, 'calendar-heal');
+    if (g.store.doc && mergeDuplicateCalNodes(g.store.doc, g.calMerged)) commitDoc(g, g.store.doc, 'calendar-heal');
     armEmbedIndex(g);   // catch up the semantic index on first touch after a restart
   }
   return g;
@@ -589,7 +591,10 @@ const calSlotKey = n => n.cal === 'day' ? (n.cd ? `d:${n.cd}` : null)
 // every client seeds a fresh day with — after a merge there would be one per duplicate)
 const isBlankBullet = n => n && !(n.children || []).length && !(n.files || []).length && !serverPlain(n.text).trim();
 
-function mergeDuplicateCalNodes(doc) {
+// `merged` (optional) collects dup → survivor, so ops that were queued against the merged-away
+// node (an iPhone that was offline for days keeps sending inserts whose parent is ITS day node)
+// can still be re-pointed instead of falling back to the document root.
+function mergeDuplicateCalNodes(doc, merged) {
   if (!doc || !doc.nodes) return 0;
   let healed = 0;
   // top down: merging a level can leave duplicates one level below it
@@ -605,20 +610,27 @@ function mergeDuplicateCalNodes(doc) {
     }
     for (const [key, ids] of bySlot) {
       if (ids.length < 2) continue;
-      // the oldest node wins — it is the one other devices are most likely to have adopted
+      const pm = buildParentMap(doc);
+      // Reachable from the root beats older: a graph can hold a day that hangs off nothing at
+      // all (an out-of-order insert that never found its month). Merging INTO such a stray would
+      // pull the visible day's bullets out of the calendar with it — exactly what happened to
+      // July 14th, 2026 the first time this ran.
+      const rooted = id => { let cur = id, guard = 1e6; while (cur != null && guard-- > 0) { if (cur === doc.root) return true; cur = pm.get(cur); } return false; };
+      const reach = new Map(ids.map(id => [id, rooted(id)]));
+      // among equals the oldest node wins — the one other devices are most likely to have adopted
       ids.sort((a, b) => {
         const na = doc.nodes[a], nb = doc.nodes[b];
         const ca = na.c ?? na.m ?? Infinity, cb = nb.c ?? nb.m ?? Infinity;
-        return ca - cb || (a < b ? -1 : a > b ? 1 : 0);
+        return (reach.get(b) ? 1 : 0) - (reach.get(a) ? 1 : 0) || ca - cb || (a < b ? -1 : a > b ? 1 : 0);
       });
       const keep = ids[0];
-      const pm = buildParentMap(doc);
       for (const dup of ids.slice(1)) {
         const kids = doc.nodes[dup].children || [];
         for (const c of kids) if (!doc.nodes[keep].children.includes(c)) doc.nodes[keep].children.push(c);
         const par = pm.get(dup);
         if (par && doc.nodes[par]) doc.nodes[par].children = doc.nodes[par].children.filter(x => x !== dup);
         delete doc.nodes[dup];
+        if (merged) merged.set(dup, keep);
         healed++;
         console.warn(`calendar heal: merged duplicate ${level} ${dup} into ${keep} (${key})`);
       }
@@ -636,7 +648,35 @@ function mergeDuplicateCalNodes(doc) {
       if (level === 'root') (doc.meta || (doc.meta = {})).calendar = keep;
     }
   }
-  return healed;
+  return healed + rehomeStrayDays(doc);
+}
+
+// A journal day that hangs off nothing (an insert whose month never materialised, a day whose
+// parent was deleted) still holds its bullets, but no view can reach it: the daily stream walks
+// the calendar. Put it back under its month — `ensureDayInDoc` does this for the day it is asked
+// about, this catches every other one.
+function rehomeStrayDays(doc) {
+  if (!doc || !doc.nodes) return 0;
+  const pm = buildParentMap(doc);
+  const reachable = id => { let cur = id, guard = 1e6; while (cur != null && guard-- > 0) { if (cur === doc.root) return true; cur = pm.get(cur); } return false; };
+  let fixed = 0;
+  for (const id of Object.keys(doc.nodes)) {   // snapshot: a missing month is created below
+    const n = doc.nodes[id];
+    if (!n || n.cal !== 'day' || !/^\d{4}-\d{2}-\d{2}$/.test(n.cd || '') || reachable(id)) continue;
+    const par = pm.get(id);
+    if (par && doc.nodes[par]) doc.nodes[par].children = doc.nodes[par].children.filter(x => x !== id);
+    const [y, m] = n.cd.split('-').map(Number);
+    const yr = ensureCalChild(doc, calRootInDoc(doc), k => doc.nodes[k].cal === 'year' && doc.nodes[k].cy === y,
+      () => makeNode(String(y), { cal: 'year', cy: y }));
+    const mo = ensureCalChild(doc, yr, k => doc.nodes[k].cal === 'month' && doc.nodes[k].cm === m - 1,
+      () => makeNode(MONTHS_LONG[m - 1], { cal: 'month', cy: y, cm: m - 1 }));
+    doc.nodes[mo].children.push(id);
+    sortCalChildren(doc, mo);
+    pm.set(id, mo);
+    fixed++;
+    console.warn(`calendar heal: re-homed stray day ${id} (${n.cd}) under its month`);
+  }
+  return fixed;
 }
 
 // The children of a bullet tagged #daily-template seed every freshly created journal day —
@@ -2714,7 +2754,7 @@ const server = http.createServer(async (req, res) => {
           const incoming = sanitizeDocNodes(body.doc);
           // a whole-doc PUT ships the client's own view of the calendar — if it created a day
           // another device had already created, this is where the two meet (see mergeDuplicateCalNodes)
-          const healed = mergeDuplicateCalNodes(incoming);
+          const healed = mergeDuplicateCalNodes(incoming, g.calMerged);
           const v = commitDoc(g, incoming, healed ? 'calendar-heal' : body.device);
           return send(res, 200, { version: v });
         }
@@ -2727,13 +2767,20 @@ const server = http.createServer(async (req, res) => {
             if (op.data) { if (typeof op.data.text === 'string') op.data.text = sanitizeServerHtml(op.data.text); if (typeof op.data.note === 'string') op.data.note = sanitizeServerHtml(op.data.note); }
             if (op.patch) { if (typeof op.patch.text === 'string') op.patch.text = sanitizeServerHtml(op.patch.text); if (typeof op.patch.note === 'string') op.patch.note = sanitizeServerHtml(op.patch.note); }
           }
+          // a device that was offline for days keeps sending ops parented to ITS copy of a day
+          // the server has since merged away — re-point them, or they'd land at the document root
+          for (const op of fresh) {
+            let p = op.parent, guard = 8;
+            while (p != null && g.calMerged.has(p) && guard-- > 0) p = g.calMerged.get(p);
+            if (p !== op.parent) op.parent = p;
+          }
           const applied = applyOpsToDoc(g.store.doc, fresh, trashSubtreeInDoc);
           for (const op of fresh) markSeen(g, op.id);
           g.historyDevice = String(body.deviceName || '').slice(0, 60) || g.historyDevice;
           // an insert that duplicates a calendar slot another device already filled is healed
           // here; the merge isn't expressible as ops, so peers get a plain version bump under a
           // foreign origin — every client (including the sender) refetches the whole doc
-          const healed = applied.length ? mergeDuplicateCalNodes(g.store.doc) : 0;
+          const healed = applied.length ? mergeDuplicateCalNodes(g.store.doc, g.calMerged) : 0;
           const v = healed ? commitDoc(g, g.store.doc, 'calendar-heal')
             : applied.length ? commitOps(g, applied, body.device) : g.store.version;
           return send(res, 200, { version: v, applied: applied.length });
