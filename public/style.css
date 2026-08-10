@@ -23,7 +23,8 @@
   --serif: "Newsreader", Georgia, serif;
   --sidebar-bg: var(--bg);   /* themable: docked AND peeked sidebar share this */
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
-  --indent: 26px;
+  --indent: 32px;
+  --indent-rule: 11px;   /* where the children's guide line sits inside that step */
   --topbar-h: 52px;
   color-scheme: light;
 }
@@ -583,10 +584,13 @@ mark {
 .note:empty::before { content: attr(data-ph); color: var(--ink-faint); }
 .item.done > .note { color: var(--done); }
 
-/* children */
+/* children — one source of truth for the per-level step: `--indent` (the guide line sits
+   `--indent-rule` in from the parent's bullet, the rest is padding). The step has to clear the
+   bullet column (26px: 20px bullet + gap), otherwise a child's bullet lands on its parent's
+   first letter and the nesting stops reading as nesting. */
 .children {
-  margin-left: 9px;
-  padding-left: 17px;
+  margin-left: var(--indent-rule);
+  padding-left: calc(var(--indent) - var(--indent-rule));
   border-left: 1px solid var(--line-soft);
   transition: border-color 0.2s;
 }
@@ -1341,10 +1345,9 @@ html.vt-back::view-transition-new(root) { animation: vt-fade 0.34s both, vt-drif
 /* ---------------- misc ---------------- */
 
 @media (max-width: 760px) {
-  :root { --indent: 20px; }
+  :root { --indent: 26px; --indent-rule: 8px; }
   .gutter { width: 24px; margin-left: -24px; }
   .itemmenu-btn { display: none; }
-  .children { margin-left: 7px; padding-left: 12px; }
   .page { padding-left: 30px; }
 }
 
@@ -1393,7 +1396,7 @@ html.no-anim, html.no-anim *, html.no-anim *::before, html.no-anim *::after {
 [data-font="system"] body { font-family: system-ui, sans-serif; }
 [data-font="mono"] .content, [data-font="mono"] .note, [data-font="mono"] .zoom-note { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 14px; }
 
-[data-density="compact"] { --indent: 20px; }
+[data-density="compact"] { --indent: 26px; --indent-rule: 9px; }
 [data-density="compact"] body { font-size: 14px; line-height: 1.42; }
 [data-density="compact"] .content { padding: 1.5px 0; }
 [data-density="compact"] .row { padding-top: 1px; padding-bottom: 1px; }
