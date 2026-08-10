@@ -1869,7 +1869,10 @@ time[datetime].today { color: oklch(0.5 0.14 150); background: oklch(0.55 0.14 1
 .todo-box {
   flex: none;
   width: 15px; height: 15px;
-  margin: 6px 7px 0 0;
+  /* the checkbox replaces the bullet, so it has to occupy the bullet's exact column
+     (20px box + 6px gap) with its centre on the dot's axis — otherwise every to-do hangs
+     a few px left of its own siblings and a list of them reads as un-indented */
+  margin: 6px 8px 0 3px;
   border: 1.5px solid var(--ink-faint);
   border-radius: 4.5px;
   background: none;
@@ -1888,7 +1891,6 @@ time[datetime].today { color: oklch(0.5 0.14 150); background: oklch(0.55 0.14 1
   color: oklch(0.99 0 0);
 }
 .item.fmt-todo > .row > .bullet { display: none; }
-.item.fmt-todo > .row { padding-left: 2px; }
 
 /* ---------------- boards ---------------- */
 

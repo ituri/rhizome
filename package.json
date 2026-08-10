@@ -48,6 +48,7 @@
     "test:semantic": "node tests/test-semantic.js",
     "test:dailytemplate": "node tests/test-daily-template.js",
     "test:daydup": "node tests/test-day-dup.js",
+    "test:todoalign": "node tests/test-todo-align.js",
     "test:namespace": "node tests/test-namespace.js",
     "test:fonts": "node tests/test-fonts.js",
     "test:slashesc": "node tests/test-slash-esc.js",
