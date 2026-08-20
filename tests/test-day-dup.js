@@ -118,6 +118,30 @@ const stamp = (ms, c, dev) => `${String(ms).padStart(13, '0')}:${String(c).padSt
   ok(lateParent && lateParent.cal === 'day' && lateParent.cd === later[0],
     'a bullet queued behind the merge lands in the surviving day, not at the document root');
 
+  /* ---- 1c. …and the re-pointing survives a restart ----
+     The dup → survivor map used to live only in the process, so a deploy between the merge and
+     the phone's next batch left the op with an unknown parent and `applyOpsToDoc` attached it
+     to the document root: the note showed up as a stray top-level page. A phone that has been
+     offline for days is exactly when that gap is wide. */
+
+  srv.kill(); await sleep(600);
+  srv = spawn('node', [path.join(__dirname, '..', 'server.js')], {
+    env: { ...process.env, DATA_DIR: DATA, PORT: String(PORT), HOST: '127.0.0.1', RHIZOME_ADMIN_PASSWORD: 'adminpw' },
+    stdio: ['ignore', 'ignore', 'inherit'],
+  });
+  await boot();
+  const relogin = await fetch(base + '/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'phil', password: 'adminpw' }) });
+  AH.Cookie = cookieFrom(relogin.headers.get('set-cookie'));
+  await J(G + '/ops', {
+    method: 'POST',
+    body: JSON.stringify({ device: 'phone', ops: [{ kind: 'insert', node: 'pbRestart', hlc: stamp(1786400001000, 4, 'phone123'), parent: 'pd1', ord: 1, data: { text: 'sent after a deploy' } }] }),
+  });
+  doc = await getDoc();
+  const restartParent = Object.values(doc.nodes).find(n => (n.children || []).includes('pbRestart'));
+  ok(restartParent && restartParent.cal === 'day' && restartParent.cd === later[1],
+    'after a restart, an op parented to a merged-away day still lands in the surviving day');
+  ok(restartParent && restartParent.id !== doc.root, 'it did not fall back to the document root');
+
   /* ---- 2. a stray duplicate that predates the fix is healed when the graph loads ---- */
 
   doc = await getDoc();

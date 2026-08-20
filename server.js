@@ -251,6 +251,27 @@ fs.mkdirSync(GRAPHS_DIR, { recursive: true });
 const SEEN_MAX = 20000;
 const graphCache = new Map(); // graphId → GraphContext
 
+/* The dup → survivor map of `mergeDuplicateCalNodes`, kept in the graph's own meta table.
+ * It used to live only in the process: after a restart (every deploy is one) an op still
+ * parented to a merged-away journal day found no parent, and `applyOpsToDoc` fell back to the
+ * document root — the note surfaced as a stray top-level page instead of landing in the day.
+ * The window for that is exactly the case the map exists for: a device that has been offline
+ * for days. Newest entries win; the map is trimmed so it can't grow without bound. */
+const CAL_MERGED_MAX = 2000;
+function loadCalMerged(db) {
+  try {
+    const raw = db.meta('calmerged');
+    return new Map(raw ? JSON.parse(raw) : []);
+  } catch { return new Map(); }
+}
+function persistCalMerged(g) {
+  try {
+    const entries = [...g.calMerged].slice(-CAL_MERGED_MAX);
+    if (entries.length < g.calMerged.size) g.calMerged = new Map(entries);
+    g.db.meta('calmerged', JSON.stringify(entries));
+  } catch (e) { console.error('calMerged persist failed:', e.message); }
+}
+
 function loadGraph(id) {
   const dir = path.join(GRAPHS_DIR, id);
   const backupDir = path.join(dir, 'backups');
@@ -264,8 +285,10 @@ function loadGraph(id) {
   } catch { /* none */ }
   return {
     id, dir, backupDir, db, store, sse: new Set(), seenOps: new Set(), seenOrder: [], lastBackupAt,
-    // calendar nodes this process merged away → their survivor (see mergeDuplicateCalNodes)
-    calMerged: new Map(),
+    // calendar nodes merged away → their survivor (see mergeDuplicateCalNodes). Loaded from the
+    // graph's meta table: a phone that spent a week in a fjord still sends ops parented to ITS
+    // journal day, and a deploy in the meantime must not turn those notes into top-level pages.
+    calMerged: loadCalMerged(db),
     // page history: nodes/pages changed since the last debounced snapshot, + the last device name
     historyNodes: new Set(), historyAll: false, historyTimer: null, historyDevice: '',
   };
@@ -276,7 +299,7 @@ function getGraph(id) {
     g = loadGraph(id);
     graphCache.set(id, g);
     // heal calendar duplicates that predate the write-path merge (see mergeDuplicateCalNodes)
-    if (g.store.doc && mergeDuplicateCalNodes(g.store.doc, g.calMerged)) commitDoc(g, g.store.doc, 'calendar-heal');
+    if (g.store.doc && mergeDuplicateCalNodes(g.store.doc, g.calMerged)) { persistCalMerged(g); commitDoc(g, g.store.doc, 'calendar-heal'); }
     armEmbedIndex(g);   // catch up the semantic index on first touch after a restart
   }
   return g;
@@ -2755,6 +2778,7 @@ const server = http.createServer(async (req, res) => {
           // a whole-doc PUT ships the client's own view of the calendar — if it created a day
           // another device had already created, this is where the two meet (see mergeDuplicateCalNodes)
           const healed = mergeDuplicateCalNodes(incoming, g.calMerged);
+          if (healed) persistCalMerged(g);
           const v = commitDoc(g, incoming, healed ? 'calendar-heal' : body.device);
           return send(res, 200, { version: v });
         }
@@ -2781,6 +2805,7 @@ const server = http.createServer(async (req, res) => {
           // here; the merge isn't expressible as ops, so peers get a plain version bump under a
           // foreign origin — every client (including the sender) refetches the whole doc
           const healed = applied.length ? mergeDuplicateCalNodes(g.store.doc, g.calMerged) : 0;
+          if (healed) persistCalMerged(g);
           const v = healed ? commitDoc(g, g.store.doc, 'calendar-heal')
             : applied.length ? commitOps(g, applied, body.device) : g.store.version;
           return send(res, 200, { version: v, applied: applied.length });
