@@ -24,6 +24,20 @@ const srv = spawn('node', [path.join(__dirname, '..', 'server.js')], { env: { ..
     `both items nested under "Reading" (${JSON.stringify(byBullet.Reading)})`);
   ok((byBullet.Inbox || []).includes('No bullet given'), 'default lands under Inbox');
   ok(tree.children.filter(c => c.plain === 'Reading').length === 1, 'only one "Reading" bullet (find-or-create)');
+  ok(!tree.children.some(c => !c.plain.trim()), 'the fresh day\'s own starter bullet was tidied away');
+
+  /* A capture must not sweep away a blank line another device is typing into. A client emits
+     the insert on Enter and the text on its debounced flush, so there is a window where the
+     bullet is legitimately empty; deleting it means the text update arrives for a node that no
+     longer exists, and applyOpsToDoc drops an update whose node is missing — the sentence is
+     gone. Only blanks that have sat untouched for a while are litter. */
+  const open = (await J('/api/v1/nodes', { method: 'POST', headers: H, body: JSON.stringify({ parent: dayId, text: '' }) })).body;
+  ok(open && open.id, 'a device opened a new, still-empty line under today');
+  await cap('capture while that line is open', 'Inbox');
+  const after = (await J(`/api/v1/nodes/${dayId}?tree=1`, { headers: H })).body;
+  ok(after.children.some(c => c.id === open.id), 'the open line survived the capture');
+  const typed = await J(`/api/v1/nodes/${open.id}`, { method: 'PATCH', headers: H, body: JSON.stringify({ text: 'typed after the capture' }) });
+  ok(typed.status === 200, `its text update still lands (status ${typed.status})`);
 
   // html mode: a titled <a href> link is kept as inline HTML (not escaped), scripts stripped
   await J('/api/v1/capture', { method: 'POST', headers: H, body: JSON.stringify({ text: '<a href="https://ex.com/a" rel="noopener">Great Title</a>', html: true }) });

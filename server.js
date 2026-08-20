@@ -614,6 +614,16 @@ const calSlotKey = n => n.cal === 'day' ? (n.cd ? `d:${n.cd}` : null)
 // every client seeds a fresh day with — after a merge there would be one per duplicate)
 const isBlankBullet = n => n && !(n.children || []).length && !(n.files || []).length && !serverPlain(n.text).trim();
 
+/* An empty bullet that was touched moments ago is not litter — it is very likely the line
+ * someone is typing into right now, whose text update is still in flight (a client emits the
+ * insert on Enter and the text on its debounced flush, which can be a separate request). Delete
+ * it and that update arrives for a node that no longer exists: `applyOpsToDoc` drops an update
+ * whose node is missing, so the sentence is simply gone. Both places that tidy blank bullets —
+ * capture and the duplicate-day merge — leave the recent ones alone; a stray empty line costs
+ * nothing, a lost one costs the user their note. */
+const BLANK_GRACE_MS = 5 * 60 * 1000;
+const isStaleBlankBullet = (n, now) => isBlankBullet(n) && now - (n.m || n.c || 0) > BLANK_GRACE_MS;
+
 // `merged` (optional) collects dup → survivor, so ops that were queued against the merged-away
 // node (an iPhone that was offline for days keeps sending inserts whose parent is ITS day node)
 // can still be re-pointed instead of falling back to the document root.
@@ -657,11 +667,14 @@ function mergeDuplicateCalNodes(doc, merged) {
         healed++;
         console.warn(`calendar heal: merged duplicate ${level} ${dup} into ${keep} (${key})`);
       }
-      // the merged day now carries one empty starter bullet per duplicate — drop the spares
+      // the merged day now carries one empty starter bullet per duplicate — drop the spares,
+      // except any that were just touched (see isStaleBlankBullet: that is someone's open line)
       const kept = doc.nodes[keep];
       if (level === 'day' && kept.children.length > 1) {
-        const kids = kept.children.filter(c => doc.nodes[c] && !isBlankBullet(doc.nodes[c]));
-        const blanks = kept.children.filter(c => doc.nodes[c] && isBlankBullet(doc.nodes[c]));
+        const now = Date.now();
+        const spare = c => doc.nodes[c] && isStaleBlankBullet(doc.nodes[c], now);
+        const kids = kept.children.filter(c => doc.nodes[c] && !spare(c));
+        const blanks = kept.children.filter(spare);
         // keep one blank line to type into if the day would otherwise be empty
         kept.children = kids.length ? kids : blanks.slice(0, 1);
         for (const b of blanks.slice(kids.length ? 0 : 1)) delete doc.nodes[b];
@@ -743,12 +756,18 @@ function captureText(g, text, device, bullet, html, opts = {}) {
   if (dev) g.historyDevice = dev;
   const target = String(bullet || 'Inbox').trim() || 'Inbox';   // configurable capture bullet
   const doc = ensureDoc(g);
+  const before = new Set(Object.keys(doc.nodes));
   const dayId = ensureDayInDoc(doc, todayIso());
+  // a blank bullet this very call just created (fresh day + starter line) is ours to remove —
+  // no client has ever seen it, so nothing can be queued against it
+  const justMade = cid => !before.has(cid);
   // drop stray empty bullets (e.g. an unused daily-note placeholder) so capture never
-  // strands a blank line above the capture bullet
+  // strands a blank line above the capture bullet — but not one that was just touched, which
+  // is a line being typed on some device whose text update is still on its way (see
+  // isStaleBlankBullet). A capture from the widget fires often enough to hit that window.
+  const nowMs = Date.now();
   for (const cid of [...doc.nodes[dayId].children]) {
-    const c = doc.nodes[cid];
-    if (c && !(c.children || []).length && !serverPlain(c.text).trim()) {
+    if (isStaleBlankBullet(doc.nodes[cid], nowMs) || (justMade(cid) && isBlankBullet(doc.nodes[cid]))) {
       doc.nodes[dayId].children = doc.nodes[dayId].children.filter(x => x !== cid);
       delete doc.nodes[cid];
     }
