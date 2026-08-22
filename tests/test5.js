@@ -189,6 +189,45 @@ const assert = (c, m) => { console.log((c ? '  ok  ' : 'FAIL  ') + m); if (!c) f
   assert(counts.gh === 1 && counts.ex === 1, `link: finds by URL (github=${counts.gh}, example=${counts.ex})`);
   assert(counts.gh === 1, 'link:github matches the href even though the link text says "the repository"');
 
+  /* ---- 9. wrapping existing text in [[ ]] (the autocomplete must not trap the caret) ---- */
+  await page.evaluate(() => {
+    const id = opNewAt('root', 0);
+    document.querySelector(`.item[data-id="${id}"] .content`).focus();
+    window.__wrap = id;
+  });
+  await sleep(150);
+  await page.keyboard.type('Wanderplan');
+  await sleep(250);
+  await page.evaluate(() => { // select the word, like a double-click would
+    const el = document.querySelector(`.item[data-id="${window.__wrap}"] .content`);
+    el.focus(); selectPlainRange(el, 0, 10);
+  });
+  await sleep(120);
+  await page.keyboard.type('[');   // wraps the selection: [Wanderplan]
+  await sleep(200);
+  await page.keyboard.type('[');   // completes the pair: [[Wanderplan]]
+  await sleep(400);
+  ok = await page.evaluate(() => (doc.nodes[window.__wrap].text || '').includes('[[Wanderplan]]'));
+  assert(ok, 'typing [[ around a selection wraps it instead of replacing it');
+  await page.keyboard.press('ArrowDown');   // "done here" — must leave the line, not steer the pop
+  await sleep(600);
+  ok = await page.evaluate(() => {
+    const el = document.querySelector(`.item[data-id="${window.__wrap}"] .content`);
+    return !!el && document.activeElement !== el && !caretPopOpen();
+  });
+  assert(ok, 'ArrowDown leaves the line instead of being swallowed by the [[ autocomplete');
+  const wrapLink = await page.evaluate(() => {
+    const a = document.querySelector(`.item[data-id="${window.__wrap}"] .content a[href^="#/n/"]`);
+    if (!a) return null;
+    a.click();
+    return a.textContent;
+  });
+  await sleep(400);
+  ok = wrapLink === 'Wanderplan' && await page.evaluate(() => document.querySelector('#zoom-title').textContent === 'Wanderplan');
+  assert(ok, 'the wrapped text renders as a clickable link to its page');
+  await page.evaluate(() => { location.hash = '#/outline'; });
+  await sleep(300);
+
   await browser.close();
   console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL DATE/LINK TESTS PASSED');
   process.exit(failures ? 1 : 0);

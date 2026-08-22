@@ -3490,7 +3490,8 @@ function onKeydown(e) {
   if (e.isComposing) return;
   // a caret popover (slash menu / tag / date / link / block-ref autocomplete) always closes on
   // Escape first — before any other overlay or shortcut can claim the key
-  if (e.key === 'Escape' && window.caretPopOpen?.()) { e.preventDefault(); window.closeCaretPop(); return; }
+  // (routed through caretPopKeydown so a bracket-wrap pop can park the caret behind its ]] first)
+  if (e.key === 'Escape' && window.caretPopOpen?.()) { window.caretPopKeydown?.(e); e.preventDefault(); window.closeCaretPop(); return; }
   const mod = e.ctrlKey || e.metaKey;
 
   // overlays & caret popovers first
@@ -3984,6 +3985,11 @@ shellEl.addEventListener('beforeinput', e => {
         sel.modify('move', 'backward', 'character');
         scheduleCommit(ctx.el);
         window.editorInputHook?.(ctx);
+        // …but the wrapped text IS the query already — the list only offers alternatives.
+        // Mark the pop passive so Enter/Tab/arrows mean "done here" (step past the closing
+        // brackets and let the editor have the key) instead of being swallowed by the list:
+        // otherwise the caret can never leave the line and the [[link]] stays raw source.
+        window.markCaretPopPassive?.();
       } else {
         // first bracket → keep the text selected so the next one nests around it
         sel.modify('move', 'backward', 'character');

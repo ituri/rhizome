@@ -275,6 +275,37 @@ window.closeCaretPop = function closeCaretPop() {
   caretPop = null;
 };
 
+// a pop opened by wrapping a selection in [[ ]] / (( )) — see the bracket-wrap branch in app.js
+window.markCaretPopPassive = function markCaretPopPassive() { if (caretPop) caretPop.passive = true; };
+
+// A pop belongs to the caret that opened it. The caret can move without an input event —
+// arrow keys, Home/End, a click elsewhere in the line — and the pop would then swallow
+// Enter/Escape/arrows for a token that is no longer under the caret, stranding the editor.
+// So re-check the token on every selection change and close the pop once it no longer holds.
+document.addEventListener('selectionchange', () => {
+  if (!caretPop || caretPop.type === 'date') return;
+  const el = caretPop.ctx.el;
+  if (document.activeElement !== el) return;   // handled by the focusout listener below
+  const off = caretOffsetIn(el);
+  if (off === null || off <= caretPop.start) { window.closeCaretPop(); return; }
+  const before = (el.textContent || '').slice(0, off);
+  const ok = caretPop.type === 'slash' ? before.slice(caretPop.start).startsWith('/')
+    : caretPop.type === 'tag' ? /[#@][\p{L}\p{N}_\-/]*$/u.test(before)
+      : caretPop.type === 'linkpop' ? /\[\[[^\]\n]*$/.test(before)
+        : caretPop.type === 'blockref' ? /\(\([^()\n]*$/.test(before)
+          : caretPop.type === 'queryop' ? !!queryOpContext(before)
+            : true;
+  if (!ok) window.closeCaretPop();
+});
+
+// focus left the line the pop was opened for → the pop is stale (its picks would edit a line
+// the user has left, and its key handling would eat Enter/arrows in the new one)
+document.addEventListener('focusout', () => {
+  setTimeout(() => {
+    if (caretPop && caretPop.type !== 'date' && document.activeElement !== caretPop.ctx.el) window.closeCaretPop();
+  }, 0);
+});
+
 function caretViewportRect() {
   const sel = getSelection();
   if (!sel.rangeCount) return null;
@@ -607,6 +638,7 @@ window.editorInputHook = function editorInputHook(ctx) {
   // the text selected) — token scans would misfire and suggest everything
   const _sel = getSelection();
   if (_sel.rangeCount && !_sel.getRangeAt(0).collapsed) { window.closeCaretPop(); return; }
+  if (caretPop) caretPop.passive = false;   // typing into an open pop makes it a real query again
   // open slash menu right after '/' lands in the DOM
   if (pendingSlash && pendingSlash.id === ctx.id && pendingSlash.field === ctx.field) {
     const start = pendingSlash.start;
@@ -713,8 +745,30 @@ window.editorInputHook = function editorInputHook(ctx) {
   if (fmtOf(ctx.id) !== 'codeblock') maybeDateSuggest(ctx);
 };
 
+// move the caret past the auto-closed "]]" / "))" sitting right after it, so the key that
+// dismissed a passive pop (Enter, ArrowDown, …) acts on a finished [[link]], not inside it
+function caretSkipPastClose() {
+  const el = caretPop.ctx.el;
+  if (document.activeElement !== el) return;
+  const off = caretOffsetIn(el);
+  if (off === null) return;
+  const close = caretPop.type === 'blockref' ? '))' : ']]';
+  if ((el.textContent || '').slice(off, off + 2) !== close) return;
+  const sel = getSelection();
+  sel.modify('move', 'forward', 'character');
+  sel.modify('move', 'forward', 'character');
+}
+
 window.caretPopKeydown = function caretPopKeydown(e) {
   if (!caretPop) return false;
+  // a passive pop (opened by wrapping existing text in brackets) already has its answer —
+  // these keys mean "I'm done", so dismiss and let the editor handle them normally
+  if (caretPop.passive && ['Enter', 'Tab', 'ArrowDown', 'ArrowUp', 'Escape'].includes(e.key)) {
+    caretSkipPastClose();   // leaves the caret behind the finished [[link]], never inside it
+    window.closeCaretPop();
+    if (e.key === 'Escape') { e.preventDefault(); return true; }   // Escape only dismisses the pop
+    return false;
+  }
   const pick = () => {
     const it = caretPop.items[caretPop.active];
     if (it && caretPop.onPick) caretPop.onPick(it);
